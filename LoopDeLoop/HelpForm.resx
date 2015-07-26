@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- 
+    Microsoft ResX Schema 
+    
+    Version 2.0
+    
+    The primary goals of this format is to allow a simple XML format 
+    that is mostly human readable. The generation and parsing of the 
+    various data types are done through the TypeConverter classes 
+    associated with the data types.
+    
+    Example:
+    
+    ... ado.net/XML headers & schema ...
+    <resheader name="resmimetype">text/microsoft-resx</resheader>
+    <resheader name="version">2.0</resheader>
+    <resheader name="reader">System.Resources.ResXResourceReader, System.Windows.Forms, ...</resheader>
+    <resheader name="writer">System.Resources.ResXResourceWriter, System.Windows.Forms, ...</resheader>
+    <data name="Name1"><value>this is my long string</value><comment>this is a comment</comment></data>
+    <data name="Color1" type="System.Drawing.Color, System.Drawing">Blue</data>
+    <data name="Bitmap1" mimetype="application/x-microsoft.net.object.binary.base64">
+        <value>[base64 mime encoded serialized .NET Framework object]</value>
+    </data>
+    <data name="Icon1" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+        <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
+        <comment>This is a comment</comment>
+    </data>
+                
+    There are any number of "resheader" rows that contain simple 
+    name/value pairs.
+    
+    Each data row contains a name, and value. The row also contains a 
+    type or mimetype. Type corresponds to a .NET class that support 
+    text/value conversion through the TypeConverter architecture. 
+    Classes that don't support this are serialized and stored with the 
+    mimetype set.
+    
+    The mimetype is used for serialized objects, and tells the 
+    ResXResourceReader how to depersist the object. This is currently not 
+    extensible. For a given mimetype the value must be set accordingly:
+    
+    Note - application/x-microsoft.net.object.binary.base64 is the format 
+    that the ResXResourceWriter will generate, however the reader can 
+    read any of the formats listed below.
+    
+    mimetype: application/x-microsoft.net.object.binary.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
+            : and then encoded with base64 encoding.
+    
+    mimetype: application/x-microsoft.net.object.soap.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.bytearray.base64
+    value   : The object must be serialized into a byte array 
+            : using a System.ComponentModel.TypeConverter
+            : and then encoded with base64 encoding.
+    -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="textHelp.Text" xml:space="preserve">
+    <value>Loop-de-loop instructions for play
+
+How to Play:
+
+1. The object is to form one continuous line, or loop, by connecting the dots.
+2. Connect dots by clicking the greyed lines between dots, so that they become
+   solid lines.
+3. The numbers inside each shape represent the number of lines which will be
+   filled in on that particular shape.
+     
+     Example:
+      + + +-+-+-+ +-+-+ +-+
+       0 2|  1  |1 2  |2|  
+      + +-+ + + + +-+-+ +-+
+       1|       |3|2   0  |
+      + +-+ + + +-+ +-+ + +
+
+   Note the first 2 in the top row.  It has 2 lines beside it and the 3 in the
+   bottom row has 3 lines, while the 0's have no lines.
+
+4. The game is over when you have formed a continuous loop.
+
+     Example:
+      + +-+-+-+-+
+        |  2    |
+      +-+ +-+-+ +
+      |2 1|3  | |
+      + + +-+ + +
+      |  0  | |3|
+      + + +-+ +-+
+      |2  |  0   
+      +-+ + + + +
+       2| |  0   
+      + +-+ + + +
+
+5. You can use the right click on your mouse to flag or 'X' lines which you know 
+   you won't use.
+
+     Example:
+      +x+-+-+-+-+
+      x | x2x x |
+      +-+x+-+-+x+
+      |2x1|3x | |
+      +x+x+-+x+x+
+      | x0x | |3|
+      +x+x+-+x+-+
+      |2x | x0x x
+      +-+x+x+x+x+
+      x2| | x0x x
+      +x+-+x+x+x+
+
+---------------------------------------------------------------------------
+
+Buttons and Settings:
+
+1. The File menu can be used to save or load games so that you can return to
+   them later.  If the grid is square, the save file can be read and understood
+   in notepad so you can share it with others who don't have the program.
+2. The Configuration menu allows you to adjust for difficulty by choosing one of
+   two options, Simplified Solver or Full Solver.  It also contains an AutoMove
+   option.
+
+     Simplified Solver will create simpiler games and has an option to Restrict
+     Simple Simple Solver forced move lookahead.  By setting the lookahead to 1
+     or 0 you can restrict games to a much easier level.  2 or more will allow 
+     it to sometimes create more difficult games.
+
+     Full Solver will automatically generate much harder puzzles on average.  
+     Some of which can very well seem impossible to solve.  New players should
+     stick to the Simple Solver until they get a feel for the game.
+
+     AutoMove will help you by automatically filling in lines and X's as you
+     progress through the game, more lines will be filled the higher you set
+     this and vice versa.  The moves automatically filled in are the 'forced 
+     moves' near where you click.  With higher values it will fill in further
+     and further away forced moves.
+
+3. The left most drop down menu will set the shapes which the puzzle will be
+   made up of.  You will find anything from triangles to octagons depending on
+   this setting.  Play with it and find a puzzle set up you like.
+  
+     *Note: some puzzles may require you to resize the window to view the entire
+      puzzle area, maximizing the screen is recommended.
+
+4. Size allows you to adjust the height and width of the puzzle by entering a
+   number and then hitting New.
+
+     *Note: Entering a number larger than 20 is not recommended and can cause
+      the game to stop responding for a very long time on slower machines.  
+      Also some puzzles cannot be set much larger than the default size or 
+      they will hang off the edge of the screen even when maximised.
+      For square grids the default size is 10, other grids vary but are mostly 
+      arround 6.
+
+     *Note: By entering two numbers like '5x10' you can create rectangular 
+      puzzles.  Entering one number like '15' will create a puzzle which is
+      square.  For some grids, a rectangular puzzle looks more square then 
+      a square one.
+
+5. The 'New' button will generate a new puzzle if you are having trouble with
+   the current one or manage to solve it.
+6. The 'Clear' button will reset the current puzzle.
+7. The 'Solve' button will solve the puzzle if possible.  If the visual solver
+    option is selected, you will see the process it goes through to solve it.</value>
+  </data>
+</root>
