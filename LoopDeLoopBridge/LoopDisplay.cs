@@ -1,84 +1,77 @@
 ﻿using System;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Documents;
-using System.Windows.Ink;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Animation;
-using System.Windows.Shapes;
 using System.Collections.Generic;
-using System.Threading;
 using System.Linq;
+using Bridge.Html5;
+using LoopDeLoop;
 
-namespace LoopDeLoop
+
+namespace LoopDeLoopBridge
 {
-    public class LoopDisplaySilverlight : Panel
-    {        
-        protected override Size MeasureOverride(Size availableSize)
+    public class LoopDisplay
+    {
+        public LoopDisplay(HTMLDivElement displayHost)
         {
-            Size res = availableSize;
-            if (double.IsPositiveInfinity(res.Width))
-                res.Width = 800;
-            if (double.IsPositiveInfinity(res.Height))
-                res.Height = 600;
-            OnScaleChanged(res);
-            foreach (UIElement child in Children)
-            {
-                child.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            }
-            return res;
-        }
-
-        protected override Size ArrangeOverride(Size finalSize)
-        {
-            Size res = base.ArrangeOverride(finalSize);
-            foreach (UIElement child in Children)
-            {
-                child.Arrange(new Rect(Canvas.GetLeft(child), Canvas.GetTop(child), child.DesiredSize.Width, child.DesiredSize.Height));
-            }
-            return res;
-        }
-        public LoopDisplaySilverlight()
-        {
+            this.displayHost = displayHost;
             this.Mesh = new Mesh(10, 10, MeshType.Square);
-            this.MouseLeftButtonDown += new MouseButtonEventHandler(LoopDisplaySilverlight_MouseLeftButtonDown);
-            this.MouseLeftButtonUp += new MouseButtonEventHandler(LoopDisplaySilverlight_MouseLeftButtonUp);
-            this.MouseRightButtonDown += new MouseButtonEventHandler(LoopDisplaySilverlight_MouseRightButtonDown);
-            this.MouseRightButtonUp += new MouseButtonEventHandler(LoopDisplaySilverlight_MouseRightButtonUp);
-            this.MouseMove += new MouseEventHandler(LoopDisplaySilverlight_MouseMove);
-            this.LostMouseCapture += new MouseEventHandler(LoopDisplaySilverlight_LostMouseCapture);
-            this.MouseLeave += new MouseEventHandler(LoopDisplaySilverlight_MouseLeave);
+            displayHost.OnMouseDown = LoopDisplay_MouseDown;
+            displayHost.OnMouseUp = LoopDisplay_MouseUp;
+            displayHost.OnMouseLeave = LoopDisplay_MouseLeave;
+            displayHost.OnMouseMove = LoopDisplay_MouseMove;
+            displayHost.OnContextMenu = LoopDisplay_ContextMenu;
+            cellColorCanvas = Document.CreateElement<HTMLCanvasElement>("canvas");
+            cellColorCanvas.Style.Position = Position.Absolute;
+            cellColorCanvas.Style.ZIndex = "1";
+            cellNumberCanvas = Document.CreateElement<HTMLCanvasElement>("canvas");
+            cellNumberCanvas.Style.Position = Position.Absolute;
+            cellNumberCanvas.Style.ZIndex = "2";
+            edgeCanvas = Document.CreateElement<HTMLCanvasElement>("canvas");
+            edgeCanvas.Style.Position = Position.Absolute;
+            edgeCanvas.Style.ZIndex = "3";
+            intersectionCanvas = Document.CreateElement<HTMLCanvasElement>("canvas");
+            intersectionCanvas.Style.Position = Position.Absolute;
+            intersectionCanvas.Style.ZIndex = "4";
+            displayHost.AppendChild(cellColorCanvas);
+            displayHost.AppendChild(cellNumberCanvas);
+            displayHost.AppendChild(edgeCanvas);
+            displayHost.AppendChild(intersectionCanvas);
         }
 
-        void LoopDisplaySilverlight_MouseLeave(object sender, MouseEventArgs e)
+        private HTMLDivElement displayHost;
+        private HTMLCanvasElement cellColorCanvas;
+        private HTMLCanvasElement cellNumberCanvas;
+        private HTMLCanvasElement edgeCanvas;
+        private HTMLCanvasElement intersectionCanvas;
+
+        void LoopDisplay_ContextMenu(Event e)
+        {
+            clicking = false;
+            e.PreventDefault();
+            e.StopPropagation();
+        }
+
+        void LoopDisplay_MouseLeave(MouseEvent e)
         {
             clicking = false;
         }
 
-        void LoopDisplaySilverlight_LostMouseCapture(object sender, MouseEventArgs e)
-        {
-            clicking = false;
-        }
         bool clicking = false;
-        void LoopDisplaySilverlight_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
+
+        void LoopDisplay_MouseUp(MouseEvent e)
         {
+            e.PreventDefault();
+            e.StopPropagation();
+
             clicking = false;
         }
 
-        void LoopDisplaySilverlight_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-        {
-            this.ReleaseMouseCapture();
-            clicking = false;
-        }
-
-        void LoopDisplaySilverlight_MouseMove(object sender, MouseEventArgs e)
+        void LoopDisplay_MouseMove(MouseEvent e)
         {
             if (clicking)
             {
                 int closestEdge;
                 int closestCell;
-                FindClosest(e.GetPosition(this).X, e.GetPosition(this).Y, out closestEdge, out closestCell, 8.0f/(float)scaleFactor);
+                var bounds = displayHost.GetBoundingClientRect();
+                FindClosest(e.ClientX - bounds.Left , e.ClientY - bounds.Top, out closestEdge, out closestCell, 8.0f / (float)scaleFactor);
                 if (closestEdge != -1 || closestCell != -1)
                 {
                     if (lastClosestCell != closestCell || lastClosestEdge != closestEdge)
@@ -91,56 +84,56 @@ namespace LoopDeLoop
             }
         }
 
-        void LoopDisplaySilverlight_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        void LoopDisplay_MouseDown(MouseEvent e)
         {
+            e.PreventDefault();
+            e.StopPropagation();
             clicking = true;
-            e.Handled = true;
-            OnMouseButtonDown(e, true);
+            OnMouseButtonDown(e);
         }
 
-        void LoopDisplaySilverlight_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            this.CaptureMouse();
-            clicking = true;
-            OnMouseButtonDown(e, false);
-        }
         HashSet<int> markedEdges = new HashSet<int>();
 
-        internal void OnKeyDown(KeyEventArgs e)
+        internal void OnKeyDown(KeyboardEvent e)
         {
 
-            if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Z)
+            if (e.CtrlKey && e.KeyCode == KeyboardEvent.DOM_VK_Z)
             {
                 if (this.undoTree.CanUndo)
                 {
                     this.undoTree.Undo();
                     this.UpdateChildControls();
                 }
-                e.Handled = true;
+                e.PreventDefault();
+                e.StopPropagation();
             }
-            else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Y)
+            else if (e.CtrlKey && e.KeyCode == KeyboardEvent.DOM_VK_Y)
             {
                 if (this.undoTree.CanRedo)
                 {
                     this.undoTree.Redo();
                     this.UpdateChildControls();
                 }
-                e.Handled = true;
+                e.PreventDefault();
+                e.StopPropagation();
             }
-            else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.F)
+            else if (e.CtrlKey && e.KeyCode == KeyboardEvent.DOM_VK_F)
             {
                 FixPosition();
-                e.Handled = true;
+                e.PreventDefault();
+                e.StopPropagation();
             }
-            else if (Keyboard.Modifiers == ModifierKeys.Control && (e.Key == Key.R || e.Key==Key.M))
+            else if (e.CtrlKey && (e.KeyCode == KeyboardEvent.DOM_VK_R || e.KeyCode == KeyboardEvent.DOM_VK_M))
             {
                 ResetToFixed();
-                e.Handled = true;
+                e.PreventDefault();
+                e.StopPropagation();
             }
-            else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.U)
+            else if (e.CtrlKey && e.KeyCode == KeyboardEvent.DOM_VK_U)
             {
                 Unfix();
-                e.Handled = true;
+                e.PreventDefault();
+                e.StopPropagation();
             }
         }
 
@@ -162,177 +155,116 @@ namespace LoopDeLoop
             this.UpdateChildControls();
         }
 
-        
-        public static readonly DependencyProperty MeshProperty = DependencyProperty.Register("Mesh", typeof(Mesh), typeof(LoopDisplaySilverlight), new PropertyMetadata(new PropertyChangedCallback(OnMeshChanged)));
 
         public Mesh Mesh
         {
             get
             {
-                return (Mesh)this.GetValue(MeshProperty);
+                return mesh;
             }
             set
             {
-                this.SetValue(MeshProperty, value);
-                this.InvalidateMeasure();
+                this.mesh = value;
+                markedEdges.Clear();
+                undoTree = new UndoTree();
+                OnMeshChanged(mesh);
             }
         }
 
-        
+        private Mesh mesh;
+
+
         private double scaleFactor = 20;
         private double xOffset = 10;
         private double yOffset = 10;
 
-        private static void OnMeshChanged(DependencyObject source, DependencyPropertyChangedEventArgs args)
+        internal void OnScaleChanged()
         {
-            ((LoopDisplaySilverlight)source).OnMeshChanged((Mesh)args.NewValue);
-        }
-
-        private void OnScaleChanged(Size res)
-        {
-            EnsureChildControls();
-            double sf = scaleFactor;
-            double xo = xOffset;
-            double yo = yOffset;
-            UpdateScaleFactor(this.Mesh, res);
-            if (sf != scaleFactor || xo != xOffset || yo != yOffset)
-            {
-                UpdateChildControls();
-           }
+            OnMeshChanged(this.Mesh);
         }
 
         private void UpdateChildControls()
         {
-            int childIndex = 0;
             for (int i = 0; i < this.Mesh.Edges.Count; i++)
             {
                 Edge edge = this.Mesh.Edges[i];
-                EdgeDisplay edgeDisplay = (EdgeDisplay)this.Children[childIndex];
-                float x1, x2, y1, y2;
-                this.Mesh.GetEdgeExtent(edge, out x1, out y1, out x2, out y2);
-                edgeDisplay.XDiff = Math.Abs(x2 - x1) * scaleFactor;
-                edgeDisplay.Width = edgeDisplay.XDiff + 1;
-                edgeDisplay.YDiff = Math.Abs(y2 - y1) * scaleFactor;
-                edgeDisplay.Height = edgeDisplay.YDiff + 1;
+                EdgeDisplay edgeDisplay = edgeDisplays[i];
                 edgeDisplay.EdgeState = edge.State;
-                edgeDisplay.EdgeColor = edge.Color;
+                //edgeDisplay.EdgeColor = edge.Color;
                 edgeDisplay.Marked = markedEdges.Contains(i);
-                edgeDisplay.NegGradient = x1 == x2 ? false : (y2 - y1) / (x2 - x1) < 0;
-                edgeDisplay.SetValue(Canvas.TopProperty, Math.Min(y2, y1) * scaleFactor + yOffset);
-                edgeDisplay.SetValue(Canvas.LeftProperty, Math.Min(x2, x1) * scaleFactor + xOffset);
-                childIndex++;
-            }
-            for (int i = 0; i < this.Mesh.Intersections.Count; i++)
-            {
-                Intersection inters = this.Mesh.Intersections[i];
-                Ellipse ellipse = (Ellipse)this.Children[childIndex];
-                ellipse.Width = 4;
-                ellipse.Height = 4;
-                ellipse.SetValue(Canvas.TopProperty, inters.Y * scaleFactor + yOffset - ellipse.Height / 2.0);
-                ellipse.SetValue(Canvas.LeftProperty, inters.X * scaleFactor + xOffset - ellipse.Width / 2.0);
-                ellipse.Stroke = new SolidColorBrush(Colors.Black);
-                ellipse.Fill = new SolidColorBrush(Colors.Black);
-                ellipse.StrokeThickness = 1.0;
-                childIndex++;
-            }
-            for (int i = 0; i < this.Mesh.Cells.Count; i++)
-            {
-                Cell cell = this.Mesh.Cells[i];
-                CellDisplay cellDisplay = (CellDisplay)this.Children[childIndex];
-                PointCollection points = new PointCollection();
-                for (int j = 0; j < cell.Intersections.Count; j++)
-                {
-                    Intersection inters = this.Mesh.Intersections[cell.Intersections[j]];
-                    points.Add(new Point(inters.X * scaleFactor + xOffset, inters.Y * scaleFactor + yOffset));
-                }
-                cellDisplay.Points = points;
-                cellDisplay.FontFamily = new FontFamily("Tahoma");
-                cellDisplay.FontSize = 18;
-                cellDisplay.CellColor = cell.Color;
-                cellDisplay.TargetCount = cell.TargetCount;
-                cellDisplay.Width = scaleFactor;
-                cellDisplay.Height = scaleFactor;
-                childIndex++;
+                edgeDisplay.Render();
             }
         }
-
-        private void EnsureChildControls()
-        {
-            if (Children.Count > 0)
-                return;
-            OnMeshChanged(this.Mesh);
-        }
+        List<EdgeDisplay> edgeDisplays = new List<EdgeDisplay>();
+        List<CellDisplay> cellDisplays = new List<CellDisplay>();
 
         private void OnMeshChanged(Mesh newMesh)
         {
-            markedEdges.Clear();
-            undoTree = new UndoTree();
-            if (double.IsNaN(this.ActualHeight) || double.IsNaN(this.ActualWidth))
+            if (this.displayHost.ClientHeight <= 0 || this.displayHost.ClientWidth <= 0)
                 return;
-            UpdateScaleFactor(newMesh, new Size(this.ActualWidth, this.ActualHeight));
-  //          RectangleGeometry rectGeo = new RectangleGeometry();
-    //        rectGeo.Rect = new Rect(0.0, 0.0, this.ActualWidth, this.ActualHeight);
-      //      this.Clip = rectGeo;
-            this.Children.Clear();
+            UpdateScaleFactor(newMesh);
+            edgeDisplays.Clear();
+            cellDisplays.Clear();
             if (newMesh == null)
                 return;
+            var drawContext = edgeCanvas.GetContext(CanvasTypes.CanvasContext2DType.CanvasRenderingContext2D);
+            drawContext.ClearRect(0, 0, edgeCanvas.Width, edgeCanvas.Height);
             for (int i = 0; i < newMesh.Edges.Count; i++)
             {
                 Edge edge = newMesh.Edges[i];
-                float x1,x2,y1,y2;
+                float x1, x2, y1, y2;
                 newMesh.GetEdgeExtent(edge, out x1, out y1, out x2, out y2);
-                EdgeDisplay edgeDisplay = new EdgeDisplay();
-                edgeDisplay.XDiff = Math.Abs(x2 - x1)*scaleFactor;
-                edgeDisplay.Width = edgeDisplay.XDiff + 1;
-                edgeDisplay.YDiff = Math.Abs(y2 - y1) * scaleFactor;
-                edgeDisplay.Height = edgeDisplay.YDiff + 1;
+                EdgeDisplay edgeDisplay = new EdgeDisplay(drawContext, x1*scaleFactor+xOffset, x2*scaleFactor+xOffset, y1*scaleFactor+yOffset, y2*scaleFactor+yOffset);
                 edgeDisplay.EdgeState = edge.State;
-                edgeDisplay.EdgeColor = edge.Color;
+                //edgeDisplay.EdgeColor = edge.Color;
                 edgeDisplay.Marked = markedEdges.Contains(i);
-                edgeDisplay.NegGradient = x1 == x2 ? false : (y2 - y1) / (x2 - x1) < 0;
-                edgeDisplay.SetValue(Canvas.TopProperty, Math.Min(y2, y1) * scaleFactor + yOffset);
-                edgeDisplay.SetValue(Canvas.LeftProperty, Math.Min(x2, x1) * scaleFactor + xOffset);
-                this.Children.Add(edgeDisplay);
+                edgeDisplay.Render();
+                edgeDisplays.Add(edgeDisplay);
             }
-            for (int i = 0; i < newMesh.Intersections.Count; i++)
+
+            drawContext = intersectionCanvas.GetContext(CanvasTypes.CanvasContext2DType.CanvasRenderingContext2D);
+            drawContext.ClearRect(0, 0, intersectionCanvas.Width, intersectionCanvas.Height);
+            foreach (var intersection in mesh.Intersections)
             {
-                Intersection inters = newMesh.Intersections[i];
-                Ellipse ellipse = new Ellipse();
-                ellipse.Width = 4;
-                ellipse.Height = 4;
-                ellipse.SetValue(Canvas.TopProperty, inters.Y * scaleFactor + yOffset - ellipse.Height / 2.0);
-                ellipse.SetValue(Canvas.LeftProperty, inters.X * scaleFactor + xOffset - ellipse.Width / 2.0);
-                ellipse.Stroke = new SolidColorBrush(Colors.Black);
-                ellipse.Fill = new SolidColorBrush(Colors.Black);
-                ellipse.StrokeThickness = 1.0;
-                this.Children.Add(ellipse);
+                drawContext.BeginPath();
+                drawContext.Ellipse(intersection.X * scaleFactor + xOffset, intersection.Y * scaleFactor + yOffset, 2, 2, 0, 0, 360);
+                drawContext.Fill();
             }
+
+            drawContext = cellNumberCanvas.GetContext(CanvasTypes.CanvasContext2DType.CanvasRenderingContext2D);
+            drawContext.ClearRect(0, 0, cellNumberCanvas.Width, cellNumberCanvas.Height);
             for (int i = 0; i < newMesh.Cells.Count; i++)
             {
                 Cell cell = newMesh.Cells[i];
-                CellDisplay cellDisplay = new CellDisplay();
-                PointCollection points = new PointCollection();
+                List<double> xCoords = new List<double>();
+                List<double> yCoords = new List<double>();
                 for (int j = 0; j < cell.Intersections.Count; j++)
                 {
                     Intersection inters = newMesh.Intersections[cell.Intersections[j]];
-                    points.Add(new Point(inters.X * scaleFactor + xOffset, inters.Y * scaleFactor + yOffset));
+                    xCoords.Add(inters.X * scaleFactor + xOffset);
+                    yCoords.Add(inters.Y*scaleFactor + yOffset);
                 }
-                cellDisplay.Points = points;
-                cellDisplay.FontFamily = new FontFamily("Tahoma");
-                cellDisplay.FontSize = 18;
-                cellDisplay.CellColor = cell.Color;
+                CellDisplay cellDisplay = new CellDisplay(drawContext, xCoords, yCoords);
                 cellDisplay.TargetCount = cell.TargetCount;
-                cellDisplay.Width = scaleFactor;
-                cellDisplay.Height = scaleFactor;
-                this.Children.Add(cellDisplay);
+                cellDisplay.Render();
+                cellDisplays.Add(cellDisplay);
             }
-
         }
 
-        private void UpdateScaleFactor(Mesh newMesh, Size res)
+        private double emRatio = -1;
+
+        private void UpdateScaleFactor(Mesh newMesh)
         {
             if (newMesh == null)
                 return;
+            cellColorCanvas.Width = displayHost.ClientWidth;
+            cellColorCanvas.Height = displayHost.ClientHeight;
+            cellNumberCanvas.Width = displayHost.ClientWidth;
+            cellNumberCanvas.Height = displayHost.ClientHeight;
+            edgeCanvas.Width = displayHost.ClientWidth;
+            edgeCanvas.Height = displayHost.ClientHeight;
+            intersectionCanvas.Width = displayHost.ClientWidth;
+            intersectionCanvas.Height = displayHost.ClientHeight;
             double minX = double.MaxValue;
             double minY = double.MaxValue;
             double maxX = double.MinValue;
@@ -349,19 +281,23 @@ namespace LoopDeLoop
                 if (inters.Y > maxY)
                     maxY = inters.Y;
             }
-            scaleFactor = (res.Height - this.Margin.Top - this.Margin.Bottom) / (maxY - minY + 1);
-            scaleFactor = Math.Min(scaleFactor, (res.Width - this.Margin.Left - this.Margin.Right) / (maxX - minX + 1));
+            double marginTop = 2;
+            double marginBottom = 2;
+            double marginLeft = 2;
+            double marginRight = 2;
+            scaleFactor = (displayHost.ClientHeight - marginTop - marginBottom) / (maxY - minY + 1);
+            scaleFactor = Math.Min(scaleFactor, (displayHost.ClientWidth - marginLeft - marginRight) / (maxX - minX + 1));
             scaleFactor = Math.Max(scaleFactor, 25.0);
             scaleFactor = Math.Min(scaleFactor, 50.0);
-            yOffset = res.Height / 2.0 - (maxY + minY) * scaleFactor / 2.0;
-            xOffset = res.Width / 2.0 - (maxX + minX) * scaleFactor / 2.0;
+            yOffset = displayHost.ClientHeight / 2.0 - (maxY + minY) * scaleFactor / 2.0;
+            xOffset = displayHost.ClientWidth / 2.0 - (maxX + minX) * scaleFactor / 2.0;
         }
 
         int lastControl = -1;
         int lastShift = -1;
 
 
-        private double DistanceToSegment(double realX, double realY, double sx, double sy, double ex, double ey)
+        private double DistanceToSegmentSq(double realX, double realY, double sx, double sy, double ex, double ey)
         {
             double dx = ex - sx;
             double dy = ey - sy;
@@ -385,7 +321,7 @@ namespace LoopDeLoop
             }
             double distx = nearX - realX;
             double disty = nearY - realY;
-            return Math.Sqrt(distx * distx + disty * disty);
+            return distx * distx + disty * disty;
         }
 
         private bool showCellColors = false;
@@ -413,15 +349,18 @@ namespace LoopDeLoop
         private UndoTree undoTree = new UndoTree();
 
 
-        internal void OnMouseButtonDown(MouseButtonEventArgs e, bool right)
+        internal void OnMouseButtonDown(MouseEvent e)
         {
-            Point clickLoc = e.GetPosition(this);
-            OnMouseButtonDown(clickLoc.X, clickLoc.Y, right);
+            if (e.Button != 0)
+            {
+                e.PreventDefault();
+                e.StopPropagation();
+            }
+            var bounds = displayHost.GetBoundingClientRect();
+            OnMouseButtonDown(e.ClientX - bounds.Left, e.ClientY - bounds.Top, e.Button != 0, e.ShiftKey, e.CtrlKey);
         }
-        internal void OnMouseButtonDown(double clickX, double clickY, bool right)
+        internal void OnMouseButtonDown(double clickX, double clickY, bool right, bool shiftPressed, bool controlPressed)
         {
-            bool shiftPressed = ((Keyboard.Modifiers & ModifierKeys.Shift) != ModifierKeys.None);
-            bool controlPressed = ((Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.None);
             if (!ShowColors && shiftPressed)
                 right = !right;
             else if (!ShowColors && (shiftPressed || controlPressed))
@@ -452,23 +391,23 @@ namespace LoopDeLoop
             double realY = y / linkLength;
             closestEdge = -1;
             closestCell = -1;
-            double distance = 1;
-            double secondDistance = 200;
+            double distanceSq = 1;
+            double secondDistanceSq = 200*200;
             for (int i = 0; i < this.Mesh.Edges.Count; i++)
             {
                 Edge edge = this.Mesh.Edges[i];
                 float sx, sy, ex, ey;
                 this.Mesh.GetEdgeExtent(edge, out sx, out sy, out ex, out ey);
-                double curDist = DistanceToSegment(realX, realY, sx, sy, ex, ey);
-                if (curDist <= distance)
+                double curDistSq = DistanceToSegmentSq(realX, realY, sx, sy, ex, ey);
+                if (curDistSq <= distanceSq)
                 {
                     closestEdge = i;
-                    secondDistance = distance;
-                    distance = curDist;
+                    secondDistanceSq = distanceSq;
+                    distanceSq = curDistSq;
                 }
-                else if (curDist <= secondDistance)
+                else if (curDistSq <= secondDistanceSq)
                 {
-                    secondDistance = curDist;
+                    secondDistanceSq = curDistSq;
                 }
             }
             if (showCellColors)
@@ -486,21 +425,21 @@ namespace LoopDeLoop
                     cy /= Mesh.Cells[i].Intersections.Count;
                     double distx = cx - realX;
                     double disty = cy - realY;
-                    double curDist = Math.Sqrt(distx * distx + disty * disty);
-                    if (curDist <= distance)
+                    double curDistSq = distx * distx + disty * disty;
+                    if (curDistSq <= distanceSq)
                     {
                         closestEdge = -1;
                         closestCell = i;
-                        secondDistance = distance;
-                        distance = curDist;
+                        secondDistanceSq = distanceSq;
+                        distanceSq = curDistSq;
                     }
-                    else if (curDist <= secondDistance)
+                    else if (curDistSq <= secondDistanceSq)
                     {
-                        secondDistance = curDist;
+                        secondDistanceSq = curDistSq;
                     }
                 }
             }
-            if (distance+minSep > secondDistance)
+            if (distanceSq + 2*minSep*Math.Sqrt(distanceSq) + minSep*minSep > secondDistanceSq)
             {
                 closestEdge = -1;
                 closestCell = -1;
@@ -597,12 +536,28 @@ namespace LoopDeLoop
                         lastState = Mesh.Edges[closestEdge].State;
                     }
                     bool satisified = true;
+                    bool nonempty = false;
                     for (int i = 0; i < Mesh.Cells.Count; i++)
                     {
+                        if (Mesh.Cells[i].TargetCount >= 0) nonempty = true;
                         if (Mesh.Cells[i].TargetCount >= 0 && Mesh.Cells[i].FilledCount != Mesh.Cells[i].TargetCount)
+                        {
                             satisified = false;
+                            break;
+                        }
                     }
-                    if (satisified)
+                    if (satisified && nonempty)
+                    {
+                        for (int i = 0; i < Mesh.Intersections.Count; i++)
+                        {
+                            if (Mesh.Intersections[i].FilledCount != 2 && Mesh.Intersections[i].FilledCount != 0)
+                            {
+                                satisified = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (satisified && nonempty)
                     {
                         Mesh copy = new Mesh(Mesh);
                         try
@@ -628,7 +583,7 @@ namespace LoopDeLoop
                                     failed = true;
                                 }
                             }
-                            if (!failed) 
+                            if (!failed)
                             {
                                 bool done = true;
                                 for (int i = 0; i < Mesh.Edges.Count; i++)
@@ -645,13 +600,13 @@ namespace LoopDeLoop
                                 {
                                     FixPosition();
                                     copy.FullClear();
-                                    ThreadPool.QueueUserWorkItem(new WaitCallback(delegate(object o) { GenerateNew(copy); }));
                                 }
                             }
                         }
                         catch
                         {
                         }
+                        
                     }
                 }
                 UpdateChildControls();
@@ -664,36 +619,6 @@ namespace LoopDeLoop
                 undoTree.Do(action);
                 UpdateChildControls();
             }
-        }
-
-        public event EventHandler<ProgressEventArgs> Generation;
-
-        private int currentPruned = 0;
-        private int targetPruned = 0;
-        private void GenerateNew(Mesh copy)
-        {
-            targetPruned = copy.Cells.Count;
-            currentPruned = 0;
-            OnGenerate(new ProgressEventArgs(currentPruned, targetPruned));
-            copy.PrunedCountProgress += new EventHandler(copy_PrunedCountProgress);
-            copy.Generate();
-            OnGenerate(new ProgressEventArgs(targetPruned, targetPruned));
-            this.Dispatcher.BeginInvoke(delegate()
-            {
-                this.Mesh = copy;
-            });
-        }
-
-        private void OnGenerate(ProgressEventArgs progressEventArgs)
-        {
-            if (Generation != null)
-                Generation(this, progressEventArgs);
-        }
-
-        void copy_PrunedCountProgress(object sender, EventArgs e)
-        {
-            currentPruned++;
-            OnGenerate(new ProgressEventArgs(currentPruned, targetPruned));
         }
 
         internal List<int> FixPositionInternal(bool fix, out object lastMark)
@@ -759,12 +684,12 @@ namespace LoopDeLoop
 
     class FixAction : IAction
     {
-        public FixAction(LoopDisplaySilverlight display, bool fix)
+        public FixAction(LoopDisplay display, bool fix)
         {
             this.display = display;
             this.fix = fix;
         }
-        LoopDisplaySilverlight display;
+        LoopDisplay display;
         bool fix = true;
         List<int> prevMarked;
         object prevMarkPos;
@@ -1003,7 +928,7 @@ namespace LoopDeLoop
                 string clickName = string.Empty;
                 if (!buttons)
                     clickName = "Left Click";
-                else 
+                else
                     clickName = "Right Click";
                 return clickName + " Cell: " + cellIndex.ToString();
             }

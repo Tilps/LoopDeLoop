@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+#if !BRIDGE
 using System.IO;
+#endif
 using System.Diagnostics;
 using System.Linq;
 
@@ -146,9 +148,9 @@ namespace LoopDeLoop
         SquareSymmetrical,
     }
 
-    #region ApproxPointStorage class to help with constructing grids.
+#region ApproxPointStorage class to help with constructing grids.
     // Silverlight doesn't support SortedDictionary, so we have to use a different hack.
-#if SILVERLIGHT
+#if SILVERLIGHT || BRIDGE
 
     public class ApproxPointStorage
     {
@@ -193,6 +195,8 @@ namespace LoopDeLoop
 
             private float Round(float coord)
             {
+                // Add an offset to encourage points to be away from eps multiples where this algorithm breaks.
+                coord += (float)(Math.PI*Math.E);
                 return coord - (coord % eps);
             }
 
@@ -248,7 +252,7 @@ namespace LoopDeLoop
                 this.eps = eps;
             }
             float eps;
-    #region IComparer<float> Members
+#region IComparer<float> Members
 
             public int Compare(Point a, Point b)
             {
@@ -263,11 +267,11 @@ namespace LoopDeLoop
                     return a.X.CompareTo(b.X);
             }
 
-            #endregion
+#endregion
         }
     }
 #endif
-    #endregion
+#endregion
 
     public delegate void MeshChangeUpdateEventHandler(object sender, MeshChangeUpdateEventArgs args);
 
@@ -337,7 +341,7 @@ namespace LoopDeLoop
             this.useEdgeRestricts = other.useEdgeRestricts;
         }
 
-        #region Mesh Construction using known prototype.
+#region Mesh Construction using known prototype.
         public Mesh(int width, int height, MeshType type)
         {
             meshType = type;
@@ -674,9 +678,9 @@ namespace LoopDeLoop
             }
             FullClear();
         }
-        #endregion
+#endregion
 
-        #region Mesh construction helpers.
+#region Mesh construction helpers.
 
         private void AddPolyBoundry(List<int> intersects)
         {
@@ -863,7 +867,7 @@ namespace LoopDeLoop
 
         }
 
-        #endregion
+#endregion
 
         public event MeshChangeUpdateEventHandler MeshChangeUpdate;
 
@@ -2150,12 +2154,14 @@ namespace LoopDeLoop
                 else
                     return RecursiveTrySolve(noRollback);
             }
+#if !BRIDGE
             catch (System.Threading.ThreadAbortException ex)
             {
                 // We're screwed, no point trying to rollback changes.
                 edgeChanges.Clear();
                 return SolveState.NoSolutions;
             }
+#endif
             finally
             {
                 considerIntersectCellInteractsAsSimple = oldInteracts;
@@ -2243,12 +2249,14 @@ namespace LoopDeLoop
                 List<IAction> realTrials = trials.Where(action=>!IsPointlessTrial(action)).ToList();
                 return RecursiveTrySolveInternal(realTrials, 0);
             }
+#if !BRIDGE
             catch (System.Threading.ThreadAbortException ex)
             {
                 // We're screwed, no point trying to rollback changes.
                 realChanges.Clear();
                 return SolveState.NoSolutions;
             }
+#endif
             finally
             {
                 iterativeSolverDepth = backupDepth;
@@ -2346,12 +2354,14 @@ namespace LoopDeLoop
                 percentSolved = (double)count / (double)edges.Count;
                 return res;
             }
+#if !BRIDGE
             catch (System.Threading.ThreadAbortException ex)
             {
                 // We're screwed anyway, no point trying to undo the changes.
                 realChanges.Clear();
                 return SolveState.NoSolutions;
             }
+#endif
             finally
             {
                 if (!noRollback)
@@ -6361,6 +6371,7 @@ namespace LoopDeLoop
             return true;
         }
 
+#if !BRIDGE
 
         public void Save(TextWriter writer)
         {
@@ -6434,7 +6445,80 @@ namespace LoopDeLoop
                         writer.WriteLine(edgePairRestrictions[i, j].ToString());
                     }
         }
-
+#else
+        public void Save(StringBuilder writer)
+        {
+            writer.AppendLine(MeshType.ToString());
+            writer.AppendLine("Intersections");
+            writer.AppendLine(Intersections.Count.ToString());
+            foreach (Intersection inters in Intersections)
+            {
+                writer.Append(inters.X);
+                writer.Append(" ");
+                writer.Append(inters.Y);
+                writer.AppendLine();
+            }
+            writer.AppendLine("Edges");
+            writer.AppendLine(Edges.Count.ToString());
+            foreach (Edge edge in Edges)
+            {
+                writer.Append(edge.Intersections[0]);
+                writer.Append(" ");
+                writer.Append(edge.Intersections[1]);
+                writer.Append(" ");
+                writer.AppendLine(edge.State.ToString());
+            }
+            writer.AppendLine("Cells");
+            writer.AppendLine(Cells.Count.ToString());
+            foreach (Cell cell in Cells)
+            {
+                writer.AppendLine(cell.TargetCount.ToString());
+            }
+            writer.AppendLine("EdgeColorSets");
+            writer.AppendLine(colorSets.Count.ToString());
+            foreach (List<int> colorSet in colorSets)
+            {
+                writer.AppendLine("EdgeColorSet");
+                writer.AppendLine(colorSet.Count.ToString());
+                foreach (int edge in colorSet)
+                {
+                    writer.Append(edge);
+                    writer.Append(" ");
+                    writer.AppendLine(edges[edge].Color.ToString());
+                }
+            }
+            writer.AppendLine("CellColorSets");
+            writer.AppendLine(cellColorSets.Count.ToString());
+            foreach (List<int> colorSet in cellColorSets)
+            {
+                writer.AppendLine("CellColorSet");
+                writer.AppendLine(colorSet.Count.ToString());
+                foreach (int cell in colorSet)
+                {
+                    writer.Append(cell);
+                    writer.Append(" ");
+                    writer.AppendLine(cells[cell].Color.ToString());
+                }
+            }
+            writer.AppendLine("EdgePairRestrictions");
+            int counter = 0;
+            for (int i = 0; i < edges.Count; i++)
+            for (int j = i + 1; j < edges.Count; j++)
+                if (edgePairRestrictions[i, j] != EdgePairRestriction.None)
+                    counter++;
+            writer.AppendLine(counter.ToString());
+            for (int i = 0; i < edges.Count; i++)
+            for (int j = i + 1; j < edges.Count; j++)
+                if (edgePairRestrictions[i, j] != EdgePairRestriction.None)
+                {
+                    writer.Append(i);
+                    writer.Append(" ");
+                    writer.Append(j);
+                    writer.Append(" ");
+                    writer.AppendLine(edgePairRestrictions[i, j].ToString());
+                }
+        }
+#endif
 
         internal bool PerformSetZero(int edgeIndex, EdgeState state, List<int[]> edgeSetChanges)
         {
@@ -7006,7 +7090,7 @@ namespace LoopDeLoop
         }
         private bool successful;
 
-        #region IAction Members
+#region IAction Members
 
         public string Name
         {
@@ -7029,9 +7113,9 @@ namespace LoopDeLoop
             mesh.UnperformSetZero(edge, newState, edgeSetChanges);
         }
 
-        #endregion
+#endregion
 
-        #region IEquatable<IAction> Members
+#region IEquatable<IAction> Members
 
         public bool Equals(IAction other)
         {
@@ -7042,7 +7126,7 @@ namespace LoopDeLoop
                 return otherAction.newState == this.newState && otherAction.mesh == this.mesh && otherAction.edge == this.edge;
         }
 
-        #endregion
+#endregion
 
         public override int GetHashCode()
         {
@@ -7088,7 +7172,7 @@ namespace LoopDeLoop
         }
         private bool successful;
 
-        #region IAction Members
+#region IAction Members
 
         public string Name
         {
@@ -7111,9 +7195,9 @@ namespace LoopDeLoop
             mesh.UnperformUnsetZero(edge, oldState, edgeSetChanges);
         }
 
-        #endregion
+#endregion
 
-        #region IEquatable<IAction> Members
+#region IEquatable<IAction> Members
 
         public bool Equals(IAction other)
         {
@@ -7124,7 +7208,7 @@ namespace LoopDeLoop
                 return otherAction.mesh == this.mesh && otherAction.edge == this.edge;
         }
 
-        #endregion
+#endregion
 
         public override int GetHashCode()
         {
@@ -7208,7 +7292,7 @@ namespace LoopDeLoop
         }
         private bool wasteOfTime;
 
-        #region IAction Members
+#region IAction Members
 
         public string Name
         {
@@ -7231,9 +7315,9 @@ namespace LoopDeLoop
             mesh.UnjoinColor(colorSetChanges);
         }
 
-        #endregion
+#endregion
 
-        #region IEquatable<IAction> Members
+#region IEquatable<IAction> Members
 
         public bool Equals(IAction other)
         {
@@ -7244,7 +7328,7 @@ namespace LoopDeLoop
                 return otherAction.mesh == this.mesh && otherAction.edge1 == this.edge1 && otherAction.edge2 == this.edge2 && otherAction.same == this.same;
         }
 
-        #endregion
+#endregion
 
         public override int GetHashCode()
         {
@@ -7333,7 +7417,7 @@ namespace LoopDeLoop
         }
         private bool wasteOfTime;
 
-        #region IAction Members
+#region IAction Members
 
         public string Name
         {
@@ -7356,9 +7440,9 @@ namespace LoopDeLoop
             mesh.UnjoinCellColor(colorSetChanges);
         }
 
-        #endregion
+#endregion
 
-        #region IEquatable<IAction> Members
+#region IEquatable<IAction> Members
 
         public bool Equals(IAction other)
         {
@@ -7369,7 +7453,7 @@ namespace LoopDeLoop
                 return otherAction.mesh == this.mesh && otherAction.cell1 == this.cell1 && otherAction.cell2 == this.cell2 && otherAction.same == this.same;
         }
 
-        #endregion
+#endregion
 
         public override int GetHashCode()
         {
@@ -7416,7 +7500,7 @@ namespace LoopDeLoop
         }
         private bool successful;
 
-        #region IAction Members
+#region IAction Members
 
         public string Name
         {
@@ -7439,9 +7523,9 @@ namespace LoopDeLoop
             mesh.ResetCellColor(cell1, oldColor, oldSetPos);
         }
 
-        #endregion
+#endregion
 
-        #region IEquatable<IAction> Members
+#region IEquatable<IAction> Members
 
         public bool Equals(IAction other)
         {
@@ -7452,7 +7536,7 @@ namespace LoopDeLoop
                 return otherAction.mesh == this.mesh && otherAction.cell1 == this.cell1;
         }
 
-        #endregion
+#endregion
 
         public override int GetHashCode()
         {
@@ -7538,7 +7622,7 @@ namespace LoopDeLoop
         }
         private bool wasteOfTime;
 
-        #region IAction Members
+#region IAction Members
 
         public string Name
         {
@@ -7561,9 +7645,9 @@ namespace LoopDeLoop
                 mesh.UnRestrictEdges(edge1, edge2);
         }
 
-        #endregion
+#endregion
 
-        #region IEquatable<IAction> Members
+#region IEquatable<IAction> Members
 
         public bool Equals(IAction other)
         {
@@ -7574,7 +7658,7 @@ namespace LoopDeLoop
                 return otherAction.mesh == this.mesh && otherAction.edge1 == this.edge1 && otherAction.edge2 == this.edge2 && otherAction.state == this.state;
         }
 
-        #endregion
+#endregion
 
         public override int GetHashCode()
         {
@@ -7610,7 +7694,7 @@ namespace LoopDeLoop
 
     public class ActionSorter : IComparer<IAction>
     {
-        #region IComparer<IAction> Members
+#region IComparer<IAction> Members
 
         public int Compare(IAction x, IAction y)
         {
@@ -7665,7 +7749,7 @@ namespace LoopDeLoop
             throw new NotSupportedException("ActionSorter doesn't support the provided action type.");
         }
 
-        #endregion
+#endregion
     }
 
     public class Chain

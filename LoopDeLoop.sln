@@ -1,13 +1,13 @@
 ﻿
-Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2010
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.26430.13
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LoopDeLoop", "LoopDeLoop\LoopDeLoop.csproj", "{E033ED0F-7F8A-4603-A530-74E2E179BD19}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{46A15D1A-0E37-4CF0-AFA8-8160EE8B11AE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LoopDeLoopSilverlight", "LoopDeLoopSilverlight\LoopDeLoopSilverlight.csproj", "{61070F18-4856-4391-BB1C-64463E2CC4FE}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LoopDeLoopSilverlight.Web", "LoopDeLoopSilverlight.Web\LoopDeLoopSilverlight.Web.csproj", "{AB3B7D2B-82BC-424E-97FD-C7AEC2DD8D9C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LoopDeLoopBridge", "LoopDeLoopBridge\LoopDeLoopBridge.csproj", "{D2ABE299-50F2-4A3B-A8E7-2EB68525744C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -19,14 +19,10 @@ Global
 		{E033ED0F-7F8A-4603-A530-74E2E179BD19}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E033ED0F-7F8A-4603-A530-74E2E179BD19}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E033ED0F-7F8A-4603-A530-74E2E179BD19}.Release|Any CPU.Build.0 = Release|Any CPU
-		{61070F18-4856-4391-BB1C-64463E2CC4FE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{61070F18-4856-4391-BB1C-64463E2CC4FE}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{61070F18-4856-4391-BB1C-64463E2CC4FE}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{61070F18-4856-4391-BB1C-64463E2CC4FE}.Release|Any CPU.Build.0 = Release|Any CPU
-		{AB3B7D2B-82BC-424E-97FD-C7AEC2DD8D9C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{AB3B7D2B-82BC-424E-97FD-C7AEC2DD8D9C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{AB3B7D2B-82BC-424E-97FD-C7AEC2DD8D9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{AB3B7D2B-82BC-424E-97FD-C7AEC2DD8D9C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D2ABE299-50F2-4A3B-A8E7-2EB68525744C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D2ABE299-50F2-4A3B-A8E7-2EB68525744C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D2ABE299-50F2-4A3B-A8E7-2EB68525744C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D2ABE299-50F2-4A3B-A8E7-2EB68525744C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
