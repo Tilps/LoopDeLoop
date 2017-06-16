@@ -2779,6 +2779,94 @@ namespace LoopDeLoop
             return true;
         }
 
+        public bool PerformBasicTrial(IAction trial, List<IAction> edgeChanges1, List<IAction> edgeChanges2, List<IAction> realChanges, out bool success1, out bool success2)
+        {
+            success1 = Perform(trial, edgeChanges1, iterativeSolverDepth);
+            if (success1)
+            {
+                // if testconnect 
+                if (!CheckConnectable())
+                {
+                    success1 = false;
+                }
+            }
+            Unperform(edgeChanges1);
+            success2 = Perform(GetOppositeAction(trial), edgeChanges2, iterativeSolverDepth);
+            if (success2)
+            {
+                // if testconnect 
+                if (!CheckConnectable())
+                {
+                    success2 = false;
+                }
+            }
+            Unperform(edgeChanges2);
+            if (!success1 && !success2)
+                return false;
+            else if (success1 && success2)
+            {
+                List<IAction> merged = new List<IAction>();
+                if (UseColoring && UseDerivedColoring)
+                {
+                    merged.AddRange(DeriveColoring(edgeChanges1, edgeChanges2));
+                }
+                // TODO: consider derived edge restrictions, although I think merging is probably sufficient.
+                if (useMerging)
+                {
+                    merged.AddRange(MergeChanges(edgeChanges1, edgeChanges2));
+                }
+                if (merged.Count > 0)
+                {
+                    bool colorCheatBackup = coloringCheats;
+                    try
+                    {
+                        coloringCheats = true;
+                        topLevel = true;
+                        if (!Perform(merged, realChanges, true))
+                            return false;
+                    }
+                    finally
+                    {
+                        coloringCheats = colorCheatBackup;
+                        topLevel = false;
+                    }
+                }
+            }
+            else if (success1)
+            {
+                bool colorCheatBackup = coloringCheats;
+                try
+                {
+                    coloringCheats = true;
+                    topLevel = true;
+                    if (!Perform(edgeChanges1, realChanges, true))
+                        return false;
+                }
+                finally
+                {
+                    coloringCheats = colorCheatBackup;
+                    topLevel = false;
+                }
+            }
+            else
+            {
+                bool colorCheatBackup = coloringCheats;
+                try
+                {
+                    coloringCheats = true;
+                    topLevel = true;
+                    if (!Perform(edgeChanges2, realChanges, true))
+                        return false;
+                }
+                finally
+                {
+                    coloringCheats = colorCheatBackup;
+                    topLevel = false;
+                }
+            }
+            return true;
+        }
+
         DisjointTracker[] smallTrackerPool = new DisjointTracker[10];
 
         private bool CheckConnectable()
@@ -2929,7 +3017,7 @@ namespace LoopDeLoop
             throw new InvalidOperationException("Cannot flip an empty edge.");
         }
 
-        private bool IsPointlessTrial(IAction iAction)
+        public bool IsPointlessTrial(IAction iAction)
         {
             if (iAction is SetAction)
             {
@@ -3122,7 +3210,7 @@ namespace LoopDeLoop
             return minDist;
         }
 
-        private bool PerformEndIfPossible(List<IAction> realChanges)
+        public bool PerformEndIfPossible(List<IAction> realChanges)
         {
             bool changed = false;
             if (satisifiedCount == numberOfNumbers && satisifiedIntersCount == intersections.Count)
