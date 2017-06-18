@@ -5376,8 +5376,8 @@ namespace LoopDeLoop
                 int[] edgeNumber = smallEdgeNumberArrays[edgeCount];
                 int maxExistColor = 0;
                 int counter = 0;
-                List<KeyValuePair<int, List<int>>> targets = new List<KeyValuePair<int, List<int>>>();
-                int inters1Indexes = 0;
+                List<KeyValuePair<uint, List<int>>> targets = new List<KeyValuePair<uint, List<int>>>();
+                uint inters1Indexes = 0;
                 foreach (int edgeIndex in inters1.Edges)
                 {
                     edgeNumber[counter] = edgeIndex;
@@ -5390,17 +5390,17 @@ namespace LoopDeLoop
                         if (colorNum > maxExistColor)
                             maxExistColor = colorNum;
                     }
-                    inters1Indexes |= 1 << counter;
+                    inters1Indexes |= 1u << counter;
                     counter++;
                 }
-                targets.Add(new KeyValuePair<int, List<int>>(inters1Indexes, intersTargets));
-                int inters2Indexes = 0;
+                targets.Add(new KeyValuePair<uint, List<int>>(inters1Indexes, intersTargets));
+                uint inters2Indexes = 0;
                 foreach (int edgeIndex in inters2.Edges)
                 {
                     Edge e2 = edges[edgeIndex];
                     if (e2 == edge)
                     {
-                        inters2Indexes |= 1 << Array.IndexOf(edgeNumber, edgeIndex, 0, counter);
+                        inters2Indexes |= 1u << Array.IndexOf(edgeNumber, edgeIndex, 0, counter);
                         continue;
                     }
                     edgeNumber[counter] = edgeIndex;
@@ -5413,11 +5413,11 @@ namespace LoopDeLoop
                         if (colorNum > maxExistColor)
                             maxExistColor = colorNum;
                     }
-                    inters2Indexes |= 1 << counter;
+                    inters2Indexes |= 1u << counter;
                     counter++;
                 }
-                targets.Add(new KeyValuePair<int, List<int>>(inters2Indexes, intersTargets));
-                int cell1Indexes = 0;
+                targets.Add(new KeyValuePair<uint, List<int>>(inters2Indexes, intersTargets));
+                uint cell1Indexes = 0;
                 foreach (int edgeIndex in cell1.Edges)
                 {
                     Edge e2 = edges[edgeIndex];
@@ -5426,7 +5426,7 @@ namespace LoopDeLoop
                         e2.Intersections[1] == edge.Intersections[0] ||
                         e2.Intersections[1] == edge.Intersections[1])
                     {
-                        cell1Indexes |= 1 << Array.IndexOf(edgeNumber, edgeIndex, 0, counter);
+                        cell1Indexes |= 1u << Array.IndexOf(edgeNumber, edgeIndex, 0, counter);
                         continue;
                     }
                     edgeNumber[counter] = edgeIndex;
@@ -5439,7 +5439,7 @@ namespace LoopDeLoop
                         if (colorNum > maxExistColor)
                             maxExistColor = colorNum;
                     }
-                    cell1Indexes |= 1 << counter;
+                    cell1Indexes |= 1u << counter;
                     counter++;
                 }
                 if (cell1.TargetCount >= 0)
@@ -5451,11 +5451,11 @@ namespace LoopDeLoop
                             smallSingleValueLists.Add(new List<int> { i });
                         }
                     }
-                    targets.Add(new KeyValuePair<int, List<int>>(cell1Indexes, smallSingleValueLists[cell1.TargetCount]));
+                    targets.Add(new KeyValuePair<uint, List<int>>(cell1Indexes, smallSingleValueLists[cell1.TargetCount]));
                 }
                 if (cell2 != null)
                 {
-                    int cell2Indexes = 0;
+                    uint cell2Indexes = 0;
                     foreach (int edgeIndex in cell2.Edges)
                     {
                         Edge e2 = edges[edgeIndex];
@@ -5464,7 +5464,7 @@ namespace LoopDeLoop
                             e2.Intersections[1] == edge.Intersections[0] ||
                             e2.Intersections[1] == edge.Intersections[1])
                         {
-                            cell2Indexes |= 1 << Array.IndexOf(edgeNumber, edgeIndex, 0, counter);
+                            cell2Indexes |= 1u << Array.IndexOf(edgeNumber, edgeIndex, 0, counter);
                             continue;
                         }
                         edgeNumber[counter] = edgeIndex;
@@ -5477,7 +5477,7 @@ namespace LoopDeLoop
                             if (colorNum > maxExistColor)
                                 maxExistColor = colorNum;
                         }
-                        cell2Indexes |= 1 << counter;
+                        cell2Indexes |= 1u << counter;
                         counter++;
                     }
                     if (cell2.TargetCount >= 0)
@@ -5489,7 +5489,7 @@ namespace LoopDeLoop
                                 smallSingleValueLists.Add(new List<int> { i });
                             }
                         }
-                        targets.Add(new KeyValuePair<int, List<int>>(cell2Indexes, smallSingleValueLists[cell2.TargetCount]));
+                        targets.Add(new KeyValuePair<uint, List<int>>(cell2Indexes, smallSingleValueLists[cell2.TargetCount]));
                     }
                 }
                 for (int i = 0; i < numbering.Length; i++)
@@ -5508,7 +5508,7 @@ namespace LoopDeLoop
 
         private bool GatherFromColoringOptions(List<IAction>[] moves, int curDepth, EdgeState[] edgesSeen, int[] numberingFull, int[] edgeNumber, List<int> targets_in, TriState[,] edgePairsSeen, EdgePairRestriction[,] edgeRestrictsSeen)
         {
-            List<KeyValuePair<int, List<int>>> targets = new List<KeyValuePair<int, List<int>>> { new KeyValuePair<int, List<int>>((1 << numberingFull.Length) - 1, targets_in) };
+            List<KeyValuePair<uint, List<int>>> targets = new List<KeyValuePair<uint, List<int>>> { new KeyValuePair<uint, List<int>>((1u << numberingFull.Length) - 1, targets_in) };
             return GatherFromAdvancedOptions(moves, curDepth, edgesSeen, numberingFull, edgeNumber, targets, edgePairsSeen, edgeRestrictsSeen);
         }
 
@@ -5582,7 +5582,7 @@ namespace LoopDeLoop
             return map;
         }
 
-        private bool GatherFromAdvancedOptions(List<IAction>[] moves, int curDepth, EdgeState[] edgesSeen, int[] numberingFull, int[] edgeNumber, List<KeyValuePair<int, List<int>>> targets, TriState[,] edgePairsSeen, EdgePairRestriction[,] edgeRestrictsSeen)
+        private bool GatherFromAdvancedOptions(List<IAction>[] moves, int curDepth, EdgeState[] edgesSeen, int[] numberingFull, int[] edgeNumber, List<KeyValuePair<uint, List<int>>> targets, TriState[,] edgePairsSeen, EdgePairRestriction[,] edgeRestrictsSeen)
         {
             int[] baseLine = new int[targets.Count];
             int[] numberingCleared = new int[numberingFull.Length];
@@ -5682,7 +5682,7 @@ namespace LoopDeLoop
 
         private struct PatternLookup
         {
-            public List<KeyValuePair<int, List<int>>> targets; 
+            public List<KeyValuePair<uint, List<int>>> targets; 
             public int[] baseLine; 
             public int curNumber; 
             public int[] numbering;
@@ -5734,8 +5734,8 @@ namespace LoopDeLoop
                     return false;
                 for (int i = 0; i < targets.Count; i++)
                 {
-                    KeyValuePair<int, List<int>> entry = targets[i];
-                    KeyValuePair<int, List<int>> otherEntry = other.targets[i];
+                    KeyValuePair<uint, List<int>> entry = targets[i];
+                    KeyValuePair<uint, List<int>> otherEntry = other.targets[i];
 
                     if (otherEntry.Key != entry.Key)
                         return false;
@@ -5776,7 +5776,7 @@ namespace LoopDeLoop
         Dictionary<PatternLookup, List<int[]>> patternLookup = new Dictionary<PatternLookup, List<int[]>>();
         List<uint> emptyList = new List<uint>();
 
-        private List<int[]> RetrieveActions(List<KeyValuePair<int, List<int>>> targets, int[] baseLine, int curNumber, int[] numbering)
+        private List<int[]> RetrieveActions(List<KeyValuePair<uint, List<int>>> targets, int[] baseLine, int curNumber, int[] numbering)
         {
             List<int[]> result;
             PatternLookup key;
@@ -5802,10 +5802,10 @@ namespace LoopDeLoop
                 int[] countsAgainst = new int[targets.Count * curNumber];
                 for (int j = 0; j < targets.Count; j++)
                 {
-                    int checkPattern = targets[j].Key;
+                    uint checkPattern = targets[j].Key;
                     for (int i = 0; i < numbering.Length; i++)
                     {
-                        if ((checkPattern & (1u << i)) != 0)
+                        if ((checkPattern & (1u << i)) != 0u)
                         {
                             if (numbering[i] > 0)
                                 countsFor[j * curNumber + numbering[i] - 1]++;
