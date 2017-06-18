@@ -10,7 +10,6 @@ using Newtonsoft.Json;
 
 namespace LoopDeLoopBridge
 {
-    [FileName("WorkerSpawn.js")]
     class WorkerSpawn
     {
         public static void WorkerSpawn_OnMessage(Worker.DataEvent dataEvent)
