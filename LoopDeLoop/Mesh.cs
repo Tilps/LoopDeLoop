@@ -5472,6 +5472,18 @@ namespace LoopDeLoop
         List<int> intersTargets = new List<int> { 0, 2 };
         List<List<int>> smallSingleValueLists = new List<List<int>>();
 
+        // Array.IndexOf has a bunch of logic which has to get optimized away - bridge.net instead has a generic implementation, so just implement the effective logic here.
+        // This should be strictly no worse, and possibly better.
+        private int IntArrayIndexOf(int[] array, int value, int start, int length)
+        {
+            int endExclusive = start + length;
+            for (int i = start; i < endExclusive; i++)
+            {
+                if (array[i] == value) return i;
+            }
+            return -1;
+        }
+
         private bool GatherCellPairForcedMoves(Edge edge, List<IAction>[] moves, int curDepth, EdgeState[] edgesSeen, TriState[,] edgePairsSeen, EdgePairRestriction[,] edgeRestrictsSeen)
         {
             if (UseCellPairs || (topLevel && UseCellPairsTopLevel))
@@ -5534,7 +5546,7 @@ namespace LoopDeLoop
                     Edge e2 = edges[edgeIndex];
                     if (e2 == edge)
                     {
-                        inters2Indexes |= 1u << Array.IndexOf(edgeNumber, edgeIndex, 0, counter);
+                        inters2Indexes |= 1u << IntArrayIndexOf(edgeNumber, edgeIndex, 0, counter);
                         continue;
                     }
                     edgeNumber[counter] = edgeIndex;
@@ -5561,7 +5573,7 @@ namespace LoopDeLoop
                         e2.Intersections[1] == edge.Intersections[0] ||
                         e2.Intersections[1] == edge.Intersections[1])
                     {
-                        cell1Indexes |= 1u << Array.IndexOf(edgeNumber, edgeIndex, 0, counter);
+                        cell1Indexes |= 1u << IntArrayIndexOf(edgeNumber, edgeIndex, 0, counter);
                         continue;
                     }
                     edgeNumber[counter] = edgeIndex;
@@ -5600,7 +5612,7 @@ namespace LoopDeLoop
                             e2.Intersections[1] == edge.Intersections[0] ||
                             e2.Intersections[1] == edge.Intersections[1])
                         {
-                            cell2Indexes |= 1u << Array.IndexOf(edgeNumber, edgeIndex, 0, counter);
+                            cell2Indexes |= 1u << IntArrayIndexOf(edgeNumber, edgeIndex, 0, counter);
                             continue;
                         }
                         edgeNumber[counter] = edgeIndex;
