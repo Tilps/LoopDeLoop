@@ -20,7 +20,8 @@
 
   // Delete everything from the output folder
   // Default is false
-  "cleanOutputFolderBeforeBuild": false
+    "cleanOutputFolderBeforeBuild": false,
+    "useTypedArrays":  true 
 
   // More config options available at
   // https://github.com/bridgedotnet/Bridge/wiki/global-configuration
