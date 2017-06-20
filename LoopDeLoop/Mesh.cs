@@ -6,6 +6,10 @@ using System.IO;
 #endif
 using System.Diagnostics;
 using System.Linq;
+#if BRIDGE
+using Bridge;
+using LoopDeLoopBridge;
+#endif
 
 namespace LoopDeLoop
 {
@@ -3734,11 +3738,11 @@ namespace LoopDeLoop
                         }
                     }
                 }
-                toConsiderEdges[curDepth].Sort();
-                toConsiderEdgeSets[curDepth].Sort();
-                toConsiderEdgeColors[curDepth].Sort();
-                toConsiderCellCounts[curDepth].Sort();
-                toConsiderCellColors[curDepth].Sort();
+                Sort(toConsiderEdges[curDepth]);
+                Sort(toConsiderEdgeSets[curDepth]);
+                Sort(toConsiderEdgeColors[curDepth]);
+                Sort(toConsiderCellCounts[curDepth]);
+                Sort(toConsiderCellColors[curDepth]);
 
                 if (!ConsiderEdges(moves, toConsiderEdges, curDepth, colorSetsSeen))
                     return false;
@@ -3755,6 +3759,30 @@ namespace LoopDeLoop
             return true;
         }
 
+#if BRIDGE
+        [Template("{array}.sort()")]
+        static void RawSort(int[] array) { }
+        void Sort(List<int> list)
+        {
+            int length = list.Count;
+            int[] array = new int[length];
+            for (int i = 0; i < length; i++)
+            {
+                array[i] = list[i];
+            }
+            RawSort(array);
+            for (int i = 0; i < length; i++)
+            {
+                list[i] = array[i];
+            }
+
+        }
+#else
+        void Sort(List<int> list)
+        {
+            list.Sort();
+        }
+#endif
         private void ClearCellPairs()
         {
             for (var index = 0; index < cellPairsToClean.Count; index++)
