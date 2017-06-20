@@ -2994,18 +2994,14 @@ namespace LoopDeLoop
                     }
                 }
             }
-            List<int> repsWithFilled = new List<int>();
+            int filledRep = -1;
             for (int i = 0; i < edges.Count; i++)
             {
                 if (edges[i].State == EdgeState.Filled)
                 {
                     int rep = tracker.GetRepresentative(i);
-                    if (!repsWithFilled.Contains(rep))
-                    {
-                        repsWithFilled.Add(rep);
-                        if (repsWithFilled.Count > 1)
-                            return false;
-                    }
+                    if (filledRep == -1) filledRep = rep;
+                    else if (rep != filledRep) return false;
                 }
             }
             return true;
