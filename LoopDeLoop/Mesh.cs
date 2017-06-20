@@ -930,11 +930,13 @@ namespace LoopDeLoop
                         {
                             Edge e = edges[next];
                             List<int> oneAway = new List<int>();
-                            foreach (int inters in e.Intersections)
+                            for (var index = 0; index < e.Intersections.Length; index++)
                             {
+                                int inters = e.Intersections[index];
                                 Intersection i = intersections[inters];
-                                foreach (int other in i.Edges)
+                                for (var index1 = 0; index1 < i.Edges.Count; index1++)
                                 {
+                                    int other = i.Edges[index1];
                                     if (other != next)
                                         oneAway.Add(other);
                                 }
@@ -944,8 +946,9 @@ namespace LoopDeLoop
                                 int toMe = edgeDistancesCache[next, i];
                                 if (toMe != int.MaxValue)
                                 {
-                                    foreach (int other in oneAway)
+                                    for (var index = 0; index < oneAway.Count; index++)
                                     {
+                                        int other = oneAway[index];
                                         if (edgeDistancesCache[other, i] > toMe + 1)
                                         {
                                             edgeDistancesCache[other, i] = edgeDistancesCache[i, other] = toMe + 1;
@@ -1377,9 +1380,12 @@ namespace LoopDeLoop
                     Perform(edgeIndex, EdgeState.Filled, backup, 0);
                     bool success = CreateLoop(rnd, start, start, edgeIntersIndex);
                     int count = 0;
-                    foreach (Edge edge in edges)
+                    for (var index = 0; index < edges.Count; index++)
+                    {
+                        Edge edge = edges[index];
                         if (edge.State == EdgeState.Filled)
                             count++;
+                    }
                     countSum += count;
                     tries++;
                     if (count < targetCount || RateBoringness() > GenerateBoringFraction)
@@ -1430,11 +1436,13 @@ namespace LoopDeLoop
                 if (e.State != EdgeState.Empty)
                     continue;
                 bool found = false;
-                foreach (int interIndex in e.Intersections)
+                for (var i = 0; i < e.Intersections.Length; i++)
                 {
+                    int interIndex = e.Intersections[i];
                     Intersection inter = intersections[interIndex];
-                    foreach (int edgeIndex in inter.Edges)
+                    for (var index1 = 0; index1 < inter.Edges.Count; index1++)
                     {
+                        int edgeIndex = inter.Edges[index1];
                         if (edges[edgeIndex].State != EdgeState.Empty)
                         {
                             found = true;
@@ -1499,11 +1507,13 @@ namespace LoopDeLoop
         {
             if (boringEdges == null)
                 RateBoringness();
-            foreach (int interIndex in cell.Intersections)
+            for (var index = 0; index < cell.Intersections.Count; index++)
             {
+                int interIndex = cell.Intersections[index];
                 Intersection inter = intersections[interIndex];
-                foreach (int edge in inter.Edges)
+                for (var i = 0; i < inter.Edges.Count; i++)
                 {
+                    int edge = inter.Edges[i];
                     if (boringEdges[edge])
                         return true;
                 }
@@ -1526,19 +1536,22 @@ namespace LoopDeLoop
 
         private bool GlancingTouch(Cell cell)
         {
-            foreach (int interIndex in cell.Intersections)
+            for (var index = 0; index < cell.Intersections.Count; index++)
             {
+                int interIndex = cell.Intersections[index];
                 Intersection inter = intersections[interIndex];
                 if (inter.FilledCount != 2)
                     continue;
                 bool found = false;
-                foreach (int edgeIndex in inter.Edges)
+                for (var i = 0; i < inter.Edges.Count; i++)
                 {
+                    int edgeIndex = inter.Edges[i];
                     Edge edge = edges[edgeIndex];
                     if (edge.State == EdgeState.Filled)
                     {
-                        foreach (int cellIndex in edge.Cells)
+                        for (var index1 = 0; index1 < edge.Cells.Count; index1++)
                         {
+                            int cellIndex = edge.Cells[index1];
                             if (cells[cellIndex] == cell)
                                 found = true;
                         }
@@ -1563,8 +1576,9 @@ namespace LoopDeLoop
             if (!IsExpandable(cell))
                 return 0;
             int oldCount = cell.FilledCount;
-            foreach (int edge in cell.Edges)
+            for (var index = 0; index < cell.Edges.Count; index++)
             {
+                int edge = cell.Edges[index];
                 if (edges[edge].State == EdgeState.Filled)
                 {
                     Perform(new UnsetAction(this, edge), new List<IAction>(), 0, null);
@@ -1577,13 +1591,15 @@ namespace LoopDeLoop
                     }
                     Perform(edge, EdgeState.Filled, new List<IAction>(), 0);
                     Edge e = edges[edge];
-                    foreach (int interIndex in e.Intersections)
+                    for (var i = 0; i < e.Intersections.Length; i++)
                     {
+                        int interIndex = e.Intersections[i];
                         Intersection inter = intersections[interIndex];
                         if (inter.FilledCount == 2)
                         {
-                            foreach (int edgeIndex in inter.Edges)
+                            for (var index1 = 0; index1 < inter.Edges.Count; index1++)
                             {
+                                int edgeIndex = inter.Edges[index1];
                                 Edge otherEdge = edges[edgeIndex];
                                 if (otherEdge.State == EdgeState.Empty)
                                 {
@@ -1654,8 +1670,9 @@ namespace LoopDeLoop
             Edge prevEdge = edges[prevInters.Edges[prevIntersEdge]];
             Intersection curInters = null;
             int curIntersIndex = -1;
-            foreach (int intersPos in prevEdge.Intersections)
+            for (var index = 0; index < prevEdge.Intersections.Length; index++)
             {
+                int intersPos = prevEdge.Intersections[index];
                 Intersection other = intersections[intersPos];
                 if (other != prevInters)
                 {
@@ -1693,8 +1710,9 @@ namespace LoopDeLoop
                 }
             }
             List<IAction> backup = new List<IAction>();
-            foreach (int availEdge in availEdges)
+            for (var index = 0; index < availEdges.Count; index++)
             {
+                int availEdge = availEdges[index];
                 backup.Clear();
                 int edgeIndex = curInters.Edges[availEdge];
                 Perform(edgeIndex, EdgeState.Filled, backup, 0);
@@ -1705,7 +1723,6 @@ namespace LoopDeLoop
                     Edge edge = edges[otherEdgeIndex];
                     if (edge.State == EdgeState.Empty)
                         Perform(otherEdgeIndex, EdgeState.Excluded, backup, 0);
-
                 }
                 if (!CreateLoop(rnd, start, curIntersIndex, availEdge))
                 {
@@ -1728,13 +1745,15 @@ namespace LoopDeLoop
             {
                 int index = newReached[i];
                 Intersection inters = intersections[index];
-                foreach (int edgeIndex in inters.Edges)
+                for (var index1 = 0; index1 < inters.Edges.Count; index1++)
                 {
+                    int edgeIndex = inters.Edges[index1];
                     Edge edge = edges[edgeIndex];
                     if (edge.State == EdgeState.Empty)
                     {
-                        foreach (int otherInters in edge.Intersections)
+                        for (var i1 = 0; i1 < edge.Intersections.Length; i1++)
                         {
+                            int otherInters = edge.Intersections[i1];
                             if (otherInters != index)
                             {
                                 if (!reached[otherInters])
@@ -1754,8 +1773,9 @@ namespace LoopDeLoop
 
         private void UpdateCounts()
         {
-            foreach (Cell cell in cells)
+            for (var index = 0; index < cells.Count; index++)
             {
+                Cell cell = cells[index];
                 AddTarget(cell, cell.FilledCount);
             }
         }
@@ -1763,8 +1783,9 @@ namespace LoopDeLoop
         public void FullClear()
         {
             Clear();
-            foreach (Cell cell in cells)
+            for (var index = 0; index < cells.Count; index++)
             {
+                Cell cell = cells[index];
                 RemoveTarget(cell);
             }
             successLookup.Clear();
@@ -1774,16 +1795,18 @@ namespace LoopDeLoop
         {
             satisifiedCount = 0;
             satisifiedIntersCount = intersections.Count;
-            foreach (Edge edge in edges)
+            for (var index = 0; index < edges.Count; index++)
             {
+                Edge edge = edges[index];
                 edge.State = EdgeState.Empty;
                 edge.Color = 0;
                 edge.EdgeSet = 0;
             }
             edgeSets.Clear();
             colorSets.Clear();
-            foreach (Cell cell in cells)
+            for (var index = 0; index < cells.Count; index++)
             {
+                Cell cell = cells[index];
                 cell.ExcludedCount = 0;
                 cell.FilledCount = 0;
                 cell.Color = 0;
@@ -1792,8 +1815,9 @@ namespace LoopDeLoop
             }
             cellColorSets.Clear();
             edgeChains.Clear();
-            foreach (Intersection inters in intersections)
+            for (var index = 0; index < intersections.Count; index++)
             {
+                Intersection inters = intersections[index];
                 inters.ExcludedCount = 0;
                 inters.FilledCount = 0;
             }
@@ -1895,8 +1919,9 @@ namespace LoopDeLoop
                     width = Cells.Count / height;
 
                 }
-                foreach (int trial in trials)
+                for (var index = 0; index < trials.Length; index++)
                 {
+                    int trial = trials[index];
                     if (AbortPrune)
                         break;
                     List<int> prot = CalcProtectedCells(cellsOfVariance, cellsOfDoubleVariance);
@@ -2052,8 +2077,9 @@ namespace LoopDeLoop
             UseMerging = false;
             int state = -1;
             string numAccumulator = string.Empty;
-            foreach (char c in code)
+            for (var index = 0; index < code.Length; index++)
             {
+                char c = code[index];
                 if (char.IsDigit(c) || (numAccumulator.Length == 0 && c == '-'))
                 {
                     numAccumulator += c;
@@ -2346,8 +2372,9 @@ namespace LoopDeLoop
             {
                 SolveState res = IterativeTrySolveWithoutRollback(realChanges);
                 int count = 0;
-                foreach (Edge edge in edges)
+                for (var index = 0; index < edges.Count; index++)
                 {
+                    Edge edge = edges[index];
                     if (edge.State == EdgeState.Empty)
                         count++;
                 }
@@ -2381,8 +2408,9 @@ namespace LoopDeLoop
             while (changed)
             {
                 count = 0;
-                foreach (Edge edge in edges)
+                for (var index = 0; index < edges.Count; index++)
                 {
+                    Edge edge = edges[index];
                     if (edge.State == EdgeState.Empty)
                         count++;
                 }
@@ -2548,23 +2576,27 @@ namespace LoopDeLoop
             // outside of the area, the entire area must be empty.  Thus the outside areas may be independent, but will seem connected via the airlock.
             // We may need a seperate pass to detect and fill those so as to allow this to be effective.
             List<int> result = new List<int>();
-            foreach (int cellIndex in edges[i].Cells)
+            for (var index = 0; index < edges[i].Cells.Count; index++)
             {
+                int cellIndex = edges[i].Cells[index];
                 if (cells[cellIndex].TargetCount >= 0)
                 {
                     // TODO: optimize based on antilock edges causing seperation.
-                    foreach (int e1 in cells[cellIndex].Edges)
+                    for (var index1 = 0; index1 < cells[cellIndex].Edges.Count; index1++)
                     {
+                        int e1 = cells[cellIndex].Edges[index1];
                         if (e1 != i && !result.Contains(e1))
                             result.Add(e1);
                     }
                 }
             }
-            foreach (int intersIndex in edges[i].Intersections)
+            for (var index = 0; index < edges[i].Intersections.Length; index++)
             {
-                // TODO: optimize based on antilock edges causing some edges to be irrelivent.
-                foreach (int e1 in intersections[intersIndex].Edges)
+                int intersIndex = edges[i].Intersections[index];
+// TODO: optimize based on antilock edges causing some edges to be irrelivent.
+                for (var index1 = 0; index1 < intersections[intersIndex].Edges.Count; index1++)
                 {
+                    int e1 = intersections[intersIndex].Edges[index1];
                     if (e1 != i && !result.Contains(e1))
                         result.Add(e1);
                 }
@@ -2899,8 +2931,9 @@ namespace LoopDeLoop
             // more expensive to implement than this implementation, more complicated, and it is questionable as to whether it will drive further logic improvements.
 
             DisjointTracker tracker = new DisjointTracker(edges.Count, true);
-            foreach (Intersection inters in intersections)
+            for (var index = 0; index < intersections.Count; index++)
             {
+                Intersection inters = intersections[index];
                 int edgeCount = inters.Edges.Count;
                 if (inters.FilledCount == 2)
                 {
@@ -3056,19 +3089,21 @@ namespace LoopDeLoop
             List<IAction> derived = new List<IAction>();
             EdgeState[] side1 = new EdgeState[edges.Count];
             EdgeState[] side2 = new EdgeState[edges.Count];
-            foreach (IAction change in edgeChanges1)
+            for (var index = 0; index < edgeChanges1.Count; index++)
             {
+                IAction change = edgeChanges1[index];
                 if (change is SetAction)
                 {
-                    SetAction sa = (SetAction)change;
+                    SetAction sa = (SetAction) change;
                     side1[sa.EdgeIndex] = sa.EdgeState;
                 }
             }
-            foreach (IAction change in edgeChanges2)
+            for (var index = 0; index < edgeChanges2.Count; index++)
             {
+                IAction change = edgeChanges2[index];
                 if (change is SetAction)
                 {
-                    SetAction sa = (SetAction)change;
+                    SetAction sa = (SetAction) change;
                     side2[sa.EdgeIndex] = sa.EdgeState;
                 }
             }
@@ -3088,31 +3123,36 @@ namespace LoopDeLoop
 
         private void GatherLocals(List<IAction> realChanges, List<IAction> trials, IAction locusAction)
         {
-            foreach (IAction action in realChanges)
+            for (var index = 0; index < realChanges.Count; index++)
             {
+                IAction action = realChanges[index];
                 if (action is SetAction)
                 {
-                    SetAction setAction = (SetAction)action;
-                    foreach (int edge in setAction.GetAffectedEdges())
+                    SetAction setAction = (SetAction) action;
+                    for (var i = 0; i < setAction.GetAffectedEdges().Count; i++)
                     {
+                        int edge = setAction.GetAffectedEdges()[i];
                         GatherNearEdge(trials, edge, locusAction, true);
                     }
                 }
                 else if (action is ColorJoinAction)
                 {
-                    ColorJoinAction cjAction = (ColorJoinAction)action;
-                    foreach (int edge in cjAction.GetAffectedEdges())
+                    ColorJoinAction cjAction = (ColorJoinAction) action;
+                    for (var i = 0; i < cjAction.GetAffectedEdges().Count; i++)
                     {
+                        int edge = cjAction.GetAffectedEdges()[i];
                         GatherNearEdge(trials, edge, locusAction, true);
                     }
                 }
                 else if (action is CellColorJoinAction)
                 {
-                    CellColorJoinAction ccjAction = (CellColorJoinAction)action;
-                    foreach (int cell in ccjAction.GetAffectedCells())
+                    CellColorJoinAction ccjAction = (CellColorJoinAction) action;
+                    for (var i = 0; i < ccjAction.GetAffectedCells().Count; i++)
                     {
-                        foreach (int edge in cells[cell].Edges)
+                        int cell = ccjAction.GetAffectedCells()[i];
+                        for (var index1 = 0; index1 < cells[cell].Edges.Count; index1++)
                         {
+                            int edge = cells[cell].Edges[index1];
                             GatherNearEdge(trials, edge, locusAction, false);
                         }
                     }
@@ -3127,35 +3167,40 @@ namespace LoopDeLoop
 
             // This gets the same edge upto 4 times, so uniquification is probably useful by the caller (faster then us doing it.)
             Edge e = edges[edge];
-            foreach (int i in intersections[e.Intersections[0]].Edges)
+            for (var index = 0; index < intersections[e.Intersections[0]].Edges.Count; index++)
             {
+                int i = intersections[e.Intersections[0]].Edges[index];
                 if (edges[i].State == EdgeState.Empty && GetEdgeDistance(i, locusAction) <= maxDist)
                     smarts.Add(new SetAction(this, i, EdgeState.Filled));
             }
-            foreach (int i in intersections[e.Intersections[1]].Edges)
+            for (var index = 0; index < intersections[e.Intersections[1]].Edges.Count; index++)
             {
+                int i = intersections[e.Intersections[1]].Edges[index];
                 if (edges[i].State == EdgeState.Empty && GetEdgeDistance(i, locusAction) <= maxDist)
                     smarts.Add(new SetAction(this, i, EdgeState.Filled));
             }
             if (useCellColoring && useCellColoringTrials)
             {
-                foreach (int i in e.Cells)
+                for (var index = 0; index < e.Cells.Count; index++)
                 {
+                    int i = e.Cells[index];
                     if (Math.Abs(cells[i].Color) != 1 && GetCellDistance(i, locusAction) <= maxDist)
                         smarts.Add(new CellColorJoinAction(this, i, -1, true));
                 }
             }
             if (followCells)
             {
-                foreach (int i in cells[e.Cells[0]].Edges)
+                for (var index = 0; index < cells[e.Cells[0]].Edges.Count; index++)
                 {
+                    int i = cells[e.Cells[0]].Edges[index];
                     if (edges[i].State == EdgeState.Empty && GetEdgeDistance(i, locusAction) <= maxDist)
                         smarts.Add(new SetAction(this, i, EdgeState.Filled));
                 }
                 if (e.Cells.Count > 1)
                 {
-                    foreach (int i in cells[e.Cells[1]].Edges)
+                    for (var index = 0; index < cells[e.Cells[1]].Edges.Count; index++)
                     {
+                        int i = cells[e.Cells[1]].Edges[index];
                         if (edges[i].State == EdgeState.Empty && GetEdgeDistance(i, locusAction) <= maxDist)
                             smarts.Add(new SetAction(this, i, EdgeState.Filled));
                     }
@@ -3226,8 +3271,9 @@ namespace LoopDeLoop
             if (satisifiedCount == numberOfNumbers && satisifiedIntersCount == intersections.Count)
             {
                 int edgeSetCount = 0;
-                foreach (List<int> edgeSet in edgeSets)
+                for (var index = 0; index < edgeSets.Count; index++)
                 {
+                    List<int> edgeSet = edgeSets[index];
                     if (edgeSet.Count > 0)
                         edgeSetCount++;
                 }
@@ -3253,33 +3299,35 @@ namespace LoopDeLoop
         }
         public bool PerformListNoRecurse(List<IAction> list)
         {
-            foreach (IAction action in list)
+            for (var index = 0; index < list.Count; index++)
             {
+                IAction action = list[index];
                 if (!action.Perform() || !action.Successful)
                     return false;
             }
             return true;
-
         }
         public void PerformListRegardless(List<IAction> list)
         {
-            foreach (IAction action in list)
+            for (var index = 0; index < list.Count; index++)
             {
+                IAction action = list[index];
                 action.Perform();
             }
-
         }
         private bool Perform(List<IAction> list, List<IAction> realChanges, bool useFullPower)
         {
-            foreach (IAction action in list)
+            for (var index = 0; index < list.Count; index++)
             {
+                IAction action = list[index];
                 if (action is SetAction)
                 {
-                    SetAction act = (SetAction)action;
+                    SetAction act = (SetAction) action;
                     Edge edge = edges[act.EdgeIndex];
                     if (edge.State == EdgeState.Empty)
                     {
-                        if (!Perform(act.EdgeIndex, act.EdgeState, realChanges, useFullPower ? int.MaxValue : iterativeSolverDepth))
+                        if (!Perform(act.EdgeIndex, act.EdgeState, realChanges,
+                            useFullPower ? int.MaxValue : iterativeSolverDepth))
                             return false;
                     }
                     else if (edge.State != act.EdgeState)
@@ -3291,7 +3339,7 @@ namespace LoopDeLoop
                         return false;
                     if (!action.Successful)
                         return false;
-                    if (!((ColorJoinAction)action).WasteOfTime)
+                    if (!((ColorJoinAction) action).WasteOfTime)
                         realChanges.Add(action);
                 }
                 else if (action is CellColorJoinAction)
@@ -3300,7 +3348,7 @@ namespace LoopDeLoop
                         return false;
                     if (!action.Successful)
                         return false;
-                    if (!((CellColorJoinAction)action).WasteOfTime)
+                    if (!((CellColorJoinAction) action).WasteOfTime)
                         realChanges.Add(action);
                 }
                 else if (action is EdgeRestrictionAction)
@@ -3309,7 +3357,7 @@ namespace LoopDeLoop
                         return false;
                     if (!action.Successful)
                         return false;
-                    if (!((EdgeRestrictionAction)action).WasteOfTime)
+                    if (!((EdgeRestrictionAction) action).WasteOfTime)
                         realChanges.Add(action);
                 }
                 else
@@ -3324,17 +3372,26 @@ namespace LoopDeLoop
             if (edgeChanges2.Count * edgeChanges1.Count > 1000)
             {
                 Dictionary<IAction, bool> lookup = new Dictionary<IAction, bool>();
-                foreach (IAction action in edgeChanges2)
+                for (var index = 0; index < edgeChanges2.Count; index++)
+                {
+                    IAction action = edgeChanges2[index];
                     lookup[action] = true;
-                foreach (IAction action in edgeChanges1)
+                }
+                for (var index = 0; index < edgeChanges1.Count; index++)
+                {
+                    IAction action = edgeChanges1[index];
                     if (lookup.ContainsKey(action))
                         res.Add(action);
+                }
             }
             else
             {
-                foreach (IAction action in edgeChanges1)
+                for (var index = 0; index < edgeChanges1.Count; index++)
+                {
+                    IAction action = edgeChanges1[index];
                     if (edgeChanges2.Contains(action))
                         res.Add(action);
+                }
             }
             return res;
         }
@@ -3606,8 +3663,10 @@ namespace LoopDeLoop
                     continue;
                 if (curDepth > deepestNonEmpty)
                     deepestNonEmpty = curDepth;
-                foreach (IAction move in moves[curDepth])
+                var curMoves = moves[curDepth];
+                for (var index = 0; index < curMoves.Count; index++)
                 {
+                    IAction move = curMoves[index];
                     if (!move.Perform())
                         return false;
                     if (superSlowMo)
@@ -3638,39 +3697,43 @@ namespace LoopDeLoop
                 Array.Clear(interactsSeen3, 0, interactsSeen3.Length);
 
                 // Now that moves have been performed, we extract their deepest darkest secrets to work out what needs considering.
-                foreach (IAction move in moves[curDepth])
+                for (var index = 0; index < curMoves.Count; index++)
                 {
+                    IAction move = curMoves[index];
                     if (move is SetAction)
                     {
-                        SetAction setAction = (SetAction)move;
+                        SetAction setAction = (SetAction) move;
                         AddEdgetToConsider(action, toConsiderEdges, curDepth, setAction.EdgeIndex);
-                        foreach (int edge in setAction.GetAffectedEdges())
+                        for (var i = 0; i < setAction.GetAffectedEdges().Count; i++)
                         {
+                            int edge = setAction.GetAffectedEdges()[i];
                             AddEdgetToConsider(action, toConsiderEdgeSets, curDepth, edge);
                         }
                     }
                     else if (move is ColorJoinAction)
                     {
-                        ColorJoinAction cjAction = (ColorJoinAction)move;
-                        foreach (int edge in cjAction.GetAffectedEdges())
+                        ColorJoinAction cjAction = (ColorJoinAction) move;
+                        for (var i = 0; i < cjAction.GetAffectedEdges().Count; i++)
                         {
+                            int edge = cjAction.GetAffectedEdges()[i];
                             AddEdgetToConsider(action, toConsiderEdgeColors, curDepth, edge);
                         }
                     }
                     else if (move is CellColorJoinAction)
                     {
-                        CellColorJoinAction ccjAction = (CellColorJoinAction)move;
-                        foreach (int cell in ccjAction.GetAffectedCells())
+                        CellColorJoinAction ccjAction = (CellColorJoinAction) move;
+                        for (var i = 0; i < ccjAction.GetAffectedCells().Count; i++)
                         {
+                            int cell = ccjAction.GetAffectedCells()[i];
                             AddCellToConsider(action, toConsiderCellColors, curDepth, cell);
                         }
-
                     }
                     else if (move is EdgeRestrictionAction)
                     {
-                        EdgeRestrictionAction erAction = (EdgeRestrictionAction)move;
-                        foreach (int edge in erAction.GetAffectedEdges())
+                        EdgeRestrictionAction erAction = (EdgeRestrictionAction) move;
+                        for (var i = 0; i < erAction.GetAffectedEdges().Count; i++)
                         {
+                            int edge = erAction.GetAffectedEdges()[i];
                             AddEdgetToConsider(action, toConsiderEdgeColors, curDepth, edge);
                         }
                     }
@@ -3698,8 +3761,9 @@ namespace LoopDeLoop
 
         private void ClearCellPairs()
         {
-            foreach (KeyValuePair<int, int> kvp in cellPairsToClean)
+            for (var index = 0; index < cellPairsToClean.Count; index++)
             {
+                KeyValuePair<int, int> kvp = cellPairsToClean[index];
                 cellPairsSeen[kvp.Key, kvp.Value] = TriState.Unknown;
                 cellPairsSeen[kvp.Value, kvp.Key] = TriState.Unknown;
             }
@@ -3708,8 +3772,9 @@ namespace LoopDeLoop
 
         private void ClearEdgeRestricts()
         {
-            foreach (KeyValuePair<int, int> kvp in edgeRestrictsToClean)
+            for (var index = 0; index < edgeRestrictsToClean.Count; index++)
             {
+                KeyValuePair<int, int> kvp = edgeRestrictsToClean[index];
                 edgeRestrictsSeen[kvp.Key, kvp.Value] = EdgePairRestriction.None;
                 edgeRestrictsSeen[kvp.Value, kvp.Key] = EdgePairRestriction.None;
             }
@@ -3718,8 +3783,9 @@ namespace LoopDeLoop
 
         private void ClearEdgePairs()
         {
-            foreach (KeyValuePair<int, int> kvp in edgePairsToClean)
+            for (var index = 0; index < edgePairsToClean.Count; index++)
             {
+                KeyValuePair<int, int> kvp = edgePairsToClean[index];
                 edgePairsSeen[kvp.Key, kvp.Value] = TriState.Unknown;
                 edgePairsSeen[kvp.Value, kvp.Key] = TriState.Unknown;
             }
@@ -3731,8 +3797,9 @@ namespace LoopDeLoop
             if (useCellColoring)
             {
                 int lastCell = -1;
-                foreach (int cellColorIndex in toConsiderCellColors[curDepth])
+                for (var index = 0; index < toConsiderCellColors[curDepth].Count; index++)
                 {
+                    int cellColorIndex = toConsiderCellColors[curDepth][index];
                     if (cellColorIndex == lastCell)
                         continue;
                     lastCell = cellColorIndex;
@@ -3744,10 +3811,12 @@ namespace LoopDeLoop
                         // This may be a waste of time - unless one of the neighbours has changed, our color doesnt affect anything, I think...
                         if (!GatherCellCountCellColoringMoves(cell, moves, curDepth, cellColorIndex))
                             return false;
-                        foreach (int edge in cell.Edges)
+                        for (var i = 0; i < cell.Edges.Count; i++)
                         {
-                            foreach (int otherC in edges[edge].Cells)
+                            int edge = cell.Edges[i];
+                            for (var index1 = 0; index1 < edges[edge].Cells.Count; index1++)
                             {
+                                int otherC = edges[edge].Cells[index1];
                                 if (otherC != cellColorIndex)
                                 {
                                     Cell otherCell = cells[otherC];
@@ -3763,7 +3832,8 @@ namespace LoopDeLoop
                     if (!cellColorEdgeColorsSeen[cellColorIndex])
                     {
                         cellColorEdgeColorsSeen[cellColorIndex] = true;
-                        if (!GatherCellColoringEdgeColoringMovesForCellColorChange(cell, moves, curDepth, cellColorIndex))
+                        if (!GatherCellColoringEdgeColoringMovesForCellColorChange(cell, moves, curDepth,
+                            cellColorIndex))
                             return false;
                     }
                 }
@@ -3776,8 +3846,9 @@ namespace LoopDeLoop
             if (UseColoring || UseEdgeRestricts)
             {
                 int lastEdge = -1;
-                foreach (int edgeAffectedIndex in toConsiderEdgeColors[curDepth])
+                for (var index = 0; index < toConsiderEdgeColors[curDepth].Count; index++)
                 {
+                    int edgeAffectedIndex = toConsiderEdgeColors[curDepth][index];
                     if (edgeAffectedIndex == lastEdge)
                         continue;
                     lastEdge = edgeAffectedIndex;
@@ -3787,59 +3858,70 @@ namespace LoopDeLoop
                         // TODO: do not activate this unless the edge color has changed.
                         GatherCellColoringEdgeColoringMovesForEdgeColorChange(edge, moves, curDepth, edgeAffectedIndex);
                     }
-                    foreach (int cellIndex in edge.Cells)
+                    for (var i = 0; i < edge.Cells.Count; i++)
                     {
+                        int cellIndex = edge.Cells[i];
                         Cell cell = cells[cellIndex];
                         if (!interactsSeen[cellIndex])
                         {
                             interactsSeen[cellIndex] = true;
-                            if (!GatherInteractForcedMoves(cell, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                            if (!GatherInteractForcedMoves(cell, moves, curDepth, edgesSeen, edgePairsSeen,
+                                edgeRestrictsSeen))
                                 return false;
                         }
                     }
-                    foreach (int intersIndex in edge.Intersections)
+                    for (var i = 0; i < edge.Intersections.Length; i++)
                     {
+                        int intersIndex = edge.Intersections[i];
                         if (interactsSeen2[intersIndex])
                             continue;
                         else
                             interactsSeen2[intersIndex] = true;
                         Intersection inters = intersections[intersIndex];
-                        if (!GatherInteractForcedMoves(inters, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                        if (!GatherInteractForcedMoves(inters, moves, curDepth, edgesSeen, edgePairsSeen,
+                            edgeRestrictsSeen))
                             return false;
                     }
                     if (edge.Color != 0)
                     {
-                        if (!GatherFollowColoringColorSetChanged(moves, curDepth, edge, edgesSeen, edgeAffectedIndex, colorSetsSeen))
+                        if (!GatherFollowColoringColorSetChanged(moves, curDepth, edge, edgesSeen, edgeAffectedIndex,
+                            colorSetsSeen))
                             return false;
                     }
                     if (!GatherFollowEdgeRestrictions(moves, curDepth, edge, edgesSeen, edgeAffectedIndex))
                         return false;
                     if (UseCellPairs || UseCellPairsTopLevel)
                     {
-                        foreach (int intersIndex in edge.Intersections)
+                        for (var i = 0; i < edge.Intersections.Length; i++)
                         {
+                            int intersIndex = edge.Intersections[i];
                             Intersection inters = intersections[intersIndex];
-                            foreach (int divider in inters.Edges)
+                            for (var index1 = 0; index1 < inters.Edges.Count; index1++)
                             {
+                                int divider = inters.Edges[index1];
                                 if (!interactsSeen3[divider])
                                 {
                                     interactsSeen3[divider] = true;
                                     Edge dividingEdge = edges[divider];
-                                    if (!GatherCellPairForcedMoves(dividingEdge, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                                    if (!GatherCellPairForcedMoves(dividingEdge, moves, curDepth, edgesSeen,
+                                        edgePairsSeen, edgeRestrictsSeen))
                                         return false;
                                 }
                             }
                         }
-                        foreach (int cellIndex in edge.Cells)
+                        for (var i = 0; i < edge.Cells.Count; i++)
                         {
+                            int cellIndex = edge.Cells[i];
                             Cell cell = cells[cellIndex];
-                            foreach (int divider in cell.Edges)
+                            for (var index1 = 0; index1 < cell.Edges.Count; index1++)
                             {
+                                int divider = cell.Edges[index1];
                                 if (!interactsSeen3[divider])
                                 {
                                     interactsSeen3[divider] = true;
                                     Edge dividingEdge = edges[divider];
-                                    if (!GatherCellPairForcedMoves(dividingEdge, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                                    if (!GatherCellPairForcedMoves(dividingEdge, moves, curDepth, edgesSeen,
+                                        edgePairsSeen, edgeRestrictsSeen))
                                         return false;
                                 }
                             }
@@ -3855,8 +3937,9 @@ namespace LoopDeLoop
             if (considerMultipleLoops)
             {
                 int lastEdge = -1;
-                foreach (int edgeAffectedIndex in toConsiderEdgeSets[curDepth])
+                for (var index = 0; index < toConsiderEdgeSets[curDepth].Count; index++)
                 {
+                    int edgeAffectedIndex = toConsiderEdgeSets[curDepth][index];
                     if (edgeAffectedIndex == lastEdge)
                         continue;
                     lastEdge = edgeAffectedIndex;
@@ -3871,8 +3954,9 @@ namespace LoopDeLoop
         private bool ConsiderCellCounts(List<IAction>[] moves, List<int>[] toConsiderCellCounts, int curDepth)
         {
             int lastCell = -1;
-            foreach (int cellCountIndex in toConsiderCellCounts[curDepth])
+            for (var index = 0; index < toConsiderCellCounts[curDepth].Count; index++)
             {
+                int cellCountIndex = toConsiderCellCounts[curDepth][index];
                 if (cellCountIndex == lastCell)
                     continue;
                 lastCell = cellCountIndex;
@@ -3888,31 +3972,35 @@ namespace LoopDeLoop
                     if (!interactsSeen[cellCountIndex])
                     {
                         interactsSeen[cellCountIndex] = true;
-                        if (!GatherInteractForcedMoves(cell, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                        if (!GatherInteractForcedMoves(cell, moves, curDepth, edgesSeen, edgePairsSeen,
+                            edgeRestrictsSeen))
                             return false;
                     }
 
-                    foreach (int intersIndex in cell.Intersections)
+                    for (var i = 0; i < cell.Intersections.Count; i++)
                     {
+                        int intersIndex = cell.Intersections[i];
                         if (interactsSeen2[intersIndex])
                             continue;
                         else
                             interactsSeen2[intersIndex] = true;
                         Intersection inters = intersections[intersIndex];
-                        if (!GatherInteractForcedMoves(inters, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                        if (!GatherInteractForcedMoves(inters, moves, curDepth, edgesSeen, edgePairsSeen,
+                            edgeRestrictsSeen))
                             return false;
                     }
-
                 }
                 if (UseCellPairs || UseCellPairsTopLevel)
                 {
-                    foreach (int divider in cell.Edges)
+                    for (var i = 0; i < cell.Edges.Count; i++)
                     {
+                        int divider = cell.Edges[i];
                         if (!interactsSeen3[divider])
                         {
                             interactsSeen3[divider] = true;
                             Edge dividingEdge = edges[divider];
-                            if (!GatherCellPairForcedMoves(dividingEdge, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                            if (!GatherCellPairForcedMoves(dividingEdge, moves, curDepth, edgesSeen, edgePairsSeen,
+                                edgeRestrictsSeen))
                                 return false;
                         }
                     }
@@ -3926,15 +4014,17 @@ namespace LoopDeLoop
         private bool ConsiderEdges(List<IAction>[] moves, List<int>[] toConsiderEdges, int curDepth, List<int> colorSetsSeen)
         {
             int lastEdge = -1;
-            foreach (int edgeAffectedIndex in toConsiderEdges[curDepth])
+            for (var index = 0; index < toConsiderEdges[curDepth].Count; index++)
             {
+                int edgeAffectedIndex = toConsiderEdges[curDepth][index];
                 if (edgeAffectedIndex == lastEdge)
                     continue;
                 lastEdge = edgeAffectedIndex;
 
                 Edge edge = edges[edgeAffectedIndex];
-                foreach (int cellIndex in edge.Cells)
+                for (var i = 0; i < edge.Cells.Count; i++)
                 {
+                    int cellIndex = edge.Cells[i];
                     if (cellsSeen[cellIndex])
                         continue;
                     else
@@ -3943,8 +4033,9 @@ namespace LoopDeLoop
                     if (!GatherCellForcedMoves(cell, moves, curDepth, edgesSeen, cellIndex))
                         return false;
                 }
-                foreach (int intersIndex in edge.Intersections)
+                for (var i = 0; i < edge.Intersections.Length; i++)
                 {
+                    int intersIndex = edge.Intersections[i];
                     if (intersectsSeen[intersIndex])
                         continue;
                     else
@@ -3955,84 +4046,100 @@ namespace LoopDeLoop
                 }
                 if (considerIntersectCellInteractsAsSimple)
                 {
-                    foreach (int intersIndex in edge.Intersections)
+                    for (var i = 0; i < edge.Intersections.Length; i++)
                     {
+                        int intersIndex = edge.Intersections[i];
                         Intersection inters = intersections[intersIndex];
-                        foreach (int cellIndex in inters.Cells)
+                        for (var index1 = 0; index1 < inters.Cells.Count; index1++)
                         {
+                            int cellIndex = inters.Cells[index1];
                             if (interactsSeen[cellIndex])
                                 continue;
                             else
                                 interactsSeen[cellIndex] = true;
                             Cell cell = cells[cellIndex];
-                            if (!GatherInteractForcedMoves(cell, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                            if (!GatherInteractForcedMoves(cell, moves, curDepth, edgesSeen, edgePairsSeen,
+                                edgeRestrictsSeen))
                                 return false;
                         }
                     }
-                    foreach (int cellIndex in edge.Cells)
+                    for (var i = 0; i < edge.Cells.Count; i++)
                     {
+                        int cellIndex = edge.Cells[i];
                         Cell cell = cells[cellIndex];
-                        foreach (int intersIndex in cell.Intersections)
+                        for (var index1 = 0; index1 < cell.Intersections.Count; index1++)
                         {
+                            int intersIndex = cell.Intersections[index1];
                             if (interactsSeen2[intersIndex])
                                 continue;
                             else
                                 interactsSeen2[intersIndex] = true;
                             Intersection inters = intersections[intersIndex];
-                            if (!GatherInteractForcedMoves(inters, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                            if (!GatherInteractForcedMoves(inters, moves, curDepth, edgesSeen, edgePairsSeen,
+                                edgeRestrictsSeen))
                                 return false;
                         }
                     }
                 }
                 else if (UseColoring || UseEdgeRestricts)
                 {
-                    foreach (int intersIndex in edge.Intersections)
+                    for (var i = 0; i < edge.Intersections.Length; i++)
                     {
+                        int intersIndex = edge.Intersections[i];
                         if (interactsSeen2[intersIndex])
                             continue;
                         else
                             interactsSeen2[intersIndex] = true;
                         Intersection inters = intersections[intersIndex];
-                        if (!GatherInteractForcedMoves(inters, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                        if (!GatherInteractForcedMoves(inters, moves, curDepth, edgesSeen, edgePairsSeen,
+                            edgeRestrictsSeen))
                             return false;
                     }
-                    foreach (int cellIndex in edge.Cells)
+                    for (var i = 0; i < edge.Cells.Count; i++)
                     {
+                        int cellIndex = edge.Cells[i];
                         if (interactsSeen[cellIndex])
                             continue;
                         else
                             interactsSeen[cellIndex] = true;
                         Cell cell = cells[cellIndex];
-                        if (!GatherInteractForcedMoves(cell, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                        if (!GatherInteractForcedMoves(cell, moves, curDepth, edgesSeen, edgePairsSeen,
+                            edgeRestrictsSeen))
                             return false;
                     }
                 }
                 if (UseCellPairs || UseCellPairsTopLevel)
                 {
-                    foreach (int intersIndex in edge.Intersections)
+                    for (var i = 0; i < edge.Intersections.Length; i++)
                     {
+                        int intersIndex = edge.Intersections[i];
                         Intersection inters = intersections[intersIndex];
-                        foreach (int divider in inters.Edges)
+                        for (var index1 = 0; index1 < inters.Edges.Count; index1++)
                         {
+                            int divider = inters.Edges[index1];
                             if (!interactsSeen3[divider])
                             {
                                 interactsSeen3[divider] = true;
                                 Edge dividingEdge = edges[divider];
-                                if (!GatherCellPairForcedMoves(dividingEdge, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                                if (!GatherCellPairForcedMoves(dividingEdge, moves, curDepth, edgesSeen, edgePairsSeen,
+                                    edgeRestrictsSeen))
                                     return false;
                             }
                         }
                     }
-                    foreach (int cellIndex in edge.Cells)
+                    for (var i = 0; i < edge.Cells.Count; i++)
                     {
+                        int cellIndex = edge.Cells[i];
                         Cell cell = cells[cellIndex];
-                        foreach (int divider in cell.Edges)
+                        for (var index1 = 0; index1 < cell.Edges.Count; index1++)
                         {
+                            int divider = cell.Edges[index1];
                             if (!interactsSeen3[divider])
                             {
                                 interactsSeen3[divider] = true;
                                 Edge dividingEdge = edges[divider];
-                                if (!GatherCellPairForcedMoves(dividingEdge, moves, curDepth, edgesSeen, edgePairsSeen, edgeRestrictsSeen))
+                                if (!GatherCellPairForcedMoves(dividingEdge, moves, curDepth, edgesSeen, edgePairsSeen,
+                                    edgeRestrictsSeen))
                                     return false;
                             }
                         }
@@ -4082,14 +4189,16 @@ namespace LoopDeLoop
 
         private bool GatherExcludeClosingLoopEarly(List<IAction>[] moves, int curDepth, int edgeAffectedIndex, Edge edge, EdgeState[] edgesSeen)
         {
-            foreach (int intersIndex in edge.Intersections)
+            for (var index = 0; index < edge.Intersections.Length; index++)
             {
+                int intersIndex = edge.Intersections[index];
                 Intersection inters = intersections[intersIndex];
                 if (inters.FilledCount != 1)
                     continue;
-                foreach (int otherEdgeIndex in inters.Edges)
+                for (var i = 0; i < inters.Edges.Count; i++)
                 {
-                    // If this edge is still empty, there is no reason why we shouldn't check it for closing the loop early.
+                    int otherEdgeIndex = inters.Edges[i];
+// If this edge is still empty, there is no reason why we shouldn't check it for closing the loop early.
                     //if (otherEdgeIndex == edgeAffectedIndex)
                     //    continue;
                     Edge otherEdge = edges[otherEdgeIndex];
@@ -4102,9 +4211,12 @@ namespace LoopDeLoop
                             // Would close a loop if we did it.
                             bool okay = false;
                             int nonEmpty = 0;
-                            foreach (List<int> edgeSet in edgeSets)
+                            for (var index1 = 0; index1 < edgeSets.Count; index1++)
+                            {
+                                List<int> edgeSet = edgeSets[index1];
                                 if (edgeSet.Count > 0)
                                     nonEmpty++;
+                            }
                             if (nonEmpty == 1)
                             {
                                 Intersection inters1 = intersections[otherEdge.Intersections[0]];
@@ -4113,8 +4225,9 @@ namespace LoopDeLoop
                                 {
                                     bool fine = true;
                                     int satCount = 0;
-                                    foreach (int otherCellIndex in otherEdge.Cells)
+                                    for (var index1 = 0; index1 < otherEdge.Cells.Count; index1++)
                                     {
+                                        int otherCellIndex = otherEdge.Cells[index1];
                                         Cell cell1 = cells[otherCellIndex];
                                         if (cell1.TargetCount == -1)
                                             continue;
@@ -4123,7 +4236,8 @@ namespace LoopDeLoop
                                         else
                                             fine = false;
                                     }
-                                    if (fine && satisifiedCount == numberOfNumbers - satCount && satisifiedIntersCount == intersections.Count - 2)
+                                    if (fine && satisifiedCount == numberOfNumbers - satCount &&
+                                        satisifiedIntersCount == intersections.Count - 2)
                                         okay = true;
                                 }
                             }
@@ -4150,8 +4264,9 @@ namespace LoopDeLoop
             // Stop caching that we have seen this if we were.
             colorSetsSeen.Remove(Math.Abs(edge.Color) - 1);
             EdgeState posState = EdgeState.Empty;
-            foreach (int i in colorSet)
+            for (var index = 0; index < colorSet.Count; index++)
             {
+                int i = colorSet[index];
                 if (i == edgeIndex)
                     continue;
                 Edge toCheck = edges[i];
@@ -4186,8 +4301,9 @@ namespace LoopDeLoop
             if (colorSetsSeen.Contains(Math.Abs(edge.Color) - 1))
                 return true;
             colorSetsSeen.Add(Math.Abs(edge.Color) - 1);
-            foreach (int i in colorSet)
+            for (var index = 0; index < colorSet.Count; index++)
             {
+                int i = colorSet[index];
                 int dist = edgeDistances[i, edgeIndex];
                 if (curDepth + dist >= moves.Length)
                     continue;
@@ -4220,11 +4336,13 @@ namespace LoopDeLoop
                 return true;
             if (edge.State == EdgeState.Empty)
                 return true;
-            foreach (int inters in edge.Intersections)
+            for (var index = 0; index < edge.Intersections.Length; index++)
             {
+                int inters = edge.Intersections[index];
                 Intersection inter = intersections[inters];
-                foreach (int otherEdgeIndex in inter.Edges)
+                for (var i = 0; i < inter.Edges.Count; i++)
                 {
+                    int otherEdgeIndex = inter.Edges[i];
                     if (otherEdgeIndex == edgeIndex)
                         continue;
                     Edge toCheck = edges[otherEdgeIndex];
@@ -4255,11 +4373,13 @@ namespace LoopDeLoop
                     }
                 }
             }
-            foreach (int cellIndex in edge.Cells)
+            for (var index = 0; index < edge.Cells.Count; index++)
             {
+                int cellIndex = edge.Cells[index];
                 Cell cell = cells[cellIndex];
-                foreach (int otherEdgeIndex in cell.Edges)
+                for (var i = 0; i < cell.Edges.Count; i++)
                 {
+                    int otherEdgeIndex = cell.Edges[i];
                     if (otherEdgeIndex == edgeIndex)
                         continue;
                     Edge toCheck = edges[otherEdgeIndex];
@@ -4373,8 +4493,9 @@ namespace LoopDeLoop
             }
             if (toPerform != EdgeState.Empty)
             {
-                foreach (int otherEdgeIndex in inters.Edges)
+                for (var index = 0; index < inters.Edges.Count; index++)
                 {
+                    int otherEdgeIndex = inters.Edges[index];
                     Edge otherEdge = edges[otherEdgeIndex];
                     if (otherEdge.State == EdgeState.Empty)
                     {
@@ -4400,8 +4521,9 @@ namespace LoopDeLoop
                 }
                 if (toPerform != EdgeState.Empty)
                 {
-                    foreach (int otherEdgeIndex in cell.Edges)
+                    for (var index = 0; index < cell.Edges.Count; index++)
                     {
+                        int otherEdgeIndex = cell.Edges[index];
                         Edge otherEdge = edges[otherEdgeIndex];
                         if (otherEdge.State == EdgeState.Empty)
                         {
@@ -4418,8 +4540,9 @@ namespace LoopDeLoop
         {
             if (useCellColoring)
             {
-                foreach (int edge in cell.Edges)
+                for (var index = 0; index < cell.Edges.Count; index++)
                 {
+                    int edge = cell.Edges[index];
                     Edge e = edges[edge];
                     if (!GatherCellColoringMoves(e, moves, curDepth, edgesSeen, edge))
                         return false;
@@ -4436,8 +4559,9 @@ namespace LoopDeLoop
                 int cellIndex = -2;
                 Cell otherCell = null;
                 int otherC = -2;
-                foreach (int c in e.Cells)
+                for (var index = 0; index < e.Cells.Count; index++)
                 {
+                    int c = e.Cells[index];
                     if (cellIndex == -2)
                     {
                         cellIndex = c;
@@ -4910,8 +5034,9 @@ namespace LoopDeLoop
                 }
                 else
                 {
-                    foreach (int index in usedColorCounts)
+                    for (var i = 0; i < usedColorCounts.Count; i++)
                     {
+                        int index = usedColorCounts[i];
                         colorCountsPos[index] = 0;
                         colorCountsNeg[index] = 0;
                     }
@@ -4921,12 +5046,14 @@ namespace LoopDeLoop
                 int maxColor = 0;
                 int maxCell = -2;
                 List<int> otherCells = new List<int>();
-                foreach (int edge in cell.Edges)
+                for (var index = 0; index < cell.Edges.Count; index++)
                 {
+                    int edge = cell.Edges[index];
                     Edge e = edges[edge];
                     bool foundOther = false;
-                    foreach (int otherC in e.Cells)
+                    for (var i = 0; i < e.Cells.Count; i++)
                     {
+                        int otherC = e.Cells[i];
                         Cell otherCell = cells[otherC];
                         if (otherCell != cell)
                         {
@@ -5043,8 +5170,9 @@ namespace LoopDeLoop
                         {
                             int[] cellIndexes = new int[2];
                             int counter = 0;
-                            foreach (int c2 in otherCells)
+                            for (var index = 0; index < otherCells.Count; index++)
                             {
+                                int c2 = otherCells[index];
                                 if (c2 != -1)
                                 {
                                     Cell c = cells[c2];
@@ -5093,8 +5221,9 @@ namespace LoopDeLoop
 
         private bool JoinAllLooseCellColors(List<IAction>[] moves, int curDepth, List<int> otherCells, int color, bool pos, int cSpec)
         {
-            foreach (int c2 in otherCells)
+            for (var index = 0; index < otherCells.Count; index++)
             {
+                int c2 = otherCells[index];
                 if (c2 != -1)
                 {
                     Cell c = cells[c2];
@@ -5120,8 +5249,9 @@ namespace LoopDeLoop
         {
             pos = false;
             c2 = -2;
-            foreach (int cell in otherCells)
+            for (var index = 0; index < otherCells.Count; index++)
             {
+                int cell = otherCells[index];
                 if (cell == -1)
                 {
                     if (targetColor == 1 || targetColor == -1)
@@ -5188,8 +5318,9 @@ namespace LoopDeLoop
                     {
                         Cell cell = cells[inters.Cells[i]];
                         int found = 0;
-                        foreach (int edgeIndex in cell.Edges)
+                        for (var index = 0; index < cell.Edges.Count; index++)
                         {
+                            int edgeIndex = cell.Edges[index];
                             edgeIndexes[found] = inters.Edges.IndexOf(edgeIndex);
                             if (edgeIndexes[found] != -1)
                             {
@@ -5231,8 +5362,9 @@ namespace LoopDeLoop
                     if (cell.ExcludedCount == cell.Edges.Count - 2 - cell.FilledCount)
                     {
                         bool emptiesMatch = true;
-                        foreach (int edgeIndex in cell.Edges)
+                        for (var index = 0; index < cell.Edges.Count; index++)
                         {
+                            int edgeIndex = cell.Edges[index];
                             Edge e = edges[edgeIndex];
                             if (e.State == EdgeState.Empty)
                             {
@@ -5378,8 +5510,9 @@ namespace LoopDeLoop
                 int counter = 0;
                 List<KeyValuePair<uint, List<int>>> targets = new List<KeyValuePair<uint, List<int>>>();
                 uint inters1Indexes = 0;
-                foreach (int edgeIndex in inters1.Edges)
+                for (var index = 0; index < inters1.Edges.Count; index++)
                 {
+                    int edgeIndex = inters1.Edges[index];
                     edgeNumber[counter] = edgeIndex;
                     if (UseColoring)
                     {
@@ -5395,8 +5528,9 @@ namespace LoopDeLoop
                 }
                 targets.Add(new KeyValuePair<uint, List<int>>(inters1Indexes, intersTargets));
                 uint inters2Indexes = 0;
-                foreach (int edgeIndex in inters2.Edges)
+                for (var index = 0; index < inters2.Edges.Count; index++)
                 {
+                    int edgeIndex = inters2.Edges[index];
                     Edge e2 = edges[edgeIndex];
                     if (e2 == edge)
                     {
@@ -5418,8 +5552,9 @@ namespace LoopDeLoop
                 }
                 targets.Add(new KeyValuePair<uint, List<int>>(inters2Indexes, intersTargets));
                 uint cell1Indexes = 0;
-                foreach (int edgeIndex in cell1.Edges)
+                for (var index = 0; index < cell1.Edges.Count; index++)
                 {
+                    int edgeIndex = cell1.Edges[index];
                     Edge e2 = edges[edgeIndex];
                     if (e2 == edge || e2.Intersections[0] == edge.Intersections[0] ||
                         e2.Intersections[0] == edge.Intersections[1] ||
@@ -5456,8 +5591,9 @@ namespace LoopDeLoop
                 if (cell2 != null)
                 {
                     uint cell2Indexes = 0;
-                    foreach (int edgeIndex in cell2.Edges)
+                    for (var index = 0; index < cell2.Edges.Count; index++)
                     {
+                        int edgeIndex = cell2.Edges[index];
                         Edge e2 = edges[edgeIndex];
                         if (e2 == edge || e2.Intersections[0] == edge.Intersections[0] ||
                             e2.Intersections[0] == edge.Intersections[1] ||
@@ -5647,8 +5783,9 @@ namespace LoopDeLoop
 
         private bool ProcessRetrievedActions(List<IAction>[] moves, int curDepth, EdgeState[] edgesSeen, int[] edgeNumber, TriState[,] edgePairsSeen, EdgePairRestriction[,] edgeRestrictsSeen, List<int[]> result)
         {
-            foreach (int[] action in result)
+            for (var index = 0; index < result.Count; index++)
             {
+                int[] action = result[index];
                 if (action[0] == 0)
                 {
                     int j = action[1];
@@ -5656,7 +5793,8 @@ namespace LoopDeLoop
                     Edge e = edges[edgeNumber[j]];
                     if (e.State == EdgeState.Empty)
                     {
-                        if (!AddSetAction(edgeNumber[j], (reallyFilled ? EdgeState.Filled : EdgeState.Excluded), moves, curDepth + 1, edgesSeen))
+                        if (!AddSetAction(edgeNumber[j], (reallyFilled ? EdgeState.Filled : EdgeState.Excluded), moves,
+                            curDepth + 1, edgesSeen))
                             return false;
                     }
                 }
@@ -5672,8 +5810,11 @@ namespace LoopDeLoop
                 {
                     int n = action[1];
                     int m = action[2];
-                    EdgePairRestriction restr = action[3] == 1 ? EdgePairRestriction.NotBoth : EdgePairRestriction.NotNeither;
-                    if (!AddEdgeRestrictAction(edgeNumber[n], edgeNumber[m], restr, moves, curDepth + 1, edgeRestrictsSeen, edgePairsSeen))
+                    EdgePairRestriction restr = action[3] == 1
+                        ? EdgePairRestriction.NotBoth
+                        : EdgePairRestriction.NotNeither;
+                    if (!AddEdgeRestrictAction(edgeNumber[n], edgeNumber[m], restr, moves, curDepth + 1,
+                        edgeRestrictsSeen, edgePairsSeen))
                         return false;
                 }
             }
@@ -6142,15 +6283,19 @@ namespace LoopDeLoop
 
             if (inter.FilledCount == 1)
             {
-                foreach (int otherEdgeIndex in inter.Edges)
+                for (var index = 0; index < inter.Edges.Count; index++)
                 {
+                    int otherEdgeIndex = inter.Edges[index];
                     Edge otherEdge = edges[otherEdgeIndex];
                     if (otherEdge.State == EdgeState.Filled)
                     {
                         bool found = false;
-                        foreach (int otherEdgeIndex2 in cell.Edges)
+                        for (var i = 0; i < cell.Edges.Count; i++)
+                        {
+                            int otherEdgeIndex2 = cell.Edges[i];
                             if (otherEdgeIndex2 == otherEdgeIndex)
                                 found = true;
+                        }
                         if (!found)
                         {
                             if (!GatherFeedForcedCantTurnback(cell, inter, moves, curDepth, edgesSeen, ref antiLocked))
@@ -6167,16 +6312,20 @@ namespace LoopDeLoop
         {
             // We have a potential feeder.
             int excludedLocal = 0;
-            foreach (int cellEdgeIndex in cell.Edges)
+            for (var index = 0; index < cell.Edges.Count; index++)
             {
+                int cellEdgeIndex = cell.Edges[index];
                 Edge cellEdge = edges[cellEdgeIndex];
                 bool joined = false;
-                foreach (int otherInter in cellEdge.Intersections)
+                for (var i = 0; i < cellEdge.Intersections.Length; i++)
+                {
+                    int otherInter = cellEdge.Intersections[i];
                     if (intersections[otherInter] == inter)
                     {
                         joined = true;
                         break;
                     }
+                }
                 if (joined)
                 {
                     if (cellEdge.State == EdgeState.Excluded)
@@ -6194,15 +6343,19 @@ namespace LoopDeLoop
             {
                 antiLocked = true;
                 // feeding.
-                foreach (int otherEdgeIndex3 in inter.Edges)
+                for (var index = 0; index < inter.Edges.Count; index++)
                 {
+                    int otherEdgeIndex3 = inter.Edges[index];
                     Edge otherEdge2 = edges[otherEdgeIndex3];
                     if (otherEdge2.State == EdgeState.Empty)
                     {
                         bool found2 = false;
-                        foreach (int otherEdgeIndex4 in cell.Edges)
+                        for (var i = 0; i < cell.Edges.Count; i++)
+                        {
+                            int otherEdgeIndex4 = cell.Edges[i];
                             if (otherEdgeIndex4 == otherEdgeIndex3)
                                 found2 = true;
+                        }
                         if (!found2)
                         {
                             if (!AddSetAction(otherEdgeIndex3, EdgeState.Excluded, moves, curDepth + 1, edgesSeen))
@@ -6218,15 +6371,19 @@ namespace LoopDeLoop
         {
             if ((inter.FilledCount == 0 && inter.ExcludedCount == inter.Edges.Count - 2) || (inter.FilledCount == 2 && inter.ExcludedCount == inter.Edges.Count - 4))
             {
-                foreach (int otherEdgeIndex in inter.Edges)
+                for (var index = 0; index < inter.Edges.Count; index++)
                 {
+                    int otherEdgeIndex = inter.Edges[index];
                     Edge otherEdge = edges[otherEdgeIndex];
                     if (otherEdge.State == EdgeState.Empty)
                     {
                         bool found = false;
-                        foreach (int otherEdgeIndex2 in cell.Edges)
+                        for (var i = 0; i < cell.Edges.Count; i++)
+                        {
+                            int otherEdgeIndex2 = cell.Edges[i];
                             if (otherEdgeIndex2 == otherEdgeIndex)
                                 found = true;
+                        }
                         if (!found)
                             return false;
                     }
@@ -6579,9 +6736,12 @@ namespace LoopDeLoop
                             return false;
                         // Rule 3, can't close the loop if there is more then one (non-empty) edge set.
                         int nonEmpty = 0;
-                        foreach (List<int> otherEdgeSet in edgeSets)
+                        for (var index = 0; index < edgeSets.Count; index++)
+                        {
+                            List<int> otherEdgeSet = edgeSets[index];
                             if (otherEdgeSet.Count > 0)
                                 nonEmpty++;
+                        }
                         if (nonEmpty != 1)
                             return false;
                         GenerateCheck();
@@ -6622,8 +6782,9 @@ namespace LoopDeLoop
                 throw new Exception("Edge already set.");
             edge.State = state;
             bool failed = false;
-            foreach (int cellIndex in edge.Cells)
+            for (var index = 0; index < edge.Cells.Count; index++)
             {
+                int cellIndex = edge.Cells[index];
                 Cell cell = cells[cellIndex];
                 if (state == EdgeState.Filled)
                 {
@@ -6646,8 +6807,9 @@ namespace LoopDeLoop
                     }
                 }
             }
-            foreach (int intersIndex in edge.Intersections)
+            for (var index = 0; index < edge.Intersections.Length; index++)
             {
+                int intersIndex = edge.Intersections[index];
                 Intersection inters = intersections[intersIndex];
                 if (state == EdgeState.Filled)
                 {
@@ -6674,8 +6836,9 @@ namespace LoopDeLoop
         private int GetEdgeSet(int intersection, int edgeToIgnore)
         {
             Intersection inter = intersections[intersection];
-            foreach (int edgeIndex in inter.Edges)
+            for (var index = 0; index < inter.Edges.Count; index++)
             {
+                int edgeIndex = inter.Edges[index];
                 if (edgeIndex == edgeToIgnore)
                     continue;
                 Edge e = edges[edgeIndex];
@@ -6722,8 +6885,9 @@ namespace LoopDeLoop
         private void RawEdgeUnset(EdgeState state, Edge edge)
         {
             edge.State = EdgeState.Empty;
-            foreach (int cellIndex in edge.Cells)
+            for (var index = 0; index < edge.Cells.Count; index++)
             {
+                int cellIndex = edge.Cells[index];
                 Cell cell = cells[cellIndex];
                 if (state == EdgeState.Filled)
                 {
@@ -6735,8 +6899,9 @@ namespace LoopDeLoop
                 else
                     cell.ExcludedCount--;
             }
-            foreach (int intersIndex in edge.Intersections)
+            for (var index = 0; index < edge.Intersections.Length; index++)
             {
+                int intersIndex = edge.Intersections[index];
                 Intersection inters = intersections[intersIndex];
                 if (state == EdgeState.Filled)
                 {
@@ -6785,8 +6950,9 @@ namespace LoopDeLoop
                     if (!foundInters.ContainsKey(curInters))
                     {
                         Intersection inters = intersections[curInters];
-                        foreach (int nextEdge in inters.Edges)
+                        for (var i = 0; i < inters.Edges.Count; i++)
                         {
+                            int nextEdge = inters.Edges[i];
                             if (nextEdge != curEdge)
                             {
                                 Edge e = edges[nextEdge];
@@ -6804,10 +6970,11 @@ namespace LoopDeLoop
                 {
                     edgeSets.Add(new List<int>());
                     int newEdgeSet = edgeSets.Count;
-                    foreach (int otherEdgeIndex in foundEdges)
+                    for (var i = 0; i < foundEdges.Count; i++)
                     {
+                        int otherEdgeIndex = foundEdges[i];
                         int otherIndex = edgeSets[oldEdgeSet - 1].IndexOf(otherEdgeIndex);
-                        edgeSetChanges.Add(new int[] { otherEdgeIndex, newEdgeSet, oldEdgeSet, otherIndex });
+                        edgeSetChanges.Add(new int[] {otherEdgeIndex, newEdgeSet, oldEdgeSet, otherIndex});
                         edgeSets[oldEdgeSet - 1].RemoveAt(otherIndex);
                         Edge e = edges[otherEdgeIndex];
                         e.EdgeSet = newEdgeSet;
@@ -6821,8 +6988,9 @@ namespace LoopDeLoop
         private int GetNextEdge(int curInter, int lastEdge)
         {
             Intersection inter = intersections[curInter];
-            foreach (int edgeIndex in inter.Edges)
+            for (var index = 0; index < inter.Edges.Count; index++)
             {
+                int edgeIndex = inter.Edges[index];
                 if (edgeIndex == lastEdge)
                     continue;
                 Edge e = edges[edgeIndex];
@@ -7070,9 +7238,10 @@ namespace LoopDeLoop
         public List<int> GetAffectedEdges()
         {
             List<int> res = new List<int>();
-            foreach (int[] change in edgeSetChanges)
+            for (var index = 0; index < edgeSetChanges.Count; index++)
             {
-                // Ignore changes to the number of sets.
+                int[] change = edgeSetChanges[index];
+// Ignore changes to the number of sets.
                 if (change.Length > 1 && change[0] != edge)
                     res.Add(change[0]);
             }
@@ -7263,9 +7432,10 @@ namespace LoopDeLoop
         public List<int> GetAffectedEdges()
         {
             List<int> res = new List<int>();
-            foreach (int[] change in colorSetChanges)
+            for (var index = 0; index < colorSetChanges.Count; index++)
             {
-                // Ignore changes to the number of sets.
+                int[] change = colorSetChanges[index];
+// Ignore changes to the number of sets.
                 if (change.Length > 1)
                     res.Add(change[0]);
             }
@@ -7388,9 +7558,10 @@ namespace LoopDeLoop
         public List<int> GetAffectedCells()
         {
             List<int> res = new List<int>();
-            foreach (int[] change in colorSetChanges)
+            for (var index = 0; index < colorSetChanges.Count; index++)
             {
-                // Ignore changes to the number of sets.
+                int[] change = colorSetChanges[index];
+// Ignore changes to the number of sets.
                 if (change.Length > 1)
                     res.Add(change[0]);
             }
