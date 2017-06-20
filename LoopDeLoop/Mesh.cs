@@ -5835,35 +5835,35 @@ namespace LoopDeLoop
                 for (int i = 0; i < targets.Count; i++)
                 {
                     hashcode += hashcode << 5;
-                    hashcode ^=  targets[i].Key.GetHashCode();
+                    hashcode ^=  (int)targets[i].Key;
                     for (int j = 0; j < targets[i].Value.Count; j++)
                     {
                         hashcode += hashcode << 5;
-                        hashcode ^= targets[i].Value[j].GetHashCode();
+                        hashcode ^= targets[i].Value[j];
                     }
                 }
                 for (int i = 0; i < baseLine.Length; i++)
                 {
                     hashcode += hashcode << 5;
-                    hashcode ^= baseLine[i].GetHashCode();
+                    hashcode ^= baseLine[i];
                 }
                 for (int i = 0; i < numbering.Length; i++)
                 {
                     hashcode += hashcode << 5;
-                    hashcode ^= numbering[i].GetHashCode();
+                    hashcode ^= numbering[i];
                 }
                 for (int i = 0; i < edgePatterns.Count; i++)
                 {
                     hashcode += hashcode << 5;
-                    hashcode ^= edgePatterns[i].GetHashCode();
+                    hashcode ^= (int)edgePatterns[i];
                 }
                 for (int i = 0; i < edgeMasks.Count; i++)
                 {
                     hashcode += hashcode << 5;
-                    hashcode ^= edgeMasks[i].GetHashCode();
+                    hashcode ^= (int)edgeMasks[i];
                 }
                 hashcode += hashcode << 5;
-                hashcode ^= curNumber.GetHashCode();
+                hashcode ^= curNumber;
                 return hashcode;
             }
             public override bool Equals(object obj)
