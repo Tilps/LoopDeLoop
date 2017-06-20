@@ -8029,20 +8029,20 @@ namespace LoopDeLoop
         /// </summary>
         public DisjointTracker(int size,bool prepop)
         {
-            this.tracker = new List<int>(size);
-            this.ranker = new List<int>(size);
+            this.tracker = new int[size];
+            this.ranker = new int[size];
             if (prepop)
             {
                 for (int i = 0; i < size; i++)
                 {
-                    tracker.Add(i);
-                    ranker.Add(0);
+                    tracker[i] = i;
+                    ranker[i] = 0;
                 }
             }
         }
 
-        private List<int> tracker;
-        private List<int> ranker;
+        private int[] tracker;
+        private int[] ranker;
 
 
         /// <summary>
@@ -8053,18 +8053,8 @@ namespace LoopDeLoop
         /// </param>
         public void Add(int value)
         {
-            ResizeIfNeeded(value);
             tracker[value] = value;
             ranker[value] = 0;
-        }
-
-        private void ResizeIfNeeded(int value)
-        {
-            while (value >= tracker.Count)
-            {
-                tracker.Add(-1);
-                ranker.Add(-1);
-            }
         }
 
         /// <summary>
@@ -8120,7 +8110,7 @@ namespace LoopDeLoop
 
         internal void Reset()
         {
-            int size = tracker.Count;
+            int size = tracker.Length;
             for (int i = 0; i < size; i++)
             {
                 tracker[i] = i;
