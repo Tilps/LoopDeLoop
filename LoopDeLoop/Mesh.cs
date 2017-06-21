@@ -2965,17 +2965,19 @@ namespace LoopDeLoop
                     for (int i = 0; i < edgeCount; i++)
                     {
                         int edge1 = inters.Edges[i];
-                        if (edges[edge1].State == EdgeState.Excluded)
+                        Edge edge1Edge = edges[edge1];
+                        if (edge1Edge.State == EdgeState.Excluded)
                             continue;
                         for (int j = 0; j < i; j++)
                         {
                             int edge2 = inters.Edges[j];
-                            if (edges[edge2].State == EdgeState.Excluded)
+                            Edge edge2Edge = edges[edge2];
+                            if (edge2Edge.State == EdgeState.Excluded)
                                 continue;
                             bool union = true;
                             if (useColoring)
                             {
-                                if (edges[edge1].Color != 0 && edges[edge1].Color == -edges[edge2].Color)
+                                if (edge1Edge.Color != 0 && edge1Edge.Color == -edge2Edge.Color)
                                     union = false;
                             }
                             if (useEdgeRestricts)
@@ -5552,7 +5554,7 @@ namespace LoopDeLoop
                     edgeNumber[counter] = edgeIndex;
                     if (UseColoring)
                     {
-                        Edge e = edges[edgeNumber[counter]];
+                        Edge e = edges[edgeIndex];
                         if (e.Color != 0)
                             numbering[counter] = e.Color;
                         int colorNum = Math.Abs(e.Color);
@@ -5576,10 +5578,9 @@ namespace LoopDeLoop
                     edgeNumber[counter] = edgeIndex;
                     if (UseColoring)
                     {
-                        Edge e = edges[edgeNumber[counter]];
-                        if (e.Color != 0)
-                            numbering[counter] = e.Color;
-                        int colorNum = Math.Abs(e.Color);
+                        if (e2.Color != 0)
+                            numbering[counter] = e2.Color;
+                        int colorNum = Math.Abs(e2.Color);
                         if (colorNum > maxExistColor)
                             maxExistColor = colorNum;
                     }
@@ -5603,10 +5604,9 @@ namespace LoopDeLoop
                     edgeNumber[counter] = edgeIndex;
                     if (UseColoring)
                     {
-                        Edge e = edges[edgeNumber[counter]];
-                        if (e.Color != 0)
-                            numbering[counter] = e.Color;
-                        int colorNum = Math.Abs(e.Color);
+                        if (e2.Color != 0)
+                            numbering[counter] = e2.Color;
+                        int colorNum = Math.Abs(e2.Color);
                         if (colorNum > maxExistColor)
                             maxExistColor = colorNum;
                     }
@@ -5642,10 +5642,9 @@ namespace LoopDeLoop
                         edgeNumber[counter] = edgeIndex;
                         if (UseColoring)
                         {
-                            Edge e = edges[edgeNumber[counter]];
-                            if (e.Color != 0)
-                                numbering[counter] = e.Color;
-                            int colorNum = Math.Abs(e.Color);
+                            if (e2.Color != 0)
+                                numbering[counter] = e2.Color;
+                            int colorNum = Math.Abs(e2.Color);
                             if (colorNum > maxExistColor)
                                 maxExistColor = colorNum;
                         }
@@ -5692,11 +5691,11 @@ namespace LoopDeLoop
 
             public override int GetHashCode()
             {
-                int hashcode = curNumber.GetHashCode();
+                int hashcode = curNumber;
                 for (int i = 0; i < success.Length; i++)
                 {
                     hashcode += hashcode << 5;
-                    hashcode ^= success[i].GetHashCode();
+                    hashcode ^= (int)success[i];
                 }
                 return hashcode;
             }
@@ -7335,7 +7334,7 @@ namespace LoopDeLoop
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(mesh.GetHashCode(), edge.GetHashCode(), newState.GetHashCode());
+            return HashCode.Combine(mesh.GetHashCode(), edge, (int)newState);
         }
 
         public override bool Equals(object obj)
@@ -7417,7 +7416,7 @@ namespace LoopDeLoop
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(mesh.GetHashCode(), edge.GetHashCode());
+            return HashCode.Combine(mesh.GetHashCode(), edge);
         }
 
         public override bool Equals(object obj)
@@ -7538,7 +7537,7 @@ namespace LoopDeLoop
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(mesh.GetHashCode(), edge1.GetHashCode(), edge2.GetHashCode(), same.GetHashCode());
+            return HashCode.Combine(mesh.GetHashCode(), edge1, edge2, same ? 1 : 0);
         }
 
         public override bool Equals(object obj)
@@ -7664,7 +7663,7 @@ namespace LoopDeLoop
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(mesh.GetHashCode(), cell1.GetHashCode(), cell1.GetHashCode(), same.GetHashCode());
+            return HashCode.Combine(mesh.GetHashCode(), cell1, cell1, same ? 1 : 0);
         }
 
         public override bool Equals(object obj)
@@ -7747,7 +7746,7 @@ namespace LoopDeLoop
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(mesh.GetHashCode(), cell1.GetHashCode());
+            return HashCode.Combine(mesh.GetHashCode(), cell1);
         }
 
         public override bool Equals(object obj)
@@ -7869,7 +7868,7 @@ namespace LoopDeLoop
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(mesh.GetHashCode(), edge1.GetHashCode(), edge2.GetHashCode(), ((int)state).GetHashCode());
+            return HashCode.Combine(mesh.GetHashCode(), edge1, edge2, (int)state);
         }
 
         public override bool Equals(object obj)
