@@ -192,5 +192,69 @@ namespace LoopDeLoop
             return o.mesh == mesh && o.cellIndex == cellIndex && o.reverse == reverse;
         }
     }
+
+    public class PuzzleSetEdgeStateAction : IAction
+    {
+        public PuzzleSetEdgeStateAction(Mesh mesh, int edgeIndex, EdgeState targetState)
+        {
+            this.mesh = mesh;
+            this.edgeIndex = edgeIndex;
+            this.targetState = targetState;
+        }
+
+        private readonly Mesh mesh;
+        private readonly int edgeIndex;
+        private readonly EdgeState targetState;
+        private List<IAction> actionsPerformed;
+        private bool successful;
+
+        public bool Successful => successful;
+        public string Name => $"Edge {edgeIndex} -> {targetState}";
+
+        public bool Perform()
+        {
+            successful = true;
+            Edge closest = mesh.Edges[edgeIndex];
+            if (closest.State == targetState) return false;
+
+            actionsPerformed = new List<IAction>();
+
+            if (closest.State != EdgeState.Empty)
+            {
+                IAction unsetAction = new UnsetAction(mesh, edgeIndex);
+                if (!unsetAction.Perform() || !unsetAction.Successful)
+                {
+                    return false;
+                }
+                actionsPerformed.Add(unsetAction);
+            }
+
+            if (targetState != EdgeState.Empty)
+            {
+                bool res = mesh.Perform(edgeIndex, targetState, actionsPerformed, 0);
+                if (!res)
+                {
+                    successful = false;
+                    Unperform();
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public void Unperform()
+        {
+            if (actionsPerformed != null && actionsPerformed.Count > 0)
+            {
+                mesh.Unperform(actionsPerformed);
+            }
+        }
+
+        public bool Equals(IAction other)
+        {
+            return other is PuzzleSetEdgeStateAction o && o.mesh == mesh && o.edgeIndex == edgeIndex && o.targetState == targetState;
+        }
+    }
 }
 

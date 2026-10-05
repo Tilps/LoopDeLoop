@@ -97,113 +97,159 @@
         @if (Game.CurrentMesh != null)
         {
             var mesh = Game.CurrentMesh;
+            const float S = 50.0f; // Scale factor: 50 pixels per grid unit
+
             float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
             foreach (var inters in mesh.Intersections)
             {
-                if (inters.X < minX) minX = inters.X;
-                if (inters.Y < minY) minY = inters.Y;
-                if (inters.X > maxX) maxX = inters.X;
-                if (inters.Y > maxY) maxY = inters.Y;
+                float x = inters.X * S;
+                float y = inters.Y * S;
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
             }
 
-            float padding = 0.8f;
-            float vbX = minX - padding;
-            float vbY = minY - padding;
-            float vbW = (maxX - minX) + padding * 2;
-            float vbH = (maxY - minY) + padding * 2;
-            if (vbW < 1) vbW = 10;
-            if (vbH < 1) vbH = 10;
+            float pad = 30.0f;
+            float vbX = minX - pad;
+            float vbY = minY - pad;
+            float vbW = (maxX - minX) + pad * 2;
+            float vbH = (maxY - minY) + pad * 2;
+            if (vbW < 10) vbW = 100;
+            if (vbH < 10) vbH = 100;
 
-            float crossLen = 0.18f;
-            float vertexRadius = 0.08f;
-            float fontSize = 0.45f;
+            float crossLen = 7.0f;
+            float vertexRadius = 3.5f;
 
-            <svg class="svg-board" viewBox="@($"{vbX} {vbY} {vbW} {vbH}")" preserveAspectRatio="xMidYMid meet">
-                <!-- Cells (background and target numbers) -->
-                @for (int c = 0; c < mesh.Cells.Count; c++)
-                {
-                    int cellIdx = c;
-                    var cell = mesh.Cells[cellIdx];
-                    var pointsStr = string.Join(" ", cell.Intersections.Select(i => $"{mesh.Intersections[i].X},{mesh.Intersections[i].Y}"));
-
-                    string cellFill = "transparent";
-                    if (cell.Color == 1) cellFill = "#fef3c7"; // Yellow (inside)
-                    else if (cell.Color == -1) cellFill = "#e2e8f0"; // Gray (outside)
-
-                    float midX = 0, midY = 0;
-                    if (cell.Intersections.Count > 0)
+            <svg class="svg-board" viewBox="@($"{vbX:F1} {vbY:F1} {vbW:F1} {vbH:F1}")" preserveAspectRatio="xMidYMid meet">
+                <!-- Layer 1: Cell backgrounds (for interior/exterior shading) -->
+                <g class="cells-layer">
+                    @for (int c = 0; c < mesh.Cells.Count; c++)
                     {
-                        foreach (var i in cell.Intersections)
+                        int cellIdx = c;
+                        var cell = mesh.Cells[cellIdx];
+                        var pointsStr = string.Join(" ", cell.Intersections.Select(i => $"{(mesh.Intersections[i].X * S):F1},{(mesh.Intersections[i].Y * S):F1}"));
+
+                        string cellFill = "transparent";
+                        if (cell.Color == 1) cellFill = "#fef3c7"; // Warm yellow (inside)
+                        else if (cell.Color == -1) cellFill = "#e2e8f0"; // Cool gray (outside)
+
+                        <polygon points="@pointsStr"
+                                 fill="@cellFill"
+                                 class="cell-poly"
+                                 @onclick="() => Game.ToggleCellColor(cellIdx, false)"
+                                 @onpointerdown:stopPropagation="true"
+                                 @oncontextmenu:preventDefault="true"
+                                 @oncontextmenu="() => Game.ToggleCellColor(cellIdx, true)" />
+                    }
+                </g>
+
+                <!-- Layer 2: Empty Grid Edges (faint background guidelines) -->
+                <g class="empty-edges-layer">
+                    @for (int e = 0; e < mesh.Edges.Count; e++)
+                    {
+                        var edge = mesh.Edges[e];
+                        if (edge.State == EdgeState.Empty)
                         {
-                            midX += mesh.Intersections[i].X;
-                            midY += mesh.Intersections[i].Y;
+                            mesh.GetEdgeExtent(edge, out float rawX1, out float rawY1, out float rawX2, out float rawY2);
+                            float x1 = rawX1 * S, y1 = rawY1 * S, x2 = rawX2 * S, y2 = rawY2 * S;
+                            <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
+                                  class="edge-empty" />
                         }
-                        midX /= cell.Intersections.Count;
-                        midY /= cell.Intersections.Count;
                     }
+                </g>
 
-                    <polygon points="@pointsStr"
-                             fill="@cellFill"
-                             class="cell-poly"
-                             @onclick="() => Game.ToggleCellColor(cellIdx, false)"
-                             @oncontextmenu:preventDefault="true"
-                             @oncontextmenu="() => Game.ToggleCellColor(cellIdx, true)" />
-
-                    @if (cell.TargetCount >= 0)
+                <!-- Layer 3: Cell Clue Numbers (rendered as pure SVG text, always on top of background lines) -->
+                <g class="cell-clues-layer">
+                    @for (int c = 0; c < mesh.Cells.Count; c++)
                     {
-                        string textClass = "cell-text";
-                        if (cell.FilledCount == cell.TargetCount) textClass += " cell-text-satisfied";
-                        else if (cell.FilledCount > cell.TargetCount) textClass += " cell-text-error";
+                        var cell = mesh.Cells[c];
+                        if (cell.TargetCount >= 0)
+                        {
+                            float sumX = 0, sumY = 0;
+                            float minCX = float.MaxValue, maxCX = float.MinValue;
+                            float minCY = float.MaxValue, maxCY = float.MinValue;
+                            foreach (var i in cell.Intersections)
+                            {
+                                float ix = mesh.Intersections[i].X * S;
+                                float iy = mesh.Intersections[i].Y * S;
+                                sumX += ix;
+                                sumY += iy;
+                                if (ix < minCX) minCX = ix;
+                                if (ix > maxCX) maxCX = ix;
+                                if (iy < minCY) minCY = iy;
+                                if (iy > maxCY) maxCY = iy;
+                            }
+                            float midX = sumX / cell.Intersections.Count;
+                            float midY = sumY / cell.Intersections.Count;
+                            float cellDim = Math.Min(maxCX - minCX, maxCY - minCY);
+                            float fontSize = Math.Clamp(cellDim * 0.44f, 11.0f, 22.0f);
 
-                        @((MarkupString)$"<text x=\"{midX}\" y=\"{midY}\" font-size=\"{fontSize}\" text-anchor=\"middle\" dominant-baseline=\"central\" class=\"{textClass}\">{cell.TargetCount}</text>")
+                            string numColor = "#1e293b";
+                            if (cell.FilledCount == cell.TargetCount) numColor = "#64748b";
+                            else if (cell.FilledCount > cell.TargetCount) numColor = "#ef4444";
+
+                            @RenderCellClue(midX, midY, cell.TargetCount, numColor, fontSize)
+                        }
                     }
-                }
+                </g>
 
-                <!-- Edges (visual lines & hit areas) -->
-                @for (int e = 0; e < mesh.Edges.Count; e++)
-                {
-                    int edgeIdx = e;
-                    var edge = mesh.Edges[edgeIdx];
-                    mesh.GetEdgeExtent(edge, out float x1, out float y1, out float x2, out float y2);
-                    bool isMarked = Game.MarkedEdges.Contains(edgeIdx);
-
-                    if (edge.State == EdgeState.Filled)
+                <!-- Layer 4: Active Edges (Filled loops & Excluded cross marks) -->
+                <g class="active-edges-layer">
+                    @for (int e = 0; e < mesh.Edges.Count; e++)
                     {
+                        int edgeIdx = e;
+                        var edge = mesh.Edges[edgeIdx];
+                        if (edge.State != EdgeState.Empty)
+                        {
+                            mesh.GetEdgeExtent(edge, out float rawX1, out float rawY1, out float rawX2, out float rawY2);
+                            float x1 = rawX1 * S, y1 = rawY1 * S, x2 = rawX2 * S, y2 = rawY2 * S;
+                            bool isMarked = Game.MarkedEdges.Contains(edgeIdx);
+
+                            if (edge.State == EdgeState.Filled)
+                            {
+                                <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
+                                      class="@(isMarked ? "edge-filled-marked" : "edge-filled")" />
+                            }
+                            else if (edge.State == EdgeState.Excluded)
+                            {
+                                float mx = (x1 + x2) / 2.0f;
+                                float my = (y1 + y2) / 2.0f;
+                                string crossClass = isMarked ? "edge-cross-marked" : "edge-cross";
+                                <line x1="@(mx - crossLen)" y1="@(my - crossLen)" x2="@(mx + crossLen)" y2="@(my + crossLen)"
+                                      class="@crossClass" />
+                                <line x1="@(mx + crossLen)" y1="@(my - crossLen)" x2="@(mx - crossLen)" y2="@(my + crossLen)"
+                                      class="@crossClass" />
+                            }
+                        }
+                    }
+                </g>
+
+                <!-- Layer 5: Intersection Vertices (clean corner dots) -->
+                <g class="vertices-layer">
+                    @foreach (var inters in mesh.Intersections)
+                    {
+                        <circle cx="@(inters.X * S)" cy="@(inters.Y * S)" r="@vertexRadius" class="vertex-dot" />
+                    }
+                </g>
+
+                <!-- Layer 6: Invisible Hit Targets (captures mouse clicks & drag smoothly) -->
+                <g class="hit-targets-layer">
+                    @for (int e = 0; e < mesh.Edges.Count; e++)
+                    {
+                        int edgeIdx = e;
+                        var edge = mesh.Edges[edgeIdx];
+                        mesh.GetEdgeExtent(edge, out float rawX1, out float rawY1, out float rawX2, out float rawY2);
+                        float x1 = rawX1 * S, y1 = rawY1 * S, x2 = rawX2 * S, y2 = rawY2 * S;
+
                         <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
-                              class="@(isMarked ? "edge-filled-marked" : "edge-filled")"
-                              stroke-width="0.14" />
+                              class="edge-hit"
+                              @onpointerdown="args => OnEdgePointerDown(edgeIdx, args)"
+                              @onpointerdown:stopPropagation="true"
+                              @onpointerenter="() => OnEdgePointerEnter(edgeIdx)"
+                              @oncontextmenu:preventDefault="true" />
                     }
-                    else if (edge.State == EdgeState.Excluded)
-                    {
-                        float mx = (x1 + x2) / 2.0f;
-                        float my = (y1 + y2) / 2.0f;
-                        string crossClass = isMarked ? "edge-cross-marked" : "edge-cross";
-                        <line x1="@(mx - crossLen)" y1="@(my - crossLen)" x2="@(mx + crossLen)" y2="@(my + crossLen)"
-                              class="@crossClass" stroke-width="0.06" />
-                        <line x1="@(mx + crossLen)" y1="@(my - crossLen)" x2="@(mx - crossLen)" y2="@(my + crossLen)"
-                              class="@crossClass" stroke-width="0.06" />
-                    }
-                    else
-                    {
-                        <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
-                              class="edge-empty"
-                              stroke-width="0.03" />
-                    }
-
-                    <!-- Interactive Hit Line -->
-                    <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
-                          class="edge-hit"
-                          stroke-width="0.45"
-                          @onpointerdown="args => OnEdgePointerDown(edgeIdx, args)"
-                          @onpointerenter="() => OnEdgePointerEnter(edgeIdx)"
-                          @oncontextmenu:preventDefault="true" />
-                }
-
-                <!-- Vertices / Intersections -->
-                @foreach (var inters in mesh.Intersections)
-                {
-                    <circle cx="@inters.X" cy="@inters.Y" r="@vertexRadius" class="vertex-dot" />
-                }
+                </g>
             </svg>
         }
     </main>
@@ -219,7 +265,7 @@
             <span class="shortcut-badge">Ctrl+R</span> Revert
         </div>
         <div>
-            Left-Click: Cycle (Empty ➔ Filled ➔ Excluded) &bull; Right-Click: Mark Excluded &bull; Drag to draw
+            Left-Click / Drag: Cycle (Empty ➔ Filled ➔ Excluded) &bull; Right-Click: Mark Excluded &bull; Click cell: Shade
         </div>
     </footer>
 </div>
@@ -279,6 +325,23 @@
     private bool isPointerDown = false;
     private EdgeState? dragTargetState = null;
     private IDisposable? timer;
+
+    private RenderFragment RenderCellClue(float x, float y, int clue, string color, float fontSize) => builder =>
+    {
+        builder.OpenElement(0, "text");
+        builder.AddAttribute(1, "x", x.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
+        builder.AddAttribute(2, "y", y.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
+        builder.AddAttribute(3, "font-size", fontSize.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
+        builder.AddAttribute(4, "font-weight", "800");
+        builder.AddAttribute(5, "font-family", "system-ui, -apple-system, sans-serif");
+        builder.AddAttribute(6, "text-anchor", "middle");
+        builder.AddAttribute(7, "dominant-baseline", "central");
+        builder.AddAttribute(8, "fill", color);
+        builder.AddAttribute(9, "class", "cell-svg-text");
+        builder.AddAttribute(10, "style", "pointer-events: none; user-select: none;");
+        builder.AddContent(11, clue.ToString());
+        builder.CloseElement();
+    };
 
     protected override void OnInitialized()
     {

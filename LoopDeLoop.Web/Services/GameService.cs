@@ -85,7 +85,12 @@ namespace LoopDeLoop.Web.Services
             if (CurrentMesh == null || edgeIndex < 0 || edgeIndex >= CurrentMesh.Edges.Count || IsSolved)
                 return;
 
-            var action = new PuzzleEdgeAction(CurrentMesh, edgeIndex, isAlternative);
+            var current = CurrentMesh.Edges[edgeIndex].State;
+            var next = !isAlternative
+                ? (current == EdgeState.Empty ? EdgeState.Filled : (current == EdgeState.Filled ? EdgeState.Excluded : EdgeState.Empty))
+                : (current == EdgeState.Empty ? EdgeState.Excluded : (current == EdgeState.Excluded ? EdgeState.Filled : EdgeState.Empty));
+
+            var action = new PuzzleSetEdgeStateAction(CurrentMesh, edgeIndex, next);
             if (UndoTree.Do(action))
             {
                 CheckSolution();
@@ -101,8 +106,7 @@ namespace LoopDeLoop.Web.Services
             if (CurrentMesh.Edges[edgeIndex].State == targetState)
                 return;
 
-            bool isAlternative = targetState == EdgeState.Excluded;
-            var action = new PuzzleEdgeAction(CurrentMesh, edgeIndex, isAlternative);
+            var action = new PuzzleSetEdgeStateAction(CurrentMesh, edgeIndex, targetState);
             if (UndoTree.Do(action))
             {
                 CheckSolution();

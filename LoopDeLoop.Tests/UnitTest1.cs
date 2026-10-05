@@ -109,6 +109,33 @@ namespace LoopDeLoop.Tests
                 Assert.AreEqual(mesh.Cells[i].TargetCount, reloaded.Cells[i].TargetCount);
             }
         }
+
+        [TestMethod]
+        public void PuzzleSetEdgeStateAction_AppliesAndUndosCorrectly()
+        {
+            var mesh = new Mesh(3, 3, MeshType.Square);
+            var tree = new UndoTree();
+
+            // Set Edge 0 to Excluded
+            var action1 = new PuzzleSetEdgeStateAction(mesh, 0, EdgeState.Excluded);
+            tree.Do(action1);
+            Assert.AreEqual(EdgeState.Excluded, mesh.Edges[0].State);
+
+            // Set Edge 0 to Filled
+            var action2 = new PuzzleSetEdgeStateAction(mesh, 0, EdgeState.Filled);
+            tree.Do(action2);
+            Assert.AreEqual(EdgeState.Filled, mesh.Edges[0].State);
+
+            // Setting to same state returns false and does nothing
+            var action3 = new PuzzleSetEdgeStateAction(mesh, 0, EdgeState.Filled);
+            Assert.IsFalse(tree.Do(action3));
+
+            // Undo back to Excluded then Empty
+            tree.Undo();
+            Assert.AreEqual(EdgeState.Excluded, mesh.Edges[0].State);
+            tree.Undo();
+            Assert.AreEqual(EdgeState.Empty, mesh.Edges[0].State);
+        }
     }
 }
 
