@@ -41,7 +41,7 @@ namespace LoopDeLoop.Network.Client
         {
             get
             {
-                return LoopDeLoopForm.MeshTypeFromString(comboMeshType.SelectedItem.ToString());
+                return LoopDeLoopForm.MeshTypeFromString(comboMeshType.SelectedItem?.ToString() ?? string.Empty);
             }
             set
             {

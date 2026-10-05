@@ -23,7 +23,7 @@ namespace LoopDeLoop
             textHelp.Select(0, 0);
         }
 
-        Thread runner;
+        Thread? runner;
 
         private void button1_Click(object sender, EventArgs e)
         {

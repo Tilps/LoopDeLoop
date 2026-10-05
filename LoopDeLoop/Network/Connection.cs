@@ -86,13 +86,13 @@ namespace LoopDeLoop.Network
 
         public static Version ProtocolVersion = new Version(1, 0, 0, 0);
 
-        public byte[] Nonce;
+        public byte[]? Nonce;
 
-        public Shard Shard;
+        public Shard? Shard;
 
-        public Player Player;
+        public Player? Player;
 
-        Thread readerThread;
+        Thread? readerThread;
 
         NetworkStream stream;
 
@@ -174,7 +174,7 @@ namespace LoopDeLoop.Network
                                     {
                                         try
                                         {
-                                            Shard.Log("Message Processing failed: " + e.ToString());
+                                            Shard?.Log("Message Processing failed: " + e.ToString());
                                         }
                                         catch
                                         {
@@ -200,7 +200,7 @@ namespace LoopDeLoop.Network
                                     {
                                         try
                                         {
-                                            Shard.Log("Response Processing failed: " + e.ToString());
+                                            Shard?.Log("Response Processing failed: " + e.ToString());
                                         }
                                         catch
                                         {
@@ -264,7 +264,7 @@ namespace LoopDeLoop.Network
                 }
                 try
                 {
-                    Shard.ConnectionClosed(this);
+                    Shard?.ConnectionClosed(this);
                 }
                 catch
                 {
@@ -307,7 +307,7 @@ namespace LoopDeLoop.Network
             }
             try
             {
-                readerThread.Abort();
+                readerThread?.Abort();
             }
             catch
             {
@@ -331,7 +331,7 @@ namespace LoopDeLoop.Network
 
         public int MessageNumber;
 
-        public Connection Connection;
+        public Connection? Connection;
 
         public abstract byte[] GetBody();
 
@@ -450,7 +450,8 @@ namespace LoopDeLoop.Network
         {
             MemoryStream stream = new MemoryStream(messageBody);
             BinaryReader reader = new BinaryReader(stream);
-            Server.ServerShard serverShard = ((Server.ServerShard)connection.Shard);
+            if (connection.Shard is not Server.ServerShard serverShard)
+                throw new InvalidOperationException("Invalid server shard.");
             byte[] mashed = reader.ReadBytes(reader.ReadInt32());
             byte[] body = reader.ReadBytes(reader.ReadInt32());
             byte[] decrypt;
@@ -469,7 +470,7 @@ namespace LoopDeLoop.Network
             bodyStream.Read(additionalNonce, 0, 32);
             for (int i = 0; i < nonce.Length; i++)
             {
-                if (nonce[i] != Connection.Nonce[i])
+                if (connection.Nonce == null || nonce[i] != connection.Nonce[i])
                     throw new Exception("Invalid login packet.");
             }
             name = Unmash(mashed, additionalNonce);
@@ -488,7 +489,7 @@ namespace LoopDeLoop.Network
 
         protected string name;
         protected byte[] passwordHash;
-        private byte[] publicKeyData;
+        private byte[]? publicKeyData;
         private byte[] nonce;
         private byte[] additionalNonce;
         private byte[] startNonce;
@@ -500,6 +501,8 @@ namespace LoopDeLoop.Network
             byte[] mashed = Mash(name, additionalNonce);
             writer.Write(mashed.Length);
             writer.Write(mashed, 0, mashed.Length);
+            if (publicKeyData == null)
+                throw new InvalidOperationException("Public key data is missing.");
             System.Security.Cryptography.RSACryptoServiceProvider rsa = new System.Security.Cryptography.RSACryptoServiceProvider();
             rsa.ImportCspBlob(publicKeyData);
             MemoryStream combiner = new MemoryStream();
@@ -539,11 +542,14 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            bool success = ((Server.ServerShard)Connection.Shard).CreatePlayer(name, passwordHash);
-            if (success)
-                ((Server.ServerShard)Connection.Shard).LoginPlayer(name, passwordHash, Connection);
-            Message response = new CreatePlayerResponseMessage(success);
-            Connection.PostResponse(response, MessageNumber);
+            if (Connection?.Shard is Server.ServerShard serverShard)
+            {
+                bool success = serverShard.CreatePlayer(name, passwordHash);
+                if (success)
+                    serverShard.LoginPlayer(name, passwordHash, Connection);
+                Message response = new CreatePlayerResponseMessage(success);
+                Connection.PostResponse(response, MessageNumber);
+            }
         }
     }
 
@@ -560,9 +566,12 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            bool success = ((Server.ServerShard)Connection.Shard).LoginPlayer(name, passwordHash, Connection);
-            Message response = new LoginPlayerResponseMessage(success);
-            Connection.PostResponse(response, MessageNumber);
+            if (Connection?.Shard is Server.ServerShard serverShard)
+            {
+                bool success = serverShard.LoginPlayer(name, passwordHash, Connection);
+                Message response = new LoginPlayerResponseMessage(success);
+                Connection.PostResponse(response, MessageNumber);
+            }
         }
     }
 
@@ -682,7 +691,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).AddLobbies(strings);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.AddLobbies(strings);
         }
     }
 
@@ -700,7 +710,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).AddPlayerToLobby(strings[0], strings[1]);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.AddPlayerToLobby(strings[0], strings[1]);
         }
 
         private static List<string> FormList(string playerName, string lobbyName)
@@ -726,7 +737,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).RemovePlayerFromLobby(strings[0], strings[1]);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.RemovePlayerFromLobby(strings[0], strings[1]);
         }
 
         private static List<string> FormList(string playerName, string lobbyName)
@@ -755,7 +767,8 @@ namespace LoopDeLoop.Network
             List<string> playerNames = new List<string>();
             for (int i = 0; i < strings.Count - 1; i++)
                 playerNames.Add(strings[i]);
-            ((Client.ClientShard)Connection.Shard).AddPlayersToLobby(playerNames, strings[strings.Count - 1]);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.AddPlayersToLobby(playerNames, strings[strings.Count - 1]);
         }
 
         private static List<string> FormList(List<string> playerNames, string lobbyName)
@@ -781,8 +794,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            if (Connection.Player.Lobby != null)
-                ((Server.ServerLobby)Connection.Player.Lobby).Broadcast(new LobbyChatBroadcast(strings[0], Connection.Player.Name));
+            if (Connection?.Player?.Lobby is Server.ServerLobby serverLobby)
+                serverLobby.Broadcast(new LobbyChatBroadcast(strings[0], Connection.Player.Name));
         }
 
         private static List<string> FormList(string message)
@@ -807,7 +820,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).ReceiveLobbyChat(strings[0], strings[1]);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.ReceiveLobbyChat(strings[0], strings[1]);
         }
 
         private static List<string> FormList(string message, string playerName)
@@ -833,8 +847,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            if (Connection.Player.Game != null)
-                ((Server.ServerGame)Connection.Player.Game).Broadcast(new GameChatBroadcast(strings[0], Connection.Player.Name));
+            if (Connection?.Player?.Game is Server.ServerGame serverGame)
+                serverGame.Broadcast(new GameChatBroadcast(strings[0], Connection.Player.Name));
         }
 
         private static List<string> FormList(string message)
@@ -859,7 +873,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).ReceiveGameChat(strings[0], strings[1]);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.ReceiveGameChat(strings[0], strings[1]);
         }
 
         private static List<string> FormList(string message, string playerName)
@@ -892,9 +907,12 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Server.ServerShard)Connection.Shard).ChangeLobby(strings[0], Connection.Player);
-            Message response = new ChangeLobbyResponse(true);
-            Connection.PostResponse(response, MessageNumber);
+            if (Connection?.Shard is Server.ServerShard serverShard && Connection.Player != null)
+            {
+                serverShard.ChangeLobby(strings[0], Connection.Player);
+                Message response = new ChangeLobbyResponse(true);
+                Connection.PostResponse(response, MessageNumber);
+            }
         }
     }
 
@@ -929,8 +947,11 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Server.ServerLobby)Connection.Player.Lobby).AddGame(Connection.Player.Name);
-            Connection.PostResponse(new NewGameResponse(true), MessageNumber);
+            if (Connection?.Player?.Lobby is Server.ServerLobby serverLobby)
+            {
+                serverLobby.AddGame(Connection.Player.Name);
+                Connection.PostResponse(new NewGameResponse(true), MessageNumber);
+            }
         }
     }
 
@@ -979,8 +1000,11 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            bool success = ((Server.ServerLobby)Connection.Player.Lobby).JoinGame(Connection.Player, ownerName, player);
-            Connection.PostResponse(new JoinGameResponse(success), MessageNumber);
+            if (Connection?.Player?.Lobby is Server.ServerLobby serverLobby)
+            {
+                bool success = serverLobby.JoinGame(Connection.Player, ownerName, player);
+                Connection.PostResponse(new JoinGameResponse(success), MessageNumber);
+            }
         }
     }
 
@@ -1015,8 +1039,11 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Server.ServerGame)Connection.Player.Game).RemovePlayer(Connection.Player);
-            Connection.PostResponse(new ExitGameResponse(true), MessageNumber);
+            if (Connection?.Player?.Game is Server.ServerGame serverGame && Connection.Player != null)
+            {
+                serverGame.RemovePlayer(Connection.Player);
+                Connection.PostResponse(new ExitGameResponse(true), MessageNumber);
+            }
         }
     }
 
@@ -1050,7 +1077,8 @@ namespace LoopDeLoop.Network
             List<string> gameOwnerNames = new List<string>();
             for (int i = 0; i < strings.Count - 1; i++)
                 gameOwnerNames.Add(strings[i]);
-            ((Client.ClientShard)Connection.Shard).AddGamesToLobby(gameOwnerNames, strings[strings.Count - 1]);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.AddGamesToLobby(gameOwnerNames, strings[strings.Count - 1]);
         }
 
         private static List<string> FormList(List<string> gameOwnerNames, string lobbyName)
@@ -1077,7 +1105,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).AddGameToLobby(strings[0], strings[1]);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.AddGameToLobby(strings[0], strings[1]);
         }
 
         private static List<string> FormList(string ownerName, string lobbyName)
@@ -1103,7 +1132,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).RemoveGameFromLobby(strings[0], strings[1]);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.RemoveGameFromLobby(strings[0], strings[1]);
         }
 
         private static List<string> FormList(string ownerName, string lobbyName)
@@ -1164,7 +1194,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).UpdateGameDetails(players, observers, gameOwner);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.UpdateGameDetails(players, observers, gameOwner);
         }
     }
 
@@ -1204,7 +1235,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).PlayerJoinedGame(playerName, gameOwner, playing);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.PlayerJoinedGame(playerName, gameOwner, playing);
         }
     }
 
@@ -1240,7 +1272,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).PlayerLeftGame(playerName, gameOwner);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.PlayerLeftGame(playerName, gameOwner);
         }
     }
     class AcceptGameMessage : Message
@@ -1261,8 +1294,11 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Server.ServerGame)Connection.Player.Game).AcceptGame(Connection.Player);
-            Connection.PostResponse(new AcceptGameResponse(true), MessageNumber);
+            if (Connection?.Player?.Game is Server.ServerGame serverGame && Connection.Player != null)
+            {
+                serverGame.AcceptGame(Connection.Player);
+                Connection.PostResponse(new AcceptGameResponse(true), MessageNumber);
+            }
         }
     }
 
@@ -1306,7 +1342,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).StartingGameSequence(stage);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.StartingGameSequence(stage);
         }
     }
 
@@ -1379,8 +1416,9 @@ namespace LoopDeLoop.Network
             mesh.ConsiderMultipleLoops = generateProfile.GenerateConsiderMultipleLoops;
             mesh.UseIntersectCellInteractsInSolver = generateProfile.GeneratorCellIntersInteract;
             mesh.Generate();
-            Mesh end = mesh.FinalSolution;
-            Connection.PostResponse(new GenerateResponse(mesh, end), MessageNumber);
+            Mesh? end = mesh.FinalSolution;
+            if (end != null && Connection != null)
+                Connection.PostResponse(new GenerateResponse(mesh, end), MessageNumber);
         }
     }
 
@@ -1489,7 +1527,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).InitialBoardDataReceived(StartLines, MeshType);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.InitialBoardDataReceived(StartLines, MeshType);
         }
 
     }
@@ -1527,8 +1566,11 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            bool success = ((Server.ServerGame)Connection.Player.Game).MakeMove(Connection.Player, edge, set);
-            Connection.PostResponse(new MoveResponse(success), MessageNumber);
+            if (Connection?.Player?.Game is Server.ServerGame serverGame && Connection.Player != null)
+            {
+                bool success = serverGame.MakeMove(Connection.Player, edge, set);
+                Connection.PostResponse(new MoveResponse(success), MessageNumber);
+            }
         }
 
     }
@@ -1594,7 +1636,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).MoveReceived(moves);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.MoveReceived(moves);
         }
 
     }
@@ -1642,7 +1685,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).ScoresReceived(scores, playing);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.ScoresReceived(scores, playing);
         }
 
     }
@@ -1676,7 +1720,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).AcceptCountReceived(count);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.AcceptCountReceived(count);
         }
 
     }
@@ -1713,16 +1758,18 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
+            if (Connection == null)
+                return;
             if (clientVersion < Connection.ProtocolVersion || clientVersion.Major > Connection.ProtocolVersion.Major)
                 Connection.PostResponse(new HelloResponse(), MessageNumber);
-            else
+            else if (Connection.Shard is Server.ServerShard serverShard)
             {
                 Connection.Nonce = new byte[32];
-                byte[] publickeydata = null;
-                lock (((Server.ServerShard)Connection.Shard).CryptoLock)
+                byte[] publickeydata;
+                lock (serverShard.CryptoLock)
                 {
-                    publickeydata = ((Server.ServerShard)Connection.Shard).RSA.ExportCspBlob(false);
-                    ((Server.ServerShard)Connection.Shard).RNG.GetBytes(Connection.Nonce);
+                    publickeydata = serverShard.RSA.ExportCspBlob(false);
+                    serverShard.RNG.GetBytes(Connection.Nonce);
                 }
                 Connection.PostResponse(new HelloResponse(Connection.Nonce, publickeydata), MessageNumber);
             }
@@ -1794,7 +1841,8 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            ((Client.ClientShard)Connection.Shard).ProfileDetailsReceived(generateProfile);
+            if (Connection?.Shard is Client.ClientShard clientShard)
+                clientShard.ProfileDetailsReceived(generateProfile);
         }
     }
 
@@ -1811,8 +1859,11 @@ namespace LoopDeLoop.Network
 
         public override void Process()
         {
-            bool success = ((Server.ServerGame)Connection.Player.Game).UpdateProfile(Connection.Player, generateProfile);
-            Connection.PostResponse(new ProfileDetailsResponse(success), MessageNumber);
+            if (Connection?.Player?.Game is Server.ServerGame serverGame && Connection.Player != null)
+            {
+                bool success = serverGame.UpdateProfile(Connection.Player, generateProfile);
+                Connection.PostResponse(new ProfileDetailsResponse(success), MessageNumber);
+            }
         }
     }
 

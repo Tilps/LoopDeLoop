@@ -379,7 +379,7 @@ namespace LoopDeLoop
                 boardFont = value;
             }
         }
-        private Font boardFont;
+        private Font boardFont = SystemFonts.DefaultFont;
 
         public double LineLengthFraction
         {
@@ -482,6 +482,7 @@ namespace LoopDeLoop
 
         private void treeView1_AfterSelect(object sender, TreeViewEventArgs e)
         {
+            if (e.Node == null) return;
             for (int i = 0; i < tabControl1.TabPages.Count; i++)
             {
                 if (e.Node.Name == tabControl1.TabPages[i].Text)

@@ -51,8 +51,8 @@ namespace LoopDeLoop.Network.Server
                     games.Add(kvp.Key);
                 }
             }
-            player.Connection.PostBroadcast(new PlayerExistsInLobbyBroadcast(players, Name));
-            player.Connection.PostBroadcast(new GameExistsBroadcast(games, Name));
+            player.Connection?.PostBroadcast(new PlayerExistsInLobbyBroadcast(players, Name));
+            player.Connection?.PostBroadcast(new GameExistsBroadcast(games, Name));
             Broadcast(new PlayerEnteredLobbyBroadcast(player.Name, Name));
         }
 

@@ -29,7 +29,7 @@ namespace LoopDeLoop
         {
             try
             {
-                return System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString();
+                return System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0.0";
             }
             catch
             {

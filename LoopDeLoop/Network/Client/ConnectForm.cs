@@ -18,7 +18,7 @@ namespace LoopDeLoop.Network.Client
             InitializeComponent();
         }
 
-        public ClientShard ParentShard;
+        public ClientShard ParentShard = null!;
 
         public string Hostname
         {
@@ -59,7 +59,7 @@ namespace LoopDeLoop.Network.Client
                 textUsername.Text = player.Name;
             }
         }
-        private Player player;
+        private Player player = null!;
 
         private void button1_Click(object sender, EventArgs e)
         {
@@ -99,7 +99,7 @@ namespace LoopDeLoop.Network.Client
                 byte[] publicKeyData = res.PublicKeyData;
                 byte[] nonce = res.Nonce;
                 Message response = con.SendMessage(new LoginPlayerMessage(player.Name, player.PasswordHash, publicKeyData, nonce));
-                LoginPlayerResponseMessage realResponse = response as LoginPlayerResponseMessage;
+                LoginPlayerResponseMessage? realResponse = response as LoginPlayerResponseMessage;
                 if (realResponse != null)
                 {
                     if (!realResponse.Success)
@@ -108,7 +108,7 @@ namespace LoopDeLoop.Network.Client
                         {
                             // TODO - confirm password.
                             response = con.SendMessage(new CreatePlayerMessage(player.Name, player.PasswordHash, publicKeyData, nonce));
-                            CreatePlayerResponseMessage realResponse2 = response as CreatePlayerResponseMessage;
+                            CreatePlayerResponseMessage? realResponse2 = response as CreatePlayerResponseMessage;
                             if (realResponse2 != null)
                             {
                                 if (realResponse2.Success)

@@ -19,6 +19,7 @@ namespace LoopDeLoop
             this.DoubleBuffered = true;
         }
 
+        [System.Diagnostics.CodeAnalysis.AllowNull]
         public override Font Font
         {
             get
@@ -32,7 +33,7 @@ namespace LoopDeLoop
             }
         }
 
-        public event EventHandler CanUndoRedoMaybeChanged;
+        public event EventHandler? CanUndoRedoMaybeChanged;
 
         private void OnCanUndoRedoMaybeChanged(EventArgs e)
         {
@@ -59,11 +60,11 @@ namespace LoopDeLoop
            }
         }
 
-        void undoTree_CanUndoRedoMaybeChanged(object sender, EventArgs e)
+        void undoTree_CanUndoRedoMaybeChanged(object? sender, EventArgs e)
         {
             OnCanUndoRedoMaybeChanged(e);
         }
-        private Mesh mesh;
+        private Mesh mesh = null!;
 
         public bool ShowColors
         {
@@ -214,7 +215,7 @@ The formula for hue difference is slightly more complicated.
              * */
         }
 
-        Pen[] penTable;
+        Pen[]? penTable;
 
         private float scaleSize;
 
@@ -286,7 +287,7 @@ The formula for hue difference is slightly more complicated.
                 return undoTree;
             }
         }
-        UndoTree undoTree;
+        UndoTree undoTree = null!;
 
         public int AutoMove
         {
@@ -410,7 +411,7 @@ The formula for hue difference is slightly more complicated.
         int lastControl = -1;
         int lastShift = -1;
 
-        public event EventHandler Solved;
+        public event EventHandler? Solved;
 
         protected override void OnMouseHover(EventArgs e)
         {
@@ -610,7 +611,7 @@ The formula for hue difference is slightly more complicated.
 
         bool allDone = false;
 
-        public event MoveEventHandler MovePerformed;
+        public event MoveEventHandler? MovePerformed;
 
         private void ClearRed()
         {
@@ -794,7 +795,7 @@ The formula for hue difference is slightly more complicated.
                     g.FillPolygon(color, points);
                 }
             }
-            EdgePairRestriction[] restricts = null;
+            EdgePairRestriction[]? restricts = null;
             if (hoveringEdge != -1)
             {
                 if (hoveringEdge >= mesh.Edges.Count)
@@ -813,7 +814,7 @@ The formula for hue difference is slightly more complicated.
                 int startPointY = (int)sy;
                 int endPointX = (int)ex;
                 int endPointY = (int)ey;
-                Pen toDraw = null;
+                Pen toDraw = emptyLink;
                 if (restricts != null && restricts[i] != EdgePairRestriction.None)
                 {
                     if (restricts[i] == EdgePairRestriction.NotBoth)
@@ -836,12 +837,12 @@ The formula for hue difference is slightly more complicated.
                     else
                     {
                         int color = e.Color;
-                        if (color > 0)
+                        if (color > 0 && penTable != null)
                         {
                             toDraw = penTable[color];
                             toDraw.DashStyle = System.Drawing.Drawing2D.DashStyle.Solid;
                         }
-                        else if (color < 0)
+                        else if (color < 0 && penTable != null)
                         {
                             toDraw = penTable[-color];
 //                            toDraw.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
@@ -923,8 +924,10 @@ The formula for hue difference is slightly more complicated.
             g.DrawLine(fullLink, centreX + linkBuffer , centreY - linkBuffer , centreX - linkBuffer , centreY + linkBuffer );
         }
 
-        internal void Print(Graphics graphics)
+        internal void Print(Graphics? graphics)
         {
+            if (graphics == null)
+                return;
             Brush fontBrush = new SolidBrush(this.ForeColor);
             Pen emptyLink = Pens.LightGray;
             Pen redLink = Pens.Red;
@@ -985,7 +988,7 @@ The formula for hue difference is slightly more complicated.
         bool useEdgeRestrictsInAuto;
         bool useCellColoringInAuto;
 
-        List<IAction> actionsPerformed;
+        List<IAction> actionsPerformed = new List<IAction>();
 
         public bool Successful
         {
@@ -1089,9 +1092,9 @@ The formula for hue difference is slightly more complicated.
 
         #region IEquatable<IAction> Members
 
-        public bool Equals(IAction other)
+        public bool Equals(IAction? other)
         {
-            LoopClickAction realOther = other as LoopClickAction;
+            LoopClickAction? realOther = other as LoopClickAction;
             if (realOther == null)
                 return false;
             if (this.mesh == realOther.mesh &&
@@ -1124,7 +1127,7 @@ The formula for hue difference is slightly more complicated.
         int cellIndex;
         MouseButtons buttons;
 
-        List<IAction> actionsPerformed;
+        List<IAction> actionsPerformed = new List<IAction>();
 
         public bool Successful
         {
@@ -1219,9 +1222,9 @@ The formula for hue difference is slightly more complicated.
 
         #region IEquatable<IAction> Members
 
-        public bool Equals(IAction other)
+        public bool Equals(IAction? other)
         {
-            CellClickAction realOther = other as CellClickAction;
+            CellClickAction? realOther = other as CellClickAction;
             if (realOther == null)
                 return false;
             if (this.mesh == realOther.mesh &&
@@ -1234,7 +1237,7 @@ The formula for hue difference is slightly more complicated.
         #endregion
     }
 
-    public delegate void MoveEventHandler(object sender, MoveEventArgs args);
+    public delegate void MoveEventHandler(object? sender, MoveEventArgs args);
 
     public class MoveEventArgs : EventArgs
     {

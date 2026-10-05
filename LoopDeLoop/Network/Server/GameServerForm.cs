@@ -15,7 +15,7 @@ namespace LoopDeLoop.Network.Server
             InitializeComponent();
         }
 
-        ServerShard shard;
+        ServerShard? shard;
 
         private void newToolStripMenuItem_Click(object sender, EventArgs e)
         {
@@ -42,7 +42,7 @@ namespace LoopDeLoop.Network.Server
             }
         }
 
-        void shard_LogOccurred(object sender, LogEventArgs args)
+        void shard_LogOccurred(object? sender, LogEventArgs args)
         {
             if (this.InvokeRequired)
             {

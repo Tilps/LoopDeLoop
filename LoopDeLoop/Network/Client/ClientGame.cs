@@ -67,24 +67,24 @@ namespace LoopDeLoop.Network.Client
         {
             lock (Players)
             {
-                Player toRemove = null;
+                Player? toRemove = null;
                 foreach (Player player in Players)
                 {
                     if (player.Name == playerName)
                         toRemove = player;
                 }
-                if (playerName != null)
+                if (toRemove != null)
                     Players.Remove(toRemove);
             }
             lock (Observers)
             {
-                Player toRemove = null;
+                Player? toRemove = null;
                 foreach (Player player in Observers)
                 {
                     if (player.Name == playerName)
                         toRemove = player;
                 }
-                if (playerName != null)
+                if (toRemove != null)
                     Observers.Remove(toRemove);
             }
         }

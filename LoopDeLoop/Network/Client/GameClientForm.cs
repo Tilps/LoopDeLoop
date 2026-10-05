@@ -16,7 +16,7 @@ namespace LoopDeLoop.Network.Client
             InitializeComponent();
         }
 
-        ClientShard shard;
+        ClientShard? shard;
 
         private void connectToolStripMenuItem_Click(object sender, EventArgs e)
         {
@@ -43,8 +43,9 @@ namespace LoopDeLoop.Network.Client
             }
         }
 
-        void shard_GamesRemovedFromCurrentLobby(object sender, EventArgs e)
+        void shard_GamesRemovedFromCurrentLobby(object? sender, EventArgs e)
         {
+            if (shard == null || shard.CurrentLobby == null) return;
             string[] games;
             lock (shard.CurrentLobbyLock)
             {
@@ -57,8 +58,9 @@ namespace LoopDeLoop.Network.Client
             this.BeginInvoke(new ParameterizedThreadStart(CheckMissingLobbyGames), (object)games);
         }
 
-        void shard_GamesAddedToCurrentLobby(object sender, EventArgs e)
+        void shard_GamesAddedToCurrentLobby(object? sender, EventArgs e)
         {
+            if (shard == null || shard.CurrentLobby == null) return;
             string[] games;
             lock (shard.CurrentLobbyLock)
             {
@@ -71,7 +73,7 @@ namespace LoopDeLoop.Network.Client
             this.BeginInvoke(new ParameterizedThreadStart(EnsureLobbyGames), (object)games);
         }
 
-        void shard_ReceivedLobbyChatMessage(object sender, LobbyChatEventArgs args)
+        void shard_ReceivedLobbyChatMessage(object? sender, LobbyChatEventArgs args)
         {
             string newLine;
             if (args.Sender == null)
@@ -85,15 +87,16 @@ namespace LoopDeLoop.Network.Client
             this.BeginInvoke(new ParameterizedThreadStart(AddMessage), (object)newLine);
         }
 
-        void AddMessage(object message)
+        void AddMessage(object? message)
         {
-            textLobbyMessages.Text = textLobbyMessages.Text + Environment.NewLine + (string)message;
+            textLobbyMessages.Text = textLobbyMessages.Text + Environment.NewLine + (string)message!;
             textLobbyMessages.SelectionStart = textLobbyMessages.Text.Length;
             textLobbyMessages.ScrollToCaret();
         }
 
-        void shard_PlayersRemovedFromCurrentLobby(object sender, EventArgs e)
+        void shard_PlayersRemovedFromCurrentLobby(object? sender, EventArgs e)
         {
+            if (shard == null || shard.CurrentLobby == null) return;
             string[] players;
             lock (shard.CurrentLobbyLock)
             {
@@ -106,8 +109,9 @@ namespace LoopDeLoop.Network.Client
             this.BeginInvoke(new ParameterizedThreadStart(CheckMissingLobbyPlayers), (object)players);
         }
 
-        void shard_PlayersAddedToCurrentLobby(object sender, EventArgs e)
+        void shard_PlayersAddedToCurrentLobby(object? sender, EventArgs e)
         {
+            if (shard == null || shard.CurrentLobby == null) return;
             string[] players;
             lock (shard.CurrentLobbyLock)
             {
@@ -120,11 +124,12 @@ namespace LoopDeLoop.Network.Client
             this.BeginInvoke(new ParameterizedThreadStart(EnsureLobbyPlayers), (object)players);
         }
 
-        string currentLobbyName;
+        string currentLobbyName = "";
 
-        void EnsureLobbyPlayers(object playerList)
+        void EnsureLobbyPlayers(object? playerList)
         {
-            string[] players = (string[])playerList;
+            if (shard == null || shard.CurrentLobby == null) return;
+            string[] players = (string[])playerList!;
             bool clearing = false;
             lock (shard.CurrentLobbyLock)
             {
@@ -150,16 +155,16 @@ namespace LoopDeLoop.Network.Client
                 }
             }
         }
-        void CheckMissingLobbyPlayers(object playerList)
+        void CheckMissingLobbyPlayers(object? playerList)
         {
-            string[] players = (string[])playerList;
+            string[] players = (string[])playerList!;
             List<TreeNode> toRemove = new List<TreeNode>();
             foreach (TreeNode node in treeLobbyContents.Nodes[1].Nodes)
             {
                 if (Array.IndexOf(players, node.Name) == -1)
                 {
                     toRemove.Add(node);
-                    if (node.Name != shard.Me.Name)
+                    if (shard?.Me == null || node.Name != shard.Me.Name)
                         AddMessage("System: " + node.Name + " has left.");
                 }
             }
@@ -168,10 +173,11 @@ namespace LoopDeLoop.Network.Client
                 treeLobbyContents.Nodes[1].Nodes.Remove(toRemoveNode);
             }
         }
-        string currentLobbyName2;
-        void EnsureLobbyGames(object gamesList)
+        string currentLobbyName2 = "";
+        void EnsureLobbyGames(object? gamesList)
         {
-            string[] games = (string[])gamesList;
+            if (shard == null || shard.CurrentLobby == null) return;
+            string[] games = (string[])gamesList!;
             bool clearing = false;
             lock (shard.CurrentLobbyLock)
             {
@@ -198,9 +204,9 @@ namespace LoopDeLoop.Network.Client
                 }
             }
         }
-        void CheckMissingLobbyGames(object gamesList)
+        void CheckMissingLobbyGames(object? gamesList)
         {
-            string[] games = (string[])gamesList;
+            string[] games = (string[])gamesList!;
             List<TreeNode> toRemove = new List<TreeNode>();
             foreach (TreeNode node in treeLobbyContents.Nodes[0].Nodes)
             {
@@ -216,8 +222,9 @@ namespace LoopDeLoop.Network.Client
             }
         }
 
-        void shard_LobbiesAdded(object sender, EventArgs e)
+        void shard_LobbiesAdded(object? sender, EventArgs e)
         {
+            if (shard == null) return;
             string[] lobbies;
             lock (shard.Lobbies)
             {
@@ -227,9 +234,9 @@ namespace LoopDeLoop.Network.Client
             this.BeginInvoke(new ParameterizedThreadStart(EnsureLobbies), (object)lobbies);
         }
 
-        void EnsureLobbies(object lobbiesList)
+        void EnsureLobbies(object? lobbiesList)
         {
-            string[] lobbies = (string[])lobbiesList;
+            string[] lobbies = (string[])lobbiesList!;
             foreach (string lobby in lobbies)
             {
                 string[] pathBits = lobby.TrimEnd('/').Split('/');
@@ -265,7 +272,7 @@ namespace LoopDeLoop.Network.Client
 
         private void treeLobbies_AfterSelect(object sender, TreeViewEventArgs e)
         {
-            if (shard != null)
+            if (shard != null && e.Node != null)
             {
                 string lobbyName = FormLobbyName(e.Node);
                 lock (shard.Lobbies)
@@ -296,10 +303,10 @@ namespace LoopDeLoop.Network.Client
             return res;
         }
 
-        private void ChangeLobby(object newLobby)
+        private void ChangeLobby(object? newLobby)
         {
-            string lobbyName = (string)newLobby;
-            shard.Me.Connection.SendMessage(new ChangeLobbyMessage(lobbyName));
+            string lobbyName = (string)newLobby!;
+            shard?.Me?.Connection?.SendMessage(new ChangeLobbyMessage(lobbyName));
         }
 
         private void contextMenuNewGame_Opening(object sender, CancelEventArgs e)
@@ -309,11 +316,12 @@ namespace LoopDeLoop.Network.Client
 
         private void newGameToolStripMenuItem_Click(object sender, EventArgs e)
         {
+            if (shard?.Me?.Connection == null) return;
             GameForm form = new GameForm();
             form.OwnerName = this.shard.Me.Name;
             form.Shard = this.shard;
-            NewGameResponse response = (NewGameResponse)shard.Me.Connection.SendMessage(new NewGameMessage());
-            if (response.Success)
+            NewGameResponse? response = shard.Me.Connection.SendMessage(new NewGameMessage()) as NewGameResponse;
+            if (response != null && response.Success)
             {
                 form.ShowDialog();
             }
@@ -322,16 +330,16 @@ namespace LoopDeLoop.Network.Client
                 MessageBox.Show("Unable to create new game.");
             }
         }
-        TreeNode lastClickedNode = null;
+        TreeNode? lastClickedNode = null;
         private void joinGameToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (lastClickedNode == null)
+            if (lastClickedNode == null || shard?.Me?.Connection == null)
                 return;
             GameForm form = new GameForm();
             form.OwnerName = lastClickedNode.Name;
             form.Shard = this.shard;
-            JoinGameResponse response = (JoinGameResponse)shard.Me.Connection.SendMessage(new JoinGameMessage(lastClickedNode.Name, true));
-            if (response.Success)
+            JoinGameResponse? response = shard.Me.Connection.SendMessage(new JoinGameMessage(lastClickedNode.Name, true)) as JoinGameResponse;
+            if (response != null && response.Success)
             {
                 form.ShowDialog();
             }
@@ -344,13 +352,13 @@ namespace LoopDeLoop.Network.Client
 
         private void watchGameToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (lastClickedNode == null)
+            if (lastClickedNode == null || shard?.Me?.Connection == null)
                 return;
             GameForm form = new GameForm();
             form.OwnerName = lastClickedNode.Name;
             form.Shard = this.shard;
-            JoinGameResponse response = (JoinGameResponse)shard.Me.Connection.SendMessage(new JoinGameMessage(lastClickedNode.Name, false));
-            if (response.Success)
+            JoinGameResponse? response = shard.Me.Connection.SendMessage(new JoinGameMessage(lastClickedNode.Name, false)) as JoinGameResponse;
+            if (response != null && response.Success)
             {
                 form.ShowDialog();
             }
@@ -383,7 +391,7 @@ namespace LoopDeLoop.Network.Client
 
         private void treeLobbyContents_MouseDown(object sender, MouseEventArgs e)
         {
-            TreeNode point = treeLobbyContents.GetNodeAt(e.Location);
+            TreeNode? point = treeLobbyContents.GetNodeAt(e.Location);
             if (point != null)
                 lastClickedNode = point;
         }

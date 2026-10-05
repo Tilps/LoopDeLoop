@@ -18,11 +18,11 @@ namespace LoopDeLoop.Network
 
         public List<Player> Observers = new List<Player>();
 
-        public Player Generator;
+        public Player? Generator;
 
-        public Lobby Lobby;
+        public Lobby? Lobby;
 
-        public Profile Profile;
+        public Profile? Profile;
 
     }
 }

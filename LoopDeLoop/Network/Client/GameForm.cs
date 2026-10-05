@@ -40,14 +40,14 @@ namespace LoopDeLoop.Network.Client
             }
         }
 
-        void shard_ProfileDetailBroadcast(object sender, ProfileDetailEventArgs args)
+        void shard_ProfileDetailBroadcast(object? sender, ProfileDetailEventArgs args)
         {
             profile = args.Profile;
         }
 
-        Profile profile;
+        Profile? profile;
 
-        void shard_AcceptCountBroadcast(object sender, AcceptCountEventArgs args)
+        void shard_AcceptCountBroadcast(object? sender, AcceptCountEventArgs args)
         {
             if (this.InvokeRequired)
             {
@@ -57,6 +57,7 @@ namespace LoopDeLoop.Network.Client
             bool all = false;
             lock (shard.CurrentLobbyLock)
             {
+                if (shard.CurrentLobby == null) return;
                 lock (shard.CurrentLobby.Games)
                 {
                     if (shard.CurrentLobby.Games.ContainsKey(OwnerName))
@@ -78,7 +79,7 @@ namespace LoopDeLoop.Network.Client
                 labelAccepted.Text = "All Accept";
         }
 
-        void shard_ReceivedGameChatMessage(object sender, LobbyChatEventArgs args)
+        void shard_ReceivedGameChatMessage(object? sender, LobbyChatEventArgs args)
         {
             if (this.InvokeRequired)
             {
@@ -100,7 +101,7 @@ namespace LoopDeLoop.Network.Client
 
         }
 
-        void shard_ScoresBroadcast(object sender, GameScoresEventArgs args)
+        void shard_ScoresBroadcast(object? sender, GameScoresEventArgs args)
         {
             if (this.InvokeRequired)
             {
@@ -128,7 +129,7 @@ namespace LoopDeLoop.Network.Client
             labelStatus.Text = scoresString;
         }
 
-        void shard_MoveBroadcast(object sender, BoardMoveEventArgs args)
+        void shard_MoveBroadcast(object? sender, BoardMoveEventArgs args)
         {
             if (this.InvokeRequired)
             {
@@ -150,7 +151,7 @@ namespace LoopDeLoop.Network.Client
             loopDisplay1.Refresh();
         }
 
-        void shard_InitialBoardDataBroadcast(object sender, BoardDataEventArgs args)
+        void shard_InitialBoardDataBroadcast(object? sender, BoardDataEventArgs args)
         {
             if (this.InvokeRequired)
             {
@@ -163,21 +164,21 @@ namespace LoopDeLoop.Network.Client
             loopDisplay1.Refresh();
         }
 
-        void shard_GameSequenceBroadcast(object sender, GameSequenceEventArgs args)
+        void shard_GameSequenceBroadcast(object? sender, GameSequenceEventArgs args)
         {
             this.BeginInvoke(new ParameterizedThreadStart(UpdateStarting), (object)args.Stage);
         }
 
-        private void UpdateStarting(object stageObj)
+        private void UpdateStarting(object? stageObj)
         {
-            int stage = (int)stageObj;
+            int stage = (int)stageObj!;
             if (stage == -1)
                 labelStatus.Text = "Generating";
             else
                 labelStatus.Text = stage.ToString();
         }
 
-        void shard_GameDetailsUpdated(object sender, EventArgs e)
+        void shard_GameDetailsUpdated(object? sender, EventArgs e)
         {
             this.BeginInvoke(new MethodInvoker(UpdateGameDetails));
         }
@@ -186,6 +187,7 @@ namespace LoopDeLoop.Network.Client
         {
             lock (shard.CurrentLobbyLock)
             {
+                if (shard.CurrentLobby == null) return;
                 lock (shard.CurrentLobby.Games)
                 {
                     if (shard.CurrentLobby.Games.ContainsKey(OwnerName))
@@ -214,9 +216,9 @@ namespace LoopDeLoop.Network.Client
             }
         }
 
-        private ClientShard shard;
+        private ClientShard shard = null!;
 
-        public string OwnerName;
+        public string OwnerName = "";
 
         private void GameForm_FormClosed(object sender, FormClosedEventArgs e)
         {
@@ -229,7 +231,7 @@ namespace LoopDeLoop.Network.Client
             shard.ProfileDetailBroadcast -= new ProfileDetailEventHandler(shard_ProfileDetailBroadcast);
             try
             {
-                shard.Me.Connection.SendMessage(new ExitGameMessage());
+                shard.Me?.Connection?.SendMessage(new ExitGameMessage());
             }
             catch
             {
@@ -238,7 +240,7 @@ namespace LoopDeLoop.Network.Client
 
         private void buttonAccept_Click(object sender, EventArgs e)
         {
-            shard.Me.Connection.SendMessage(new AcceptGameMessage());
+            shard.Me?.Connection?.SendMessage(new AcceptGameMessage());
         }
 
         private void loopDisplay1_MovePerformed(object sender, MoveEventArgs args)
@@ -247,10 +249,10 @@ namespace LoopDeLoop.Network.Client
             newThread.Start(new MoveMessage(args.Edge, args.Set));
         }
 
-        private void SendMove(object data)
+        private void SendMove(object? data)
         {
-            MoveMessage msg = (MoveMessage)data;
-            shard.Me.Connection.SendMessage(msg);
+            MoveMessage msg = (MoveMessage)data!;
+            shard.Me?.Connection?.SendMessage(msg);
         }
 
         private void textGameChat_KeyUp(object sender, KeyEventArgs e)
@@ -269,6 +271,7 @@ namespace LoopDeLoop.Network.Client
 
         private void buttonSettings_Click(object sender, EventArgs e)
         {
+            if (profile == null || shard.Me == null) return;
             GameSettingsForm form = new GameSettingsForm();
 
             form.AllowMultipleLoops = !profile.GenerateConsiderMultipleLoops;
@@ -294,7 +297,7 @@ namespace LoopDeLoop.Network.Client
                 profile.GeneratorCellIntersInteract = form.UseICinSolver;
                 profile.GeneratorStyle = form.SimpleSolver ? SolverMethod.Iterative : SolverMethod.Recursive;
                 profile.IterativeGeneratorDepth = form.SimpleSolverDepth;
-                shard.Me.Connection.SendMessage(new ProfileDetailsMessage(profile));
+                shard.Me?.Connection?.SendMessage(new ProfileDetailsMessage(profile));
             }
         }
 

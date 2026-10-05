@@ -6,11 +6,11 @@ namespace LoopDeLoop.Network.Client
 {
     class ClientShard : Shard
     {
-        public Player Me;
+        public Player? Me;
 
         public object CurrentLobbyLock = new object();
 
-        public ClientLobby CurrentLobby;
+        public ClientLobby? CurrentLobby;
 
         internal void AddLobbies(List<string> strings)
         {
@@ -33,12 +33,12 @@ namespace LoopDeLoop.Network.Client
                 LobbiesAdded(this, EventArgs.Empty);
         }
 
-        public event EventHandler LobbiesAdded;
+        public event EventHandler? LobbiesAdded;
 
-        public event EventHandler PlayersAddedToCurrentLobby;
-        public event EventHandler PlayersRemovedFromCurrentLobby;
-        public event EventHandler GamesAddedToCurrentLobby;
-        public event EventHandler GamesRemovedFromCurrentLobby;
+        public event EventHandler? PlayersAddedToCurrentLobby;
+        public event EventHandler? PlayersRemovedFromCurrentLobby;
+        public event EventHandler? GamesAddedToCurrentLobby;
+        public event EventHandler? GamesRemovedFromCurrentLobby;
 
         internal void AddPlayerToLobby(string playerName, string lobbyName)
         {
@@ -70,14 +70,13 @@ namespace LoopDeLoop.Network.Client
                 PlayersAddedToCurrentLobby(this, EventArgs.Empty);
         }
 
-        public event LobbyChatEventHandler ReceivedLobbyChatMessage;
+        public event LobbyChatEventHandler? ReceivedLobbyChatMessage;
 
-        internal void ReceiveLobbyChat(string message, string sender)
+        internal void ReceiveLobbyChat(string message, string? sender)
         {
-            if (sender == Me.Name)
+            if (Me != null && sender == Me.Name)
                 sender = null;
-            if (ReceivedLobbyChatMessage != null)
-                ReceivedLobbyChatMessage(this, new LobbyChatEventArgs(message, sender));
+            ReceivedLobbyChatMessage?.Invoke(this, new LobbyChatEventArgs(message, sender));
         }
 
         internal void RemovePlayerFromLobby(string playerName, string lobbyName)
@@ -146,7 +145,7 @@ namespace LoopDeLoop.Network.Client
                 GameDetailsUpdated(this, EventArgs.Empty);
         }
 
-        public event EventHandler GameDetailsUpdated;
+        public event EventHandler? GameDetailsUpdated;
 
         internal void PlayerJoinedGame(string playerName, string gameOwner, bool playing)
         {
@@ -165,14 +164,14 @@ namespace LoopDeLoop.Network.Client
             if (GameSequenceBroadcast != null)
                 GameSequenceBroadcast(this, new GameSequenceEventArgs(stage));
         }
-        public event GameSequenceEventHandler GameSequenceBroadcast;
+        public event GameSequenceEventHandler? GameSequenceBroadcast;
 
         internal void InitialBoardDataReceived(string[] startLines, MeshType meshType)
         {
             if (InitialBoardDataBroadcast != null)
                 InitialBoardDataBroadcast(this, new BoardDataEventArgs(startLines, meshType));
         }
-        public event BoardDataEventHandler InitialBoardDataBroadcast;
+        public event BoardDataEventHandler? InitialBoardDataBroadcast;
 
         internal void MoveReceived(List<int[]> moves)
         {
@@ -180,7 +179,7 @@ namespace LoopDeLoop.Network.Client
                 MoveBroadcast(this, new BoardMoveEventArgs(moves));
         }
 
-        public event BoardMoveEventHandler MoveBroadcast;
+        public event BoardMoveEventHandler? MoveBroadcast;
 
 
         internal void ScoresReceived(List<double> scores, bool playing)
@@ -189,7 +188,7 @@ namespace LoopDeLoop.Network.Client
                 ScoresBroadcast(this, new GameScoresEventArgs(scores, playing));
         }
 
-        public event GameScoresEventHandler ScoresBroadcast;
+        public event GameScoresEventHandler? ScoresBroadcast;
 
         internal void PlayerLeftGame(string playerName, string gameOwner)
         {
@@ -202,17 +201,16 @@ namespace LoopDeLoop.Network.Client
             if (GameDetailsUpdated != null)
                 GameDetailsUpdated(this, EventArgs.Empty);
         }
-        public event LobbyChatEventHandler ReceivedGameChatMessage;
+        public event LobbyChatEventHandler? ReceivedGameChatMessage;
 
-        internal void ReceiveGameChat(string message, string sender)
+        internal void ReceiveGameChat(string message, string? sender)
         {
-            if (sender == Me.Name)
+            if (Me != null && sender == Me.Name)
                 sender = null;
-            if (ReceivedGameChatMessage != null)
-                ReceivedGameChatMessage(this, new LobbyChatEventArgs(message, sender));
+            ReceivedGameChatMessage?.Invoke(this, new LobbyChatEventArgs(message, sender));
         }
 
-        public event AcceptCountEventHandler AcceptCountBroadcast;
+        public event AcceptCountEventHandler? AcceptCountBroadcast;
 
         internal void AcceptCountReceived(int count)
         {
@@ -226,10 +224,10 @@ namespace LoopDeLoop.Network.Client
                 ProfileDetailBroadcast(this, new ProfileDetailEventArgs(generateProfile));
         }
 
-        public event ProfileDetailEventHandler ProfileDetailBroadcast;
+        public event ProfileDetailEventHandler? ProfileDetailBroadcast;
     }
 
-    delegate void ProfileDetailEventHandler(object sender, ProfileDetailEventArgs args);
+    delegate void ProfileDetailEventHandler(object? sender, ProfileDetailEventArgs args);
 
     class ProfileDetailEventArgs : EventArgs
     {
@@ -241,7 +239,7 @@ namespace LoopDeLoop.Network.Client
         public Profile Profile;
     }
 
-    delegate void GameSequenceEventHandler(object sender, GameSequenceEventArgs args);
+    delegate void GameSequenceEventHandler(object? sender, GameSequenceEventArgs args);
 
     class GameSequenceEventArgs : EventArgs
     {
@@ -251,7 +249,7 @@ namespace LoopDeLoop.Network.Client
         }
         public int Stage;
     }
-    delegate void AcceptCountEventHandler(object sender, AcceptCountEventArgs args);
+    delegate void AcceptCountEventHandler(object? sender, AcceptCountEventArgs args);
 
     class AcceptCountEventArgs : EventArgs
     {
@@ -262,7 +260,7 @@ namespace LoopDeLoop.Network.Client
         public int Count;
     }
 
-    delegate void BoardDataEventHandler(object sender, BoardDataEventArgs args);
+    delegate void BoardDataEventHandler(object? sender, BoardDataEventArgs args);
 
     class BoardDataEventArgs : EventArgs
     {
@@ -275,7 +273,7 @@ namespace LoopDeLoop.Network.Client
 
         public MeshType MeshType;
     }
-    delegate void BoardMoveEventHandler(object sender, BoardMoveEventArgs args);
+    delegate void BoardMoveEventHandler(object? sender, BoardMoveEventArgs args);
 
     class BoardMoveEventArgs : EventArgs
     {
@@ -285,7 +283,7 @@ namespace LoopDeLoop.Network.Client
         }
         public List<int[]> Moves;
     }
-    delegate void GameScoresEventHandler(object sender, GameScoresEventArgs args);
+    delegate void GameScoresEventHandler(object? sender, GameScoresEventArgs args);
 
     class GameScoresEventArgs : EventArgs
     {
@@ -300,16 +298,16 @@ namespace LoopDeLoop.Network.Client
     }
 
 
-    delegate void LobbyChatEventHandler(object sender, LobbyChatEventArgs args);
+    delegate void LobbyChatEventHandler(object? sender, LobbyChatEventArgs args);
 
     class LobbyChatEventArgs : EventArgs
     {
-        public LobbyChatEventArgs(string message, string sender)
+        public LobbyChatEventArgs(string message, string? sender)
         {
             this.Message = message;
             this.Sender = sender;
         }
         public string Message;
-        public string Sender;
+        public string? Sender;
     }
 }

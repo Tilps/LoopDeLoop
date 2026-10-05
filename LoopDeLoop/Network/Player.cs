@@ -21,18 +21,18 @@ namespace LoopDeLoop.Network
             Salt = salt;
         }
 
-        public string Name;
-        public byte[] Salt;
-        public byte[] PasswordHash;
+        public string Name = "";
+        public byte[]? Salt;
+        public byte[]? PasswordHash;
 
         [XmlIgnore]
-        internal Lobby Lobby;
+        internal Lobby? Lobby;
 
         [XmlIgnore]
-        internal Game Game;
+        internal Game? Game;
 
         [XmlIgnore]
-        internal Connection Connection
+        internal Connection? Connection
         {
             get
             {
@@ -43,6 +43,6 @@ namespace LoopDeLoop.Network
                 connection = value;
             }
         }
-        private Connection connection;
+        private Connection? connection;
     }
 }

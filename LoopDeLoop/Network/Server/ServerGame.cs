@@ -74,10 +74,11 @@ namespace LoopDeLoop.Network.Server
                     observers.Add(existingObserver.Name);
                 }
             }
-            player.Connection.PostBroadcast(new PlayerExistsInGameBroadcast(players, observers, OwnerName));
+            player.Connection?.PostBroadcast(new PlayerExistsInGameBroadcast(players, observers, OwnerName));
             if (current != null)
-                player.Connection.PostBroadcast(new BoardDetailsBroadcast(current));
-            player.Connection.PostBroadcast(new ProfileDetailsBroadcast(Profile));
+                player.Connection?.PostBroadcast(new BoardDetailsBroadcast(current));
+            if (Profile != null)
+                player.Connection?.PostBroadcast(new ProfileDetailsBroadcast(Profile));
             Broadcast(new PlayerEnteredGameBroadcast(player.Name, OwnerName, true));
         }
 
@@ -100,10 +101,11 @@ namespace LoopDeLoop.Network.Server
                     observers.Add(existingObserver.Name);
                 }
             }
-            player.Connection.PostBroadcast(new PlayerExistsInGameBroadcast(players, observers, OwnerName));
+            player.Connection?.PostBroadcast(new PlayerExistsInGameBroadcast(players, observers, OwnerName));
             if (current != null)
-                player.Connection.PostBroadcast(new BoardDetailsBroadcast(current));
-            player.Connection.PostBroadcast(new ProfileDetailsBroadcast(Profile));
+                player.Connection?.PostBroadcast(new BoardDetailsBroadcast(current));
+            if (Profile != null)
+                player.Connection?.PostBroadcast(new ProfileDetailsBroadcast(Profile));
             Broadcast(new PlayerEnteredGameBroadcast(player.Name, OwnerName, false));
         }
 
@@ -136,8 +138,8 @@ namespace LoopDeLoop.Network.Server
         }
 
         private object gameLock = new object();
-        private Mesh current;
-        private Mesh target;
+        private Mesh? current;
+        private Mesh? target;
         private List<double> scores = new List<double>();
 
         private bool playingAllowed = false;
@@ -149,7 +151,11 @@ namespace LoopDeLoop.Network.Server
                 Generator = Players[rnd.Next(Players.Count)];
             }
             Broadcast(new StartingGameBroadcast(-1));
-            GenerateResponse res = (GenerateResponse)Generator.Connection.SendMessage(new GenerateMessage(Profile));
+            if (Generator?.Connection == null || Profile == null)
+                return;
+            GenerateResponse? res = Generator.Connection.SendMessage(new GenerateMessage(Profile)) as GenerateResponse;
+            if (res == null)
+                return;
             current = new Mesh(0, 0, res.MeshType);
             target = new Mesh(0, 0, res.MeshType);
             current.LoadFromText(res.StartLines);
@@ -172,7 +178,7 @@ namespace LoopDeLoop.Network.Server
             List<IAction> backup = new List<IAction>();
             lock (gameLock)
             {
-                if (!playingAllowed)
+                if (!playingAllowed || current == null || target == null || Profile == null)
                     return false;
                 if (current.Edges[edge].State != EdgeState.Empty)
                     return false;
@@ -248,8 +254,8 @@ namespace LoopDeLoop.Network.Server
                     anyLeft = true;
             }
             Broadcast(new PlayerExitedGameBroadcast(player.Name, OwnerName));
-            if (!anyLeft)
-                ((ServerLobby)Lobby).RemoveGame(this.OwnerName);
+            if (!anyLeft && Lobby is ServerLobby serverLobby)
+                serverLobby.RemoveGame(this.OwnerName);
         }
 
         internal bool UpdateProfile(Player player, Profile generateProfile)

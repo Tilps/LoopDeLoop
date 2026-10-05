@@ -9,7 +9,7 @@ namespace LoopDeLoop.Network
     {
         public Dictionary<string, Lobby> Lobbies = new Dictionary<string, Lobby>();
 
-        public event LogEventHandler LogOccurred;
+        public event LogEventHandler? LogOccurred;
 
         internal virtual void ConnectionClosed(Connection connection)
         {
@@ -19,8 +19,7 @@ namespace LoopDeLoop.Network
         {
             try
             {
-                if (LogOccurred != null)
-                    LogOccurred(this, new LogEventArgs(message));
+                LogOccurred?.Invoke(this, new LogEventArgs(message));
             }
             catch
             {
@@ -28,7 +27,7 @@ namespace LoopDeLoop.Network
         }
     }
 
-    delegate void LogEventHandler(object sender, LogEventArgs args);
+    delegate void LogEventHandler(object? sender, LogEventArgs args);
 
     class LogEventArgs : EventArgs
     {

@@ -34,28 +34,28 @@ namespace LoopDeLoop
             loopDisplay1.CanUndoRedoMaybeChanged += new EventHandler(UndoTree_CanUndoRedoMaybeChanged);
         }
 
-        void UndoTree_CanUndoRedoMaybeChanged(object sender, EventArgs e)
+        void UndoTree_CanUndoRedoMaybeChanged(object? sender, EventArgs e)
         {
             redoToolStripMenuItem.Enabled = loopDisplay1.UndoTree.CanRedo;
             undoToolStripMenuItem.Enabled = loopDisplay1.UndoTree.CanUndo;
         }
 
-        void loopDisplay1_Solved(object sender, EventArgs e)
+        void loopDisplay1_Solved(object? sender, EventArgs e)
         {
             timer1.Enabled = false;
         }
 
-        ProgressBar bar;
+        ProgressBar? bar;
 
         object generatorLock = new object();
         bool generating = false;
-        Thread generatorThread = null;
-        Mesh generatingMesh = null;
+        Thread? generatorThread = null;
+        Mesh? generatingMesh = null;
         bool stopping;
 
         private void button1_Click(object sender, EventArgs e)
         {
-            string typeName =comboMeshType.SelectedItem.ToString();
+            string typeName = comboMeshType.SelectedItem?.ToString() ?? string.Empty;
             MeshType type = MeshTypeFromString(typeName);
             int width;
             int height;
@@ -85,13 +85,15 @@ namespace LoopDeLoop
                 {
                     buttonNew.Text = "Abort";
                     stopping = true;
-                    generatingMesh.AbortPrune = true;
+                    if (generatingMesh != null)
+                        generatingMesh.AbortPrune = true;
                 }
                 else if (generating)
                 {
                     generating = false;
                     buttonNew.Text = "New";
-                    generatorThread.Abort();
+                    if (generatorThread != null)
+                        generatorThread.Abort();
                     generatorThread = null;
                 }
                 else
@@ -107,11 +109,11 @@ namespace LoopDeLoop
             }
         }
 
-        private void Generate(object newMeshObj)
+        private void Generate(object? newMeshObj)
         {
             try
             {
-                Mesh newMesh = (Mesh)newMeshObj;
+                Mesh newMesh = (Mesh)newMeshObj!;
                 try
                 {
                     this.Invoke(new ParameterizedThreadStart(ShowBar), newMesh.Cells.Count);
@@ -189,9 +191,9 @@ namespace LoopDeLoop
             this.buttonNew.Text = "New";
         }
 
-        private void UpdateMesh(object meshObj)
+        private void UpdateMesh(object? meshObj)
         {
-            Mesh newMesh = (Mesh)meshObj;
+            Mesh newMesh = (Mesh)meshObj!;
             loopDisplay1.Mesh = newMesh;
             loopDisplay1.Refresh();
             if (Settings.Default.ShowClock)
@@ -206,14 +208,14 @@ namespace LoopDeLoop
         {
             if (bar != null)
             {
-                labelDepthPatern.Parent.Controls.Remove(bar);
+                labelDepthPatern.Parent?.Controls.Remove(bar);
                 bar = null;
             }
         }
 
-        private void ShowBar(object countObj)
+        private void ShowBar(object? countObj)
         {
-            int count = (int)countObj;
+            int count = (int)countObj!;
             bar = new ProgressBar();
             bar.Top = labelDepthPatern.Top;
             bar.Left = labelDepthPatern.Left;
@@ -222,11 +224,11 @@ namespace LoopDeLoop
             bar.Step = 1;
             bar.Maximum = count;
             bar.Minimum = 0;
-            labelDepthPatern.Parent.Controls.Add(bar);
+            labelDepthPatern.Parent?.Controls.Add(bar);
             bar.BringToFront();
         }
 
-        void Mesh_PrunedCountProgress(object sender, EventArgs e)
+        void Mesh_PrunedCountProgress(object? sender, EventArgs e)
         {
             if (this.InvokeRequired)
             {
@@ -240,8 +242,8 @@ namespace LoopDeLoop
                 }
                 return;
             }
-            bar.PerformStep();
-            bar.Refresh();
+            bar?.PerformStep();
+            bar?.Refresh();
         }
 
         public static bool ParseSize(string val, MeshType type, out int width, out int height)
@@ -360,7 +362,7 @@ namespace LoopDeLoop
         }
 
         object ratingThreadLock = new object();
-        Thread ratingThread = null;
+        Thread? ratingThread = null;
 
         private void Rate()
         {
@@ -379,17 +381,17 @@ namespace LoopDeLoop
 
         }
 
-        internal static void UnexpectedExceptionMessage(object o)
+        internal static void UnexpectedExceptionMessage(object? o)
         {
-            Exception e = (Exception)o;
-            MessageBox.Show("An unexpected error has occured. Error details: " + e.ToString());
+            if (o is Exception e)
+                MessageBox.Show("An unexpected error has occured. Error details: " + e.ToString());
         }
 
-        private void RatingThreadProc(object toRateObj)
+        private void RatingThreadProc(object? toRateObj)
         {
             try
             {
-                Mesh toRate = (Mesh)toRateObj;
+                Mesh toRate = (Mesh)toRateObj!;
                 toRate.Clear();
                 string rating = string.Empty;
                 toRate.SolverMethod = SolverMethod.Recursive;
@@ -543,9 +545,9 @@ namespace LoopDeLoop
             return res;
         }
 
-        private void SetLabel(object newLabelObj)
+        private void SetLabel(object? newLabelObj)
         {
-            labelDepthPatern.Text = (string)newLabelObj;
+            labelDepthPatern.Text = (string)newLabelObj!;
         }
 
         private bool VerifyBoardSize(int width, int height)
@@ -644,15 +646,15 @@ namespace LoopDeLoop
             }
         }
 
-        private void SolveComplete(object mesh)
+        private void SolveComplete(object? mesh)
         {
             if (this.InvokeRequired)
             {
                 this.BeginInvoke(new ParameterizedThreadStart(SolveComplete), mesh);
                 return;
             }
-            Mesh original = (Mesh)mesh;
-            if (loopDisplay1.Mesh == original)
+            Mesh original = (Mesh)mesh!;
+            if (loopDisplay1.Mesh == original && loopDisplay1.Mesh.SolutionFound != null)
             {
                 labelDepthPatern.Text = ArrayToText(loopDisplay1.Mesh.DepthPatern);
                 loopDisplay1.Mesh = loopDisplay1.Mesh.SolutionFound;

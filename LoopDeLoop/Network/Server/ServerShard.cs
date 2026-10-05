@@ -48,7 +48,7 @@ namespace LoopDeLoop.Network.Server
         }
         private int portNumber = 1331;
 
-        public string StorageFile
+        public string? StorageFile
         {
             get
             {
@@ -60,7 +60,7 @@ namespace LoopDeLoop.Network.Server
                 SaveSettings();
             }
         }
-        private string storageFile;
+        private string? storageFile;
 
         private void SaveSettings()
         {
@@ -69,7 +69,7 @@ namespace LoopDeLoop.Network.Server
                 SavedServerDetails saver = new SavedServerDetails();
                 saver.PortNumber = this.portNumber;
                 XmlSerializer serializer = new XmlSerializer(typeof(SavedServerDetails));
-                using (FileStream stream = File.Create(StorageFile))
+                using (FileStream stream = File.Create(storageFile))
                 {
                     serializer.Serialize(stream, saver);
                 }
@@ -82,10 +82,13 @@ namespace LoopDeLoop.Network.Server
             XmlSerializer serializer = new XmlSerializer(typeof(SavedServerDetails));
             using (FileStream stream = File.OpenRead(storageFile))
             {
-                SavedServerDetails saver = (SavedServerDetails)serializer.Deserialize(stream);
-                this.portNumber = saver.PortNumber;
+                SavedServerDetails? saver = (SavedServerDetails?)serializer.Deserialize(stream);
+                if (saver != null)
+                    this.portNumber = saver.PortNumber;
             }
-            string basePath = Path.GetDirectoryName(storageFile);
+            string? basePath = Path.GetDirectoryName(storageFile);
+            if (basePath == null)
+                return;
             string[] subs = Directory.GetDirectories(basePath);
             XmlSerializer serializer2 = new XmlSerializer(typeof(Player));
             foreach (string sub in subs)
@@ -95,14 +98,17 @@ namespace LoopDeLoop.Network.Server
                 {
                     try
                     {
-                        Player newPlayer;
+                        Player? newPlayer;
                         using (FileStream stream = File.OpenRead(playerFile))
                         {
-                            newPlayer = (Player)serializer2.Deserialize(stream);
+                            newPlayer = (Player?)serializer2.Deserialize(stream);
                         }
-                        lock (Players)
+                        if (newPlayer != null)
                         {
-                            Players.Add(newPlayer.Name, newPlayer);
+                            lock (Players)
+                            {
+                                Players.Add(newPlayer.Name, newPlayer);
+                            }
                         }
                     }
                     catch (Exception e)
@@ -119,7 +125,9 @@ namespace LoopDeLoop.Network.Server
             if (storageFile != null)
             {
                 string name = details.Name;
-                string basePath = Path.GetDirectoryName(storageFile);
+                string? basePath = Path.GetDirectoryName(storageFile);
+                if (basePath == null)
+                    return;
                 string subPath = Path.Combine(basePath, name.Substring(0, 1));
                 if (!Directory.Exists(subPath))
                     Directory.CreateDirectory(subPath);
@@ -197,13 +205,13 @@ namespace LoopDeLoop.Network.Server
 
         internal bool LoginPlayer(string name, byte[] passwordHashInput, Connection connection)
         {
-            Player player;
+            Player? player;
             bool exists;
             lock (Players)
             {
                 exists = Players.TryGetValue(name, out player);
             }
-            if (exists)
+            if (exists && player != null && player.Salt != null && player.PasswordHash != null)
             {
                 byte[] testHash = CreateHash(passwordHashInput, player.Salt);
                 bool match = true;
@@ -230,16 +238,16 @@ namespace LoopDeLoop.Network.Server
                 return false;
         }
 
-        private void SendInitialMessages(object objPlayer)
+        private void SendInitialMessages(object? objPlayer)
         {
-            Player player = (Player)objPlayer;
+            Player player = (Player)objPlayer!;
             List<string> lobbies = new List<string>();
             lock (Lobbies)
             {
                 foreach (KeyValuePair<string, Lobby> kvp in Lobbies)
                     lobbies.Add(kvp.Key);
             }
-            player.Connection.PostBroadcast(new LobbyExistsBroadcast(lobbies));
+            player.Connection?.PostBroadcast(new LobbyExistsBroadcast(lobbies));
             EnterLobby(player, "/");
         }
 
@@ -253,7 +261,7 @@ namespace LoopDeLoop.Network.Server
             lobby.AddPlayer(player);
         }
 
-        private Socket serverSocket;
+        private Socket? serverSocket;
 
         public void Start()
         {
@@ -269,7 +277,7 @@ namespace LoopDeLoop.Network.Server
         {
             try
             {
-                serverSocket.Close(500);
+                serverSocket?.Close(500);
             }
             catch (Exception e)
             {
@@ -281,11 +289,13 @@ namespace LoopDeLoop.Network.Server
         {
             try
             {
-                Socket socket = (Socket)res.AsyncState;
-                Socket newSocket = socket.EndAccept(res);
-                Connection con = new Connection(newSocket, this);
-                con.Start();
-                socket.BeginAccept(ConnectionAccept, socket);
+                if (res.AsyncState is Socket socket)
+                {
+                    Socket newSocket = socket.EndAccept(res);
+                    Connection con = new Connection(newSocket, this);
+                    con.Start();
+                    socket.BeginAccept(ConnectionAccept, socket);
+                }
             }
             catch (Exception e)
             {
@@ -295,7 +305,7 @@ namespace LoopDeLoop.Network.Server
 
         internal void ChangeLobby(string lobbyName, Player player)
         {
-            ServerLobby lobby = (ServerLobby)player.Lobby;
+            ServerLobby? lobby = player.Lobby as ServerLobby;
             if (lobby != null)
             {
                 lobby.RemovePlayer(player);
