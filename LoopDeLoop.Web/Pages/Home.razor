@@ -128,7 +128,6 @@
             if (vbW < 10) vbW = 100;
             if (vbH < 10) vbH = 100;
 
-            float crossLen = 7.0f;
             float vertexRadius = 3.5f;
 
             <svg id="game-board-svg" class="svg-board" viewBox="@($"{vbX:F1} {vbY:F1} {vbW:F1} {vbH:F1}")" preserveAspectRatio="xMidYMid meet">
@@ -174,23 +173,23 @@
                         if (cell.TargetCount >= 0)
                         {
                             float sumX = 0, sumY = 0;
-                            float minCX = float.MaxValue, maxCX = float.MinValue;
-                            float minCY = float.MaxValue, maxCY = float.MinValue;
                             foreach (var i in cell.Intersections)
                             {
-                                float ix = mesh.Intersections[i].X * S;
-                                float iy = mesh.Intersections[i].Y * S;
-                                sumX += ix;
-                                sumY += iy;
-                                if (ix < minCX) minCX = ix;
-                                if (ix > maxCX) maxCX = ix;
-                                if (iy < minCY) minCY = iy;
-                                if (iy > maxCY) maxCY = iy;
+                                sumX += mesh.Intersections[i].X * S;
+                                sumY += mesh.Intersections[i].Y * S;
                             }
                             float midX = sumX / cell.Intersections.Count;
                             float midY = sumY / cell.Intersections.Count;
-                            float cellDim = Math.Min(maxCX - minCX, maxCY - minCY);
-                            float fontSize = Math.Clamp(cellDim * 0.44f, 11.0f, 22.0f);
+
+                            float minEdgeDistSq = float.MaxValue;
+                            foreach (var edgeIdx in cell.Edges)
+                            {
+                                mesh.GetEdgeExtent(mesh.Edges[edgeIdx], out float rawX1, out float rawY1, out float rawX2, out float rawY2);
+                                float dSq = DistanceToSegmentSq(midX, midY, rawX1 * S, rawY1 * S, rawX2 * S, rawY2 * S);
+                                if (dSq < minEdgeDistSq) minEdgeDistSq = dSq;
+                            }
+                            float inradius = MathF.Sqrt(minEdgeDistSq);
+                            float fontSize = Math.Clamp(inradius * 0.95f, 13.0f, 22.0f);
 
                             string numColor = "#1e293b";
                             if (cell.FilledCount == cell.TargetCount) numColor = "#64748b";
@@ -223,11 +222,26 @@
                             {
                                 float mx = (x1 + x2) / 2.0f;
                                 float my = (y1 + y2) / 2.0f;
+                                float edx = x2 - x1;
+                                float edy = y2 - y1;
+                                float elen = MathF.Sqrt(edx * edx + edy * edy);
+                                if (elen < 1e-4f) elen = 1.0f;
+                                float ux = edx / elen;
+                                float uy = edy / elen;
+                                float vx = -uy;
+                                float vy = ux;
+
+                                float r = 3.6f;
+                                float o1x = r * (ux + vx);
+                                float o1y = r * (uy + vy);
+                                float o2x = r * (ux - vx);
+                                float o2y = r * (uy - vy);
+
                                 string crossClass = isMarked ? "edge-cross-marked" : "edge-cross";
-                                <line x1="@(mx - crossLen)" y1="@(my - crossLen)" x2="@(mx + crossLen)" y2="@(my + crossLen)"
+                                <line x1="@(mx - o1x)" y1="@(my - o1y)" x2="@(mx + o1x)" y2="@(my + o1y)"
                                       class="@crossClass"
                                       style="pointer-events: none;" />
-                                <line x1="@(mx + crossLen)" y1="@(my - crossLen)" x2="@(mx - crossLen)" y2="@(my + crossLen)"
+                                <line x1="@(mx - o2x)" y1="@(my - o2y)" x2="@(mx + o2x)" y2="@(my + o2y)"
                                       class="@crossClass"
                                       style="pointer-events: none;" />
                             }
