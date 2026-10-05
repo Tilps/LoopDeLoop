@@ -123,6 +123,16 @@
                             <div class="progress-bar-fill" style="width: @(Math.Clamp((double)Game.PrunedProgress / Game.TotalCells * 100, 0, 100).ToString("F0"))%"></div>
                         </div>
                     }
+
+                    @if (Game.GenerationElapsedSeconds >= 10)
+                    {
+                        <div class="generation-timeout-hint">
+                            Generation is taking longer than usual (@($"{(int)Game.GenerationElapsedSeconds}s"))...
+                        </div>
+                        <button class="cancel-gen-btn" @onclick="Game.CancelGeneration" title="Cancel generation and keep existing board">
+                            ✕ Cancel Generation
+                        </button>
+                    }
                 </div>
             </div>
         }
@@ -416,7 +426,7 @@
         Game.OnStateChanged += HandleStateChanged;
         timer = new System.Threading.Timer(_ =>
         {
-            if (Game.StartTime.HasValue && !Game.IsSolved && !Game.IsGenerating)
+            if (Game.IsGenerating || (Game.StartTime.HasValue && !Game.IsSolved))
             {
                 InvokeAsync(StateHasChanged);
             }

@@ -37,15 +37,38 @@ namespace LoopDeLoop.Web.Services
             OnStateChanged?.Invoke();
         }
 
+        private Mesh? generatingMesh;
+        private CancellationTokenSource? generationCts;
+        public DateTime? GenerationStartTime { get; private set; }
+
+        public double GenerationElapsedSeconds => GenerationStartTime.HasValue
+            ? (DateTime.UtcNow - GenerationStartTime.Value).TotalSeconds
+            : 0;
+
+        public void CancelGeneration()
+        {
+            if (generatingMesh != null)
+            {
+                generatingMesh.AbortPrune = true;
+            }
+            generationCts?.Cancel();
+            IsGenerating = false;
+            NotifyChanged();
+        }
+
         public async Task GenerateNewPuzzleAsync()
         {
             if (IsGenerating) return;
 
+            generationCts?.Cancel();
+            generationCts = new CancellationTokenSource();
+            var token = generationCts.Token;
+
             IsGenerating = true;
+            GenerationStartTime = DateTime.UtcNow;
             IsSolved = false;
             PrunedProgress = 0;
             TotalCells = 0;
-            MarkedEdges.Clear();
             NotifyChanged();
 
             // Allow UI to render the loading overlay before computation begins
@@ -61,6 +84,7 @@ namespace LoopDeLoop.Web.Services
             try
             {
                 Mesh mesh = PuzzleHelper.MakeMesh(width, height, CurrentType, Difficulty);
+                generatingMesh = mesh;
                 TotalCells = mesh.Cells.Count;
                 NotifyChanged();
 
@@ -70,15 +94,26 @@ namespace LoopDeLoop.Web.Services
                     NotifyChanged();
                 });
 
-                await mesh.GenerateAsync(progress);
-                CurrentMesh = mesh;
+                await mesh.GenerateAsync(progress, token);
 
-                UndoTree = new UndoTree();
-                StartTime = DateTime.UtcNow;
-                IsSolved = false;
+                if (!token.IsCancellationRequested && !mesh.AbortPrune)
+                {
+                    CurrentMesh = mesh;
+                    MarkedEdges.Clear();
+                    UndoTree = new UndoTree();
+                    StartTime = DateTime.UtcNow;
+                    IsSolved = false;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Gracefully cancelled by user
             }
             finally
             {
+                generatingMesh = null;
+                generationCts = null;
+                GenerationStartTime = null;
                 IsGenerating = false;
                 NotifyChanged();
             }

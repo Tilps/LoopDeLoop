@@ -1366,10 +1366,11 @@ namespace LoopDeLoop
             bool done = false;
             List<IAction> backup = new List<IAction>();
             Random rnd = new Random();
-            while (!done && !cancellationToken.IsCancellationRequested)
+            while (!done && !cancellationToken.IsCancellationRequested && !AbortPrune)
             {
                 done = true;
                 GenerateInitialLoop(rnd, backup);
+                if (cancellationToken.IsCancellationRequested || AbortPrune) break;
                 UpdateCounts();
                 List<int> cellsOfVariance = new List<int>();
                 List<int> cellsOfDoubleVariance = new List<int>();
@@ -1381,6 +1382,10 @@ namespace LoopDeLoop
                 }
                 catch (Exception e)
                 {
+                    if (e is OperationCanceledException || cancellationToken.IsCancellationRequested || AbortPrune)
+                    {
+                        break;
+                    }
                     if (e.Message == "Can't solve it anyway")
                     {
                         done = false;
