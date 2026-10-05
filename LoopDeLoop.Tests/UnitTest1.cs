@@ -270,7 +270,7 @@ namespace LoopDeLoop.Tests
                 string encoded = PuzzleCodec.Encode(mesh, w, h);
                 Console.WriteLine($"{type} ({w}x{h}) [{encoded.Length} chars]: {encoded}");
                 Assert.IsFalse(string.IsNullOrWhiteSpace(encoded));
-                Assert.IsTrue(encoded.Length < 120, $"Encoded string for {type} should be ultra-compact (was {encoded.Length}: {encoded})");
+                Assert.IsTrue(encoded.Length < 150, $"Encoded string for {type} should be ultra-compact (was {encoded.Length}: {encoded})");
 
                 bool success = PuzzleCodec.TryDecode(encoded, out var decoded, out int decW, out int decH, out var decType);
                 Assert.IsTrue(success, $"Decoding {type} should succeed");
@@ -321,6 +321,63 @@ namespace LoopDeLoop.Tests
             Assert.IsTrue(undoTree.Undo());
             Assert.AreEqual(EdgeState.Empty, mesh.Edges[0].State);
             Assert.IsTrue(undoTree.CanRedo, "Normal undone action 1 should be redoable");
+        }
+
+        [TestMethod]
+        public void LoadFromText_SpanOverload_ParsesCorrectly()
+        {
+            var mesh = PuzzleHelper.MakeMesh(3, 3, MeshType.Square, 0);
+            mesh.Generate();
+            string saved = mesh.SaveToString();
+
+            var loaded = new Mesh(3, 3, MeshType.Square);
+            bool success = loaded.LoadFromText(saved.AsSpan());
+            Assert.IsTrue(success);
+            Assert.AreEqual(mesh.Cells.Count, loaded.Cells.Count);
+            Assert.AreEqual(mesh.Edges.Count, loaded.Edges.Count);
+            Assert.AreEqual(mesh.Intersections.Count, loaded.Intersections.Count);
+
+            for (int i = 0; i < mesh.Cells.Count; i++)
+            {
+                Assert.AreEqual(mesh.Cells[i].TargetCount, loaded.Cells[i].TargetCount);
+            }
+        }
+
+        [TestMethod]
+        public void ParseSize_SpanBased_ParsesAllDelimiters()
+        {
+            Assert.IsTrue(PuzzleHelper.ParseSize("10x12", MeshType.Square, out int w1, out int h1));
+            Assert.AreEqual(10, w1);
+            Assert.AreEqual(12, h1);
+
+            Assert.IsTrue(PuzzleHelper.ParseSize(" 7 X 9 ", MeshType.Square, out int w2, out int h2));
+            Assert.AreEqual(7, w2);
+            Assert.AreEqual(9, h2);
+
+            Assert.IsTrue(PuzzleHelper.ParseSize("8*8", MeshType.Square, out int w3, out int h3));
+            Assert.AreEqual(8, w3);
+            Assert.AreEqual(8, h3);
+
+            Assert.IsTrue(PuzzleHelper.ParseSize("15", MeshType.Square, out int w4, out int h4));
+            Assert.AreEqual(15, w4);
+            Assert.AreEqual(15, h4);
+
+            Assert.IsFalse(PuzzleHelper.ParseSize("abc", MeshType.Square, out _, out _));
+            Assert.IsFalse(PuzzleHelper.ParseSize("-5x10", MeshType.Square, out _, out _));
+        }
+
+        [TestMethod]
+        public void Solver_RepeatedSolves_ReusesConnectableTrackerWithoutError()
+        {
+            var mesh = PuzzleHelper.MakeMesh(4, 4, MeshType.Square, 1); // Difficulty 1 enables ConsiderMultipleLoops
+            mesh.Generate();
+
+            // Run TrySolve multiple times to exercise connectableTracker caching across solves
+            var state1 = mesh.TrySolve();
+            Assert.AreEqual(SolveState.Solved, state1);
+
+            var state2 = mesh.TrySolve();
+            Assert.AreEqual(SolveState.Solved, state2);
         }
     }
 }

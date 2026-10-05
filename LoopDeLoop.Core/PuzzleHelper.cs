@@ -71,22 +71,23 @@ namespace LoopDeLoop
             if (string.IsNullOrWhiteSpace(val))
                 return true;
 
-            val = val.Trim();
-            string[] bits = val.Split('x', 'X', '*');
-            if (bits.Length == 2)
+            ReadOnlySpan<char> span = val.AsSpan().Trim();
+            int sepIndex = span.IndexOfAny('x', 'X', '*');
+            if (sepIndex >= 0)
             {
-                if (!int.TryParse(bits[0].Trim(), out width) || !int.TryParse(bits[1].Trim(), out height))
+                ReadOnlySpan<char> wSpan = span[..sepIndex].Trim();
+                ReadOnlySpan<char> hSpan = span[(sepIndex + 1)..].Trim();
+                if (!int.TryParse(wSpan, out width) || !int.TryParse(hSpan, out height))
                     return false;
                 return width > 0 && height > 0;
             }
-            else if (bits.Length == 1)
+            else
             {
-                if (!int.TryParse(bits[0].Trim(), out width))
+                if (!int.TryParse(span, out width))
                     return false;
                 height = width;
                 return width > 0;
             }
-            return false;
         }
 
         public static MeshType MeshTypeFromString(string typeName)
