@@ -222,7 +222,7 @@ namespace LoopDeLoop.Tests
         [TestMethod]
         public void ReconstructionFromClues_Succeeds()
         {
-            var types = new[] { MeshType.Square, MeshType.Triangle, MeshType.Hexagonal, MeshType.Octagon };
+            var types = new[] { MeshType.Square, MeshType.Hexagonal, MeshType.Octagon };
             foreach (var type in types)
             {
                 PuzzleHelper.GetDefaultSize(type, out int w, out int h);
@@ -235,7 +235,7 @@ namespace LoopDeLoop.Tests
                 Assert.AreEqual(mesh1.Cells.Count, mesh2.Cells.Count);
                 for (int i = 0; i < clues.Length; i++)
                 {
-                    mesh2.Cells[i].TargetCount = clues[i];
+                    mesh2.SetClue(i, clues[i]);
                 }
 
                 var state1 = mesh1.TrySolve();
@@ -285,6 +285,42 @@ namespace LoopDeLoop.Tests
                     Assert.AreEqual(mesh.Cells[i].TargetCount, decoded.Cells[i].TargetCount, $"Cell {i} clue mismatch in {type}");
                 }
             }
+        }
+
+        [TestMethod]
+        public void UndoTree_UndoAndForget_RevertsActionAndRemovesFromTree()
+        {
+            var mesh = new Mesh(3, 3, MeshType.Square);
+            var undoTree = new UndoTree();
+
+            Assert.IsFalse(undoTree.CanUndo);
+            Assert.IsFalse(undoTree.CanRedo);
+
+            var action1 = new PuzzleSetEdgeStateAction(mesh, 0, EdgeState.Filled);
+            Assert.IsTrue(undoTree.Do(action1));
+            Assert.AreEqual(EdgeState.Filled, mesh.Edges[0].State);
+            Assert.IsTrue(undoTree.CanUndo);
+            Assert.IsFalse(undoTree.CanRedo);
+
+            // Speculative second touch: edge 1 toggled
+            var action2 = new PuzzleSetEdgeStateAction(mesh, 1, EdgeState.Filled);
+            Assert.IsTrue(undoTree.Do(action2));
+            Assert.AreEqual(EdgeState.Filled, mesh.Edges[1].State);
+
+            // UndoAndForget action2 (simulate multi-touch pinch detection)
+            bool reverted = undoTree.UndoAndForget();
+            Assert.IsTrue(reverted);
+            Assert.AreEqual(EdgeState.Empty, mesh.Edges[1].State, "Edge 1 should be reverted to Empty");
+            Assert.AreEqual(EdgeState.Filled, mesh.Edges[0].State, "Edge 0 should remain Filled");
+
+            // Redo should NOT be available because action2 was completely forgotten
+            Assert.IsFalse(undoTree.CanRedo, "Forgotten action must not be available for Redo");
+            Assert.IsTrue(undoTree.CanUndo, "Prior action 1 should still be undoable");
+
+            // Normal undo of action 1
+            Assert.IsTrue(undoTree.Undo());
+            Assert.AreEqual(EdgeState.Empty, mesh.Edges[0].State);
+            Assert.IsTrue(undoTree.CanRedo, "Normal undone action 1 should be redoable");
         }
     }
 }

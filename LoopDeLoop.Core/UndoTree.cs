@@ -111,6 +111,26 @@ namespace LoopDeLoop
             return true;
         }
 
+        public bool UndoAndForget()
+        {
+            if (current.Action == null || current.Parent == null)
+                return false;
+            var toRemove = current;
+            current.Action.Unperform();
+            current = current.Parent;
+            current.Children.Remove(toRemove);
+            if (current.LastDoneChild == toRemove)
+            {
+                current.LastDoneChild = current.Children.Count > 0 ? current.Children[current.Children.Count - 1] : null;
+            }
+            if (marked == toRemove)
+            {
+                marked = current;
+            }
+            OnCanUndoRedoMaybeChanged(EventArgs.Empty);
+            return true;
+        }
+
         public bool CanRedo
         {
             get

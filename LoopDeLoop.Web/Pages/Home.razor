@@ -6,97 +6,143 @@
 <PageTitle>Loop-de-loop - Slitherlink Puzzle Game</PageTitle>
 
 <div class="game-container">
+    @if (hasPwaUpdate)
+    {
+        <div class="update-banner">
+            <span>✨ A new version is available!</span>
+            <button class="btn" @onclick="ReloadFromServer">Update Now</button>
+            <button class="btn" style="background:transparent;color:#ffffff;" @onclick="() => hasPwaUpdate = false">✕</button>
+        </div>
+    }
+
     <!-- Header / Controls -->
     <header class="game-header">
-        <div class="brand">
-            <h1 class="brand-title">Loop-de-loop</h1>
+        <!-- Persistent Action Bar: Undo, Redo, Fix, Unfix, Revert, Timer, Menu Toggle -->
+        <div class="action-bar">
+            <div class="action-buttons-group">
+                <button class="btn btn-secondary action-btn undo-btn" @onclick="Game.Undo" disabled="@(!Game.CanUndo || Game.IsGenerating)" title="Undo (Ctrl+Z)">
+                    <span class="btn-icon">↶</span><span class="btn-text">Undo</span>
+                </button>
+                <button class="btn btn-secondary action-btn redo-btn" @onclick="Game.Redo" disabled="@(!Game.CanRedo || Game.IsGenerating)" title="Redo (Ctrl+Y)">
+                    <span class="btn-icon">↷</span><span class="btn-text">Redo</span>
+                </button>
+                <button class="btn btn-secondary action-btn" @onclick="Game.Fix" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Save Checkpoint (Ctrl+F)">
+                    Fix
+                </button>
+                <button class="btn btn-secondary action-btn" @onclick="Game.Unfix" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Clear Checkpoint (Ctrl+U)">
+                    Unfix
+                </button>
+                <button class="btn btn-secondary action-btn" @onclick="Game.RevertToFix" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Revert to Checkpoint (Ctrl+R)">
+                    Revert
+                </button>
+            </div>
+
+            <div class="action-meta-group">
+                <div class="timer-box" title="Elapsed Time">
+                    @(Game.ElapsedTime.ToString(@"mm\:ss"))
+                </div>
+
+                <!-- Desktop Utilities (Share, Theme, Help, Reload) -->
+                <div class="desktop-utility-group">
+                    <button class="btn btn-secondary" @onclick="SharePuzzle" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Copy shareable link to this puzzle">
+                        🔗 Share
+                    </button>
+                    <button class="btn btn-secondary" @onclick="ToggleTheme" title="Toggle Dark/Light Mode">
+                        @(isDarkMode ? "☀️" : "🌙")
+                    </button>
+                    <button class="btn btn-secondary" @onclick="() => showHelpModal = true" title="Instructions & Rules">
+                        Help
+                    </button>
+                    <button class="btn btn-secondary" @onclick="ReloadFromServer" title="Reload newest version from server">
+                        🔄
+                    </button>
+                </div>
+
+                <!-- Mobile Menu / Options Toggle -->
+                <button class="btn btn-secondary menu-toggle-btn @(isMenuOpen ? "active" : "")" @onclick="() => isMenuOpen = !isMenuOpen" title="Puzzle Options & Setup">
+                    @(isMenuOpen ? "✕" : "⚙️")
+                </button>
+            </div>
         </div>
 
-        <div class="controls-group">
-            <div class="control-item">
-                <label>Grid:</label>
-                <select class="select-input" value="@selectedType" @onchange="OnTypeChanged" disabled="@Game.IsGenerating">
-                    <option value="Square">Square</option>
-                    <option value="Square Symmetrical">Square Symmetrical</option>
-                    <option value="Triangle">Triangle</option>
-                    <option value="Hexagon">Hexagon</option>
-                    <option value="Hexagon2">Hexagon 2</option>
-                    <option value="Hexagon3">Hexagon 3</option>
-                    <option value="Octagon">Octagon</option>
-                    <option value="Square2">Square 2</option>
-                    <option value="Pentagon">Pentagon</option>
-                </select>
+        <!-- Collapsible Options Panel (Hidden on mobile by default, expanded via ⚙️; Always visible on desktop) -->
+        <div class="header-collapsible @(isMenuOpen ? "open" : "")">
+            <div class="brand">
+                <h1 class="brand-title">Loop-de-loop</h1>
+                <button class="mobile-close-btn" @onclick="() => isMenuOpen = false" title="Close Options">✕</button>
             </div>
 
-            <div class="control-item">
-                <label>Size:</label>
-                <input type="text" class="text-input" @bind="Game.SizeText" placeholder="10x10" disabled="@Game.IsGenerating" />
+            <div class="controls-group">
+                <div class="control-item">
+                    <label>Grid:</label>
+                    <select class="select-input" value="@selectedType" @onchange="OnTypeChanged" disabled="@Game.IsGenerating">
+                        <option value="Square">Square</option>
+                        <option value="Square Symmetrical">Square Symmetrical</option>
+                        <option value="Triangle">Triangle</option>
+                        <option value="Hexagon">Hexagon</option>
+                        <option value="Hexagon2">Hexagon 2</option>
+                        <option value="Hexagon3">Hexagon 3</option>
+                        <option value="Octagon">Octagon</option>
+                        <option value="Square2">Square 2</option>
+                        <option value="Pentagon">Pentagon</option>
+                    </select>
+                </div>
+
+                <div class="control-item">
+                    <label>Size:</label>
+                    <input type="text" class="text-input" @bind="Game.SizeText" placeholder="10x10" disabled="@Game.IsGenerating" />
+                </div>
+
+                <div class="control-item">
+                    <label>Difficulty:</label>
+                    <select class="select-input" @bind="Game.Difficulty" disabled="@Game.IsGenerating">
+                        <option value="0">Trivial</option>
+                        <option value="1">Easy</option>
+                        <option value="2">Easyish</option>
+                        <option value="3">Moderate</option>
+                        <option value="4">Maybe Harder</option>
+                        <option value="5">Unlimited</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-primary" @onclick="OnNewPuzzleClicked" disabled="@Game.IsGenerating">
+                    @if (Game.IsGenerating)
+                    {
+                        <span>Generating...</span>
+                    }
+                    else
+                    {
+                        <span>New Puzzle</span>
+                    }
+                </button>
             </div>
 
-            <div class="control-item">
-                <label>Difficulty:</label>
-                <select class="select-input" @bind="Game.Difficulty" disabled="@Game.IsGenerating">
-                    <option value="0">Trivial</option>
-                    <option value="1">Easy</option>
-                    <option value="2">Easyish</option>
-                    <option value="3">Moderate</option>
-                    <option value="4">Maybe Harder</option>
-                    <option value="5">Unlimited</option>
-                </select>
+            <div class="controls-group">
+                <label class="checkbox-label" title="Disallow moves that cause obvious rule violations (exceeding clue counts or vertex degree > 2)">
+                    <input type="checkbox" @bind="Game.DisallowFalseMove" />
+                    <span>Restrict invalid</span>
+                </label>
+                <label class="checkbox-label" title="Enable cell coloring for inside/outside marking (when off, clicking inside routes to nearest edge)">
+                    <input type="checkbox" @bind="Game.ShowCellColors" />
+                    <span>Cell shading</span>
+                </label>
             </div>
 
-            <button class="btn btn-primary" @onclick="GeneratePuzzle" disabled="@Game.IsGenerating">
-                @if (Game.IsGenerating)
-                {
-                    <span>Generating...</span>
-                }
-                else
-                {
-                    <span>New Puzzle</span>
-                }
-            </button>
-        </div>
-
-        <div class="controls-group">
-            <label class="checkbox-label" title="Disallow moves that cause obvious rule violations (exceeding clue counts or vertex degree > 2)">
-                <input type="checkbox" @bind="Game.DisallowFalseMove" />
-                <span>Restrict invalid</span>
-            </label>
-            <label class="checkbox-label" title="Enable cell coloring for inside/outside marking (when off, clicking inside routes to nearest edge)">
-                <input type="checkbox" @bind="Game.ShowCellColors" />
-                <span>Cell shading</span>
-            </label>
-        </div>
-
-        <div class="controls-group">
-            <div class="timer-box" title="Elapsed Time">
-                @(Game.ElapsedTime.ToString(@"mm\:ss"))
+            <!-- Mobile Utility Group (Shown inside collapsible menu on mobile) -->
+            <div class="mobile-utility-group">
+                <button class="btn btn-secondary" @onclick="SharePuzzle" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Copy shareable link to this puzzle">
+                    🔗 Share
+                </button>
+                <button class="btn btn-secondary" @onclick="ToggleTheme" title="Toggle Dark/Light Mode">
+                    @(isDarkMode ? "☀️ Light" : "🌙 Dark")
+                </button>
+                <button class="btn btn-secondary" @onclick="() => showHelpModal = true" title="Instructions & Rules">
+                    Help
+                </button>
+                <button class="btn btn-secondary" @onclick="ReloadFromServer" title="Reload newest version from server">
+                    🔄 Reload
+                </button>
             </div>
-
-            <button class="btn btn-secondary" @onclick="Game.Undo" disabled="@(!Game.CanUndo || Game.IsGenerating)" title="Undo (Ctrl+Z)">
-                ↶ Undo
-            </button>
-            <button class="btn btn-secondary" @onclick="Game.Redo" disabled="@(!Game.CanRedo || Game.IsGenerating)" title="Redo (Ctrl+Y)">
-                ↷ Redo
-            </button>
-            <button class="btn btn-secondary" @onclick="Game.Fix" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Save Checkpoint (Ctrl+F)">
-                Fix
-            </button>
-            <button class="btn btn-secondary" @onclick="Game.Unfix" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Clear Checkpoint (Ctrl+U)">
-                Unfix
-            </button>
-            <button class="btn btn-secondary" @onclick="Game.RevertToFix" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Revert to Checkpoint (Ctrl+R)">
-                Revert
-            </button>
-            <button class="btn btn-secondary" @onclick="SharePuzzle" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Copy shareable link to this puzzle">
-                🔗 Share
-            </button>
-            <button class="btn btn-secondary" @onclick="ToggleTheme" title="Toggle Dark/Light Mode">
-                @(isDarkMode ? "☀️" : "🌙")
-            </button>
-            <button class="btn btn-secondary" @onclick="() => showHelpModal = true" title="Instructions & Rules">
-                Help
-            </button>
         </div>
     </header>
 
@@ -391,6 +437,8 @@
     private bool showHelpModal = false;
     private bool isDarkMode = false;
     private bool showShareToast = false;
+    private bool isMenuOpen = false;
+    private bool hasPwaUpdate = false;
 
     private float zoomScale = 1.0f;
     private float panX = 0f;
@@ -400,6 +448,8 @@
     private EdgeState? dragTargetState = null;
     private int lastClosestEdge = -1;
     private int lastClosestCell = -1;
+    private bool speculativeFirstTouchToggled = false;
+    private int draggedEdgesCount = 0;
     private IDisposable? timer;
     private DotNetObjectReference<Home>? selfRef;
 
@@ -604,8 +654,15 @@
         InvokeAsync(StateHasChanged);
     }
 
+    private async Task OnNewPuzzleClicked()
+    {
+        isMenuOpen = false;
+        await GeneratePuzzle();
+    }
+
     private async Task GeneratePuzzle()
     {
+        isMenuOpen = false;
         showVictoryModal = false;
         lastSolvedState = false;
         ResetZoom();
@@ -809,6 +866,8 @@
 
         lastClosestEdge = closestEdge;
         lastClosestCell = closestCell;
+        speculativeFirstTouchToggled = false;
+        draggedEdgesCount = 0;
 
         bool isRight = button == 2; // Right click
         bool isAlt = shiftKey ? !isRight : isRight; // Shift reverses cycle direction
@@ -821,11 +880,13 @@
             isPointerDown = true;
             Game.ToggleEdge(closestEdge, isAlt);
             dragTargetState = Game.CurrentMesh.Edges[closestEdge].State;
+            speculativeFirstTouchToggled = true;
         }
         else if (closestCell != -1 && Game.ShowCellColors)
         {
             isPointerDown = true;
             Game.ToggleCellColor(closestCell, isAlt);
+            speculativeFirstTouchToggled = true;
         }
     }
 
@@ -846,6 +907,7 @@
             if (!Game.MarkedEdges.Contains(closestEdge))
             {
                 Game.SetEdgeDirect(closestEdge, dragTargetState.Value);
+                draggedEdgesCount++;
             }
         }
     }
@@ -857,6 +919,23 @@
         dragTargetState = null;
         lastClosestEdge = -1;
         lastClosestCell = -1;
+        speculativeFirstTouchToggled = false;
+        draggedEdgesCount = 0;
+    }
+
+    [JSInvokable]
+    public void OnRevertFirstTouch()
+    {
+        if (speculativeFirstTouchToggled && draggedEdgesCount == 0)
+        {
+            Game.UndoAndForget();
+        }
+        isPointerDown = false;
+        dragTargetState = null;
+        lastClosestEdge = -1;
+        lastClosestCell = -1;
+        speculativeFirstTouchToggled = false;
+        draggedEdgesCount = 0;
     }
 
     [JSInvokable]
@@ -870,6 +949,18 @@
             case "unfix": Game.Unfix(); break;
             case "revert": Game.RevertToFix(); break;
         }
+    }
+
+    [JSInvokable]
+    public void OnPwaUpdateAvailable()
+    {
+        hasPwaUpdate = true;
+        StateHasChanged();
+    }
+
+    private async Task ReloadFromServer()
+    {
+        await JS.InvokeVoidAsync("loopHelpers.reloadFromServer");
     }
 
     public void Dispose()

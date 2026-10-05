@@ -3,9 +3,17 @@
 
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
     <title>Loop-de-loop - Slitherlink Puzzle Game</title>
     <base href="./" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Loop-de-loop" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <link rel="icon" type="image/png" href="icon-192.png" />
     <link rel="preload" id="webassembly" />
     <link rel="stylesheet" href="css/app.css" />
     <script type="importmap"></script>
@@ -93,10 +101,24 @@
             },
             clearGameState: () => {
                 try { localStorage.removeItem('loopdeloop_gamestate'); } catch (_) {}
+            },
+            reloadFromServer: async () => {
+                try {
+                    if ('serviceWorker' in navigator) {
+                        const regs = await navigator.serviceWorker.getRegistrations();
+                        for (let r of regs) await r.unregister();
+                    }
+                    if ('caches' in window) {
+                        const keys = await caches.keys();
+                        for (let k of keys) await caches.delete(k);
+                    }
+                } catch (_) {}
+                window.location.reload(true);
             }
         };
 
         window.registerLoopShortcuts = (dotNetRef) => {
+            window._dotNetHomeRef = dotNetRef;
             window.addEventListener('keydown', (e) => {
                 if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
                 if (e.ctrlKey && (e.key === 'z' || e.key === 'Z')) {
@@ -118,10 +140,22 @@
             });
         };
 
+        if (!window._loopGlobalTouchInit) {
+            window._loopGlobalTouchInit = true;
+            window._loopTouchCount = 0;
+            const updateTouchCount = (e) => {
+                window._loopTouchCount = e.touches ? e.touches.length : 0;
+            };
+            window.addEventListener('touchstart', updateTouchCount, { passive: true, capture: true });
+            window.addEventListener('touchend', updateTouchCount, { passive: true, capture: true });
+            window.addEventListener('touchcancel', updateTouchCount, { passive: true, capture: true });
+        }
+
         window.initLoopBoard = (svgId, dotNetRef) => {
             const svg = document.getElementById(svgId);
             if (!svg) return;
 
+            window._dotNetHomeRef = dotNetRef;
             svg._dotNetRef = dotNetRef;
             if (svg._loopInitialized) return;
             svg._loopInitialized = true;
@@ -131,6 +165,13 @@
             let lastMouseX = 0, lastMouseY = 0;
             let pinchStartDist = 0;
             let pinchStartMidX = 0, pinchStartMidY = 0;
+
+            let firstTouchTime = 0;
+            let firstTouchStartX = 0;
+            let firstTouchStartY = 0;
+            let firstTouchPointerId = null;
+            let firstTouchDispatched = false;
+            let firstTouchMovedDist = 0;
 
             function getSvgCoords(e) {
                 let pt = svg.createSVGPoint();
@@ -147,6 +188,12 @@
                 try { svg.setPointerCapture(e.pointerId); } catch (_) {}
                 activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
+                const isTouch = e.pointerType === 'touch';
+                const touchCount = window._loopTouchCount || 0;
+                // If 2+ fingers are already known to be touching down:
+                // (e.g. from touchstart count, existing active pointers, or secondary pointer)
+                const alreadyMultipleFingers = isTouch && (activePointers.size > 1 || touchCount >= 2 || !e.isPrimary);
+
                 if (activePointers.size === 1) {
                     if (e.button === 1) {
                         isMiddlePanning = true;
@@ -154,13 +201,48 @@
                         lastMouseY = e.clientY;
                         return;
                     }
+
+                    if (alreadyMultipleFingers) {
+                        // Already 2+ fingers down: do not trigger single-finger puzzle edit
+                        firstTouchDispatched = false;
+                        return;
+                    }
+
                     let coords = getSvgCoords(e);
                     if (!coords) return;
+
+                    if (isTouch) {
+                        firstTouchTime = performance.now();
+                        firstTouchStartX = e.clientX;
+                        firstTouchStartY = e.clientY;
+                        firstTouchPointerId = e.pointerId;
+                        firstTouchDispatched = true;
+                        firstTouchMovedDist = 0;
+                    }
+
                     if (svg._dotNetRef) {
                         svg._dotNetRef.invokeMethodAsync('OnSvgPointerDown', coords.x, coords.y, e.button, e.shiftKey);
                     }
                 } else if (activePointers.size === 2) {
-                    if (svg._dotNetRef) svg._dotNetRef.invokeMethodAsync('OnSvgPointerUp');
+                    const elapsed = performance.now() - firstTouchTime;
+
+                    // If second finger lands almost immediately (<= 300ms),
+                    // or within 600ms while remaining stationary (moved <= 20px),
+                    // revert the first speculative touch modification!
+                    // If the first finger dragged across edges or elapsed > 600ms, do NOT revert.
+                    const isStationary = firstTouchMovedDist <= 20;
+                    const shouldRevert = firstTouchDispatched && (elapsed <= 300 || (elapsed <= 600 && isStationary));
+
+                    if (svg._dotNetRef) {
+                        if (shouldRevert) {
+                            svg._dotNetRef.invokeMethodAsync('OnRevertFirstTouch');
+                        } else {
+                            svg._dotNetRef.invokeMethodAsync('OnSvgPointerUp');
+                        }
+                    }
+
+                    firstTouchDispatched = false;
+
                     const pts = Array.from(activePointers.values());
                     pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
                     pinchStartMidX = (pts[0].x + pts[1].x) / 2;
@@ -184,6 +266,14 @@
                         if (svg._dotNetRef) svg._dotNetRef.invokeMethodAsync('OnPan', svgDx, svgDy);
                         return;
                     }
+
+                    if (e.pointerId === firstTouchPointerId) {
+                        const dist = Math.hypot(e.clientX - firstTouchStartX, e.clientY - firstTouchStartY);
+                        if (dist > firstTouchMovedDist) {
+                            firstTouchMovedDist = dist;
+                        }
+                    }
+
                     if (e.buttons === 0) return;
                     let coords = getSvgCoords(e);
                     if (!coords) return;
@@ -218,6 +308,18 @@
                 if (activePointers.has(e.pointerId)) {
                     activePointers.delete(e.pointerId);
                 }
+
+                if (e.type === 'pointercancel' && e.pointerId === firstTouchPointerId && firstTouchDispatched) {
+                    const elapsed = performance.now() - firstTouchTime;
+                    if (elapsed <= 600 && firstTouchMovedDist <= 20) {
+                        if (svg._dotNetRef) svg._dotNetRef.invokeMethodAsync('OnRevertFirstTouch');
+                    }
+                }
+
+                if (e.pointerId === firstTouchPointerId) {
+                    firstTouchDispatched = false;
+                    firstTouchPointerId = null;
+                }
                 if (e.button === 1) {
                     isMiddlePanning = false;
                 }
@@ -231,6 +333,10 @@
 
             svg.onpointerup = onPointerEnd;
             svg.onpointercancel = onPointerEnd;
+            if (svg._windowPointerUpHandler) {
+                window.removeEventListener('pointerup', svg._windowPointerUpHandler);
+            }
+            svg._windowPointerUpHandler = onPointerEnd;
             window.addEventListener('pointerup', onPointerEnd);
 
             svg.onwheel = (e) => {
@@ -243,6 +349,24 @@
                 e.preventDefault();
             };
         };
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js').then(reg => {
+                    reg.addEventListener('updatefound', () => {
+                        const newWorker = reg.installing;
+                        if (!newWorker) return;
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                if (window._dotNetHomeRef) {
+                                    window._dotNetHomeRef.invokeMethodAsync('OnPwaUpdateAvailable');
+                                }
+                            }
+                        });
+                    });
+                }).catch(err => console.log('SW registration error:', err));
+            });
+        }
     </script>
     <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
 </body>

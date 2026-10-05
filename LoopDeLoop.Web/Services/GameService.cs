@@ -181,6 +181,17 @@ namespace LoopDeLoop.Web.Services
             }
         }
 
+        public bool UndoAndForget()
+        {
+            if (UndoTree.CanUndo && UndoTree.UndoAndForget())
+            {
+                CheckSolution();
+                NotifyChanged();
+                return true;
+            }
+            return false;
+        }
+
         public void Redo()
         {
             if (UndoTree.CanRedo)
