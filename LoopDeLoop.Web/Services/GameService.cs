@@ -44,11 +44,12 @@ namespace LoopDeLoop.Web.Services
             IsGenerating = true;
             IsSolved = false;
             PrunedProgress = 0;
+            TotalCells = 0;
             MarkedEdges.Clear();
             NotifyChanged();
 
-            // Allow UI to update before heavy computation
-            await Task.Yield();
+            // Allow UI to render the loading overlay before computation begins
+            await Task.Delay(20);
 
             int width, height;
             if (!PuzzleHelper.ParseSize(SizeText, CurrentType, out width, out height))
@@ -59,18 +60,18 @@ namespace LoopDeLoop.Web.Services
 
             try
             {
-                await Task.Run(() =>
+                Mesh mesh = PuzzleHelper.MakeMesh(width, height, CurrentType, Difficulty);
+                TotalCells = mesh.Cells.Count;
+                NotifyChanged();
+
+                var progress = new Progress<int>(p =>
                 {
-                    Mesh mesh = PuzzleHelper.MakeMesh(width, height, CurrentType, Difficulty);
-                    TotalCells = mesh.Cells.Count;
-                    mesh.PrunedCountProgress += (s, e) =>
-                    {
-                        PrunedProgress++;
-                        // Periodically notify progress if needed
-                    };
-                    mesh.Generate();
-                    CurrentMesh = mesh;
+                    PrunedProgress = p;
+                    NotifyChanged();
                 });
+
+                await mesh.GenerateAsync(progress);
+                CurrentMesh = mesh;
 
                 UndoTree = new UndoTree();
                 StartTime = DateTime.UtcNow;

@@ -10,7 +10,6 @@
     <header class="game-header">
         <div class="brand">
             <h1 class="brand-title">Loop-de-loop</h1>
-            <span class="brand-badge">.NET 10</span>
         </div>
 
         <div class="controls-group">
@@ -101,7 +100,24 @@
         {
             <div class="overlay-spinner">
                 <div class="spinner"></div>
-                <div class="spinner-text">Generating puzzle... (@Game.PrunedProgress clues checked)</div>
+                <div class="spinner-content">
+                    <div class="spinner-text">
+                        @if (Game.TotalCells > 0)
+                        {
+                            <span>Generating puzzle... (@Game.PrunedProgress / @Game.TotalCells clues checked)</span>
+                        }
+                        else
+                        {
+                            <span>Generating puzzle...</span>
+                        }
+                    </div>
+                    @if (Game.TotalCells > 0)
+                    {
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" style="width: @(Math.Clamp((double)Game.PrunedProgress / Game.TotalCells * 100, 0, 100).ToString("F0"))%"></div>
+                        </div>
+                    }
+                </div>
             </div>
         }
 

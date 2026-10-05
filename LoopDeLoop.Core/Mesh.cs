@@ -4,6 +4,8 @@ using System.Text;
 using System.IO;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LoopDeLoop
 {
@@ -1287,53 +1289,58 @@ namespace LoopDeLoop
         }
         private double generateBoringFraction = 0.01;
 
+        private void GenerateInitialLoop(Random rnd, List<IAction> backup)
+        {
+            int targetCount = (int)Math.Floor(intersections.Count * generateLengthFraction);
+            long countSum = 0;
+            int tries = 0;
+            int loopTries = 0;
+            bool loopToSmall = true;
+            while (loopToSmall)
+            {
+                loopToSmall = false;
+                FullClear();
+                backup.Clear();
+                int start = rnd.Next(intersections.Count);
+                Intersection inters = intersections[start];
+                int edgeIntersIndex = rnd.Next(inters.Edges.Count);
+                int edgeIndex = inters.Edges[edgeIntersIndex];
+                Perform(edgeIndex, EdgeState.Filled, backup, 0);
+                bool success = CreateLoop(rnd, start, start, edgeIntersIndex);
+                int count = 0;
+                for (var index = 0; index < edges.Count; index++)
+                {
+                    Edge edge = edges[index];
+                    if (edge.State == EdgeState.Filled)
+                        count++;
+                }
+                countSum += count;
+                tries++;
+                if (count < targetCount || RateBoringness() > GenerateBoringFraction)
+                {
+                    if (loopTries > 100 && count >= countSum / tries)
+                    {
+                        if (TryExpandLoop(rnd, targetCount - count))
+                            break;
+                    }
+                    loopToSmall = true;
+                    loopTries++;
+                    if (loopTries > 1000)
+                        break;
+                }
+            }
+        }
+
         public void Generate()
         {
             AbortPrune = false;
             bool done = false;
             List<IAction> backup = new List<IAction>();
             Random rnd = new Random();
-            int targetCount = (int)Math.Floor(intersections.Count * generateLengthFraction);
-            long countSum = 0;
-            int tries = 0;
             while (!done)
             {
                 done = true;
-                int loopTries = 0;
-                bool loopToSmall = true;
-                while (loopToSmall)
-                {
-                    loopToSmall = false;
-                    FullClear();
-                    backup.Clear();
-                    int start = rnd.Next(intersections.Count);
-                    Intersection inters = intersections[start];
-                    int edgeIntersIndex = rnd.Next(inters.Edges.Count);
-                    int edgeIndex = inters.Edges[edgeIntersIndex];
-                    Perform(edgeIndex, EdgeState.Filled, backup, 0);
-                    bool success = CreateLoop(rnd, start, start, edgeIntersIndex);
-                    int count = 0;
-                    for (var index = 0; index < edges.Count; index++)
-                    {
-                        Edge edge = edges[index];
-                        if (edge.State == EdgeState.Filled)
-                            count++;
-                    }
-                    countSum += count;
-                    tries++;
-                    if (count < targetCount || RateBoringness() > GenerateBoringFraction)
-                    {
-                        if (loopTries > 100 && count >= countSum / tries)
-                        {
-                            if (TryExpandLoop(rnd, targetCount - count))
-                                break;
-                        }
-                        loopToSmall = true;
-                        loopTries++;
-                        if (loopTries > 1000)
-                            break;
-                    }
-                }
+                GenerateInitialLoop(rnd, backup);
                 UpdateCounts();
                 List<int> cellsOfVariance = new List<int>();
                 List<int> cellsOfDoubleVariance = new List<int>();
@@ -1350,6 +1357,43 @@ namespace LoopDeLoop
                     else
                         throw;
                 }
+            }
+        }
+
+        public async Task GenerateAsync(IProgress<int> progress = null, CancellationToken cancellationToken = default)
+        {
+            AbortPrune = false;
+            bool done = false;
+            List<IAction> backup = new List<IAction>();
+            Random rnd = new Random();
+            while (!done && !cancellationToken.IsCancellationRequested)
+            {
+                done = true;
+                GenerateInitialLoop(rnd, backup);
+                UpdateCounts();
+                List<int> cellsOfVariance = new List<int>();
+                List<int> cellsOfDoubleVariance = new List<int>();
+                CalculateCellsOfVariance(cellsOfVariance, cellsOfDoubleVariance);
+                Clear();
+                try
+                {
+                    await PruneCountsAsync(cellsOfVariance, cellsOfDoubleVariance, progress, cancellationToken);
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "Can't solve it anyway")
+                    {
+                        done = false;
+                        progress?.Report(0);
+                    }
+                    else
+                        throw;
+                }
+            }
+
+            if (!cancellationToken.IsCancellationRequested && !AbortPrune)
+            {
+                progress?.Report(cells.Count);
             }
         }
 
@@ -1941,6 +1985,165 @@ namespace LoopDeLoop
                             if (PrunedCountProgress != null)
                                 PrunedCountProgress(this, EventArgs.Empty);
                         }
+                    }
+                }
+            }
+            finally
+            {
+                pruning = false;
+            }
+        }
+
+        private async Task PruneCountsAsync(List<int> cellsOfVariance, List<int> cellsOfDoubleVariance, IProgress<int> progress = null, CancellationToken cancellationToken = default)
+        {
+            SolveState state = TrySolve();
+            if (state != SolveState.Solved)
+                throw new Exception("Can't solve it anyway");
+            try
+            {
+                pruning = true;
+                finalSolution = solutionsFound[0];
+                finalDepthPatern = solutionDepthPatern[0];
+                bool[] tried = new bool[cells.Count];
+                int[] trials = new int[cells.Count];
+                for (int i = 0; i < trials.Length; i++)
+                    trials[i] = i;
+                Random rnd = new Random();
+                for (int i = 0; i < trials.Length * 2; i++)
+                {
+                    int a = rnd.Next(trials.Length);
+                    int b = rnd.Next(trials.Length);
+                    int tmp = trials[a];
+                    trials[a] = trials[b];
+                    trials[b] = tmp;
+                }
+                int width = 0;
+                int height = 0;
+                if (meshType == MeshType.SquareSymmetrical)
+                {
+                    bool found = true;
+                    int iSearch = 0;
+                    while (found)
+                    {
+                        found = true;
+                        try
+                        {
+                            GetEdgeJoining(iSearch, iSearch + 1);
+                        }
+                        catch
+                        {
+                            found = false;
+                        }
+                        iSearch++;
+                    }
+                    height = iSearch - 1;
+                    width = Cells.Count / height;
+                }
+
+                int progressCounter = 0;
+                long lastYieldTicks = Stopwatch.GetTimestamp();
+
+                for (var index = 0; index < trials.Length; index++)
+                {
+                    if (AbortPrune || cancellationToken.IsCancellationRequested)
+                        break;
+
+                    int trial = trials[index];
+                    List<int> prot = CalcProtectedCells(cellsOfVariance, cellsOfDoubleVariance);
+                    if (prot.Contains(trial))
+                    {
+                        progressCounter++;
+                        PrunedCountProgress?.Invoke(this, EventArgs.Empty);
+                        progress?.Report(Math.Min(progressCounter, cells.Count));
+                    }
+                    else if (meshType != MeshType.SquareSymmetrical)
+                    {
+                        Cell cell = cells[trial];
+                        int oldVal = cell.TargetCount;
+                        RemoveTarget(cell);
+                        if (TrySolve() != SolveState.Solved)
+                        {
+                            AddTarget(cell, oldVal);
+                        }
+                        else
+                        {
+                            finalSolution = solutionsFound[0];
+                            finalDepthPatern = solutionDepthPatern[0];
+                        }
+                        progressCounter++;
+                        PrunedCountProgress?.Invoke(this, EventArgs.Empty);
+                        progress?.Report(Math.Min(progressCounter, cells.Count));
+                    }
+                    else
+                    {
+                        Cell cell = cells[trial];
+                        if (tried[trial])
+                        {
+                            continue;
+                        }
+                        int oldVal = cell.TargetCount;
+                        RemoveTarget(cell);
+                        int y = trial / width;
+                        int x = trial % width;
+                        int otherY = height - y - 1;
+                        int otherX = width - x - 1;
+                        int otherTrial = otherY * width + otherX;
+                        if (otherTrial == trial)
+                        {
+                            if (TrySolve() != SolveState.Solved)
+                            {
+                                AddTarget(cell, oldVal);
+                            }
+                            else
+                            {
+                                finalSolution = solutionsFound[0];
+                                finalDepthPatern = solutionDepthPatern[0];
+                            }
+                            tried[trial] = true;
+                            progressCounter++;
+                            PrunedCountProgress?.Invoke(this, EventArgs.Empty);
+                            progress?.Report(Math.Min(progressCounter, cells.Count));
+                        }
+                        else
+                        {
+                            // While we have just removed a cell, there is no way trial and other trial can be adjacent
+                            // Not in square symmetrical at least - so we don't need to recalculate the protected list.
+                            if (prot.Contains(otherTrial))
+                            {
+                                AddTarget(cell, oldVal);
+                                progressCounter++;
+                                PrunedCountProgress?.Invoke(this, EventArgs.Empty);
+                                progress?.Report(Math.Min(progressCounter, cells.Count));
+                                continue;
+                            }
+                            Cell otherCell = cells[otherTrial];
+                            int otherOldVal = otherCell.TargetCount;
+                            RemoveTarget(otherCell);
+                            if (TrySolve() != SolveState.Solved)
+                            {
+                                AddTarget(cell, oldVal);
+                                AddTarget(otherCell, otherOldVal);
+                            }
+                            else
+                            {
+                                finalSolution = solutionsFound[0];
+                                finalDepthPatern = solutionDepthPatern[0];
+                            }
+                            tried[trial] = true;
+                            tried[otherTrial] = true;
+                            progressCounter += 2;
+                            PrunedCountProgress?.Invoke(this, EventArgs.Empty);
+                            PrunedCountProgress?.Invoke(this, EventArgs.Empty);
+                            progress?.Report(Math.Min(progressCounter, cells.Count));
+                        }
+                    }
+
+                    long currentTicks = Stopwatch.GetTimestamp();
+                    double elapsedMs = (currentTicks - lastYieldTicks) * 1000.0 / Stopwatch.Frequency;
+                    if (elapsedMs >= 16.0)
+                    {
+                        lastYieldTicks = currentTicks;
+                        await Task.Delay(1, cancellationToken);
                     }
                 }
             }
