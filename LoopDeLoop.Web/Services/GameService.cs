@@ -88,6 +88,9 @@ namespace LoopDeLoop.Web.Services
             if (CurrentMesh == null || edgeIndex < 0 || edgeIndex >= CurrentMesh.Edges.Count || IsSolved)
                 return;
 
+            if (MarkedEdges.Contains(edgeIndex))
+                return;
+
             var current = CurrentMesh.Edges[edgeIndex].State;
             var next = !isAlternative
                 ? (current == EdgeState.Empty ? EdgeState.Filled : (current == EdgeState.Filled ? EdgeState.Excluded : EdgeState.Empty))
@@ -104,6 +107,9 @@ namespace LoopDeLoop.Web.Services
         public void SetEdgeDirect(int edgeIndex, EdgeState targetState)
         {
             if (CurrentMesh == null || edgeIndex < 0 || edgeIndex >= CurrentMesh.Edges.Count || IsSolved)
+                return;
+
+            if (MarkedEdges.Contains(edgeIndex))
                 return;
 
             if (CurrentMesh.Edges[edgeIndex].State == targetState)

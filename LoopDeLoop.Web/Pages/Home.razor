@@ -257,7 +257,7 @@
             <span class="shortcut-badge">Ctrl+R</span> Revert
         </div>
         <div>
-            Left-Click / Drag: Draw line / cycle &bull; Right-Click / Drag: Mark X &bull; Inside clicks route to nearest edge
+            Left-Click / Drag: Draw line &bull; Right-Click / Drag: Mark X &bull; Shift: Reverse cycle &bull; Fixed edges locked
         </div>
     </footer>
 </div>
@@ -297,10 +297,12 @@
                 <ul>
                     <li><strong>Left-Click or Drag</strong> on an edge: draw / cycle Empty ➔ Filled ➔ Excluded ➔ Empty.</li>
                     <li><strong>Right-Click or Drag</strong>: mark Excluded crosses (X).</li>
+                    <li><strong>Shift + Click</strong>: reverses the cycling direction of left and right clicks.</li>
                     <li><strong>Clicking inside cells</strong>: automatically routes to the closest edge of the cell!</li>
                     <li><strong>Cell shading option</strong>: when enabled, clicking near the center of a cell shades it (Yellow = inside, Gray = outside).</li>
                     <li><strong>Restrict invalid option</strong>: when enabled, moves causing obvious contradictions (e.g. vertex degree > 2 or clue count exceeded) are blocked. When off (default), moves cycle freely regardless of rules.</li>
-                    <li><strong>Fix (Ctrl+F)</strong>: Save a checkpoint (current moves turn green).</li>
+                    <li><strong>Fix (Ctrl+F)</strong>: Save a checkpoint (current moves turn green and become locked against changes).</li>
+                    <li><strong>Unfix (Ctrl+U)</strong>: Clear checkpoint and unlock fixed edges.</li>
                     <li><strong>Revert (Ctrl+R)</strong>: Rollback all moves made after your last checkpoint.</li>
                 </ul>
             </div>
@@ -490,11 +492,10 @@
     }
 
     [JSInvokable]
-    public void OnSvgPointerDown(double x, double y, int button)
+    public void OnSvgPointerDown(double x, double y, int button, bool shiftKey)
     {
         if (Game.CurrentMesh == null || Game.IsSolved || Game.IsGenerating) return;
 
-        isPointerDown = true;
         float fx = (float)x;
         float fy = (float)y;
         FindClosest(fx, fy, out int closestEdge, out int closestCell, 0.0f);
@@ -502,15 +503,21 @@
         lastClosestEdge = closestEdge;
         lastClosestCell = closestCell;
 
+        bool isRight = button == 2; // Right click
+        bool isAlt = shiftKey ? !isRight : isRight; // Shift reverses cycle direction
+
         if (closestEdge != -1)
         {
-            bool isAlt = button == 2; // Right click
+            if (Game.MarkedEdges.Contains(closestEdge))
+                return; // Fixed edges cannot be clicked or changed
+
+            isPointerDown = true;
             Game.ToggleEdge(closestEdge, isAlt);
             dragTargetState = Game.CurrentMesh.Edges[closestEdge].State;
         }
         else if (closestCell != -1 && Game.ShowCellColors)
         {
-            bool isAlt = button == 2;
+            isPointerDown = true;
             Game.ToggleCellColor(closestCell, isAlt);
         }
     }
@@ -529,7 +536,10 @@
         if (closestEdge != -1 && closestEdge != lastClosestEdge)
         {
             lastClosestEdge = closestEdge;
-            Game.SetEdgeDirect(closestEdge, dragTargetState.Value);
+            if (!Game.MarkedEdges.Contains(closestEdge))
+            {
+                Game.SetEdgeDirect(closestEdge, dragTargetState.Value);
+            }
         }
     }
 
@@ -562,3 +572,4 @@
         selfRef?.Dispose();
     }
 }
+

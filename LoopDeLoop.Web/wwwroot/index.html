@@ -69,7 +69,7 @@
                 e.preventDefault();
                 let coords = getSvgCoords(e);
                 if (!coords) return;
-                dotNetRef.invokeMethodAsync('OnSvgPointerDown', coords.x, coords.y, e.button);
+                dotNetRef.invokeMethodAsync('OnSvgPointerDown', coords.x, coords.y, e.button, e.shiftKey);
             };
 
             svg.onpointermove = (e) => {

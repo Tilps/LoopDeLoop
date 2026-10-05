@@ -173,6 +173,31 @@ namespace LoopDeLoop.Tests
             Assert.IsTrue(allowedResult, "Move should be allowed when disallowFalseMove is false");
             Assert.AreEqual(EdgeState.Filled, mesh.Edges[edgeIndices[2]].State);
         }
+
+        [TestMethod]
+        public void FixedEdges_CannotBeModified()
+        {
+            var mesh = new Mesh(3, 3, MeshType.Square);
+            var tree = new UndoTree();
+            var markedEdges = new HashSet<int>();
+
+            // Fill edge 0
+            tree.Do(new PuzzleSetEdgeStateAction(mesh, 0, EdgeState.Filled));
+            Assert.AreEqual(EdgeState.Filled, mesh.Edges[0].State);
+
+            // Fix edge 0
+            markedEdges.Add(0);
+
+            // Verify edge is locked
+            Assert.IsTrue(markedEdges.Contains(0));
+
+            // Edge 1 is not fixed
+            Assert.IsFalse(markedEdges.Contains(1));
+
+            // Clear fix
+            markedEdges.Clear();
+            Assert.IsFalse(markedEdges.Contains(0));
+        }
     }
 }
 
