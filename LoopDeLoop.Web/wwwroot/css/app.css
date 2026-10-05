@@ -126,6 +126,7 @@ body, html {
     align-items: center;
     justify-content: center;
     gap: 0.35rem;
+    white-space: nowrap;
 }
 
 .undo-btn, .redo-btn {
@@ -141,6 +142,7 @@ body, html {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    flex-shrink: 0;
 }
 
 .action-meta-group .timer-box {
@@ -150,6 +152,8 @@ body, html {
     justify-content: center;
     padding: 0.4rem 0.75rem;
     font-size: 1rem;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .desktop-utility-group {
@@ -656,10 +660,13 @@ body, html {
     .action-bar {
         width: 100%;
         justify-content: space-between;
+        gap: 0.35rem;
     }
 
     .action-buttons-group {
         gap: 0.3rem;
+        flex-shrink: 1;
+        min-width: 0;
     }
 
     .action-buttons-group .btn {
@@ -670,13 +677,16 @@ body, html {
 
     .action-meta-group {
         gap: 0.3rem;
+        flex-shrink: 0;
     }
 
     .action-meta-group .timer-box {
         min-height: 42px;
-        padding: 0.4rem 0.6rem;
+        padding: 0.4rem 0.55rem;
         font-size: 0.95rem;
-        min-width: 3.8rem;
+        min-width: 3.6rem;
+        white-space: nowrap;
+        flex-shrink: 0;
     }
 
     .desktop-utility-group {
@@ -692,6 +702,7 @@ body, html {
         padding: 0.4rem 0.65rem;
         font-size: 1.15rem;
         border-radius: var(--radius);
+        flex-shrink: 0;
     }
 
     .menu-toggle-btn.active {
@@ -761,23 +772,108 @@ body, html {
     }
 }
 
-/* Very narrow phone screens (<= 380px) */
-@media (max-width: 380px) {
+/* Mobile & Phablet screens (<= 640px): Contract Undo/Redo to icon-only early so timer and gear icon never clip */
+@media (max-width: 640px) {
     .undo-btn .btn-text,
     .redo-btn .btn-text {
         display: none;
     }
 
+    .undo-btn, .redo-btn {
+        min-width: 42px;
+        padding: 0.4rem 0.5rem;
+    }
+
     .action-buttons-group .btn {
-        padding: 0.4rem 0.45rem;
+        min-height: 42px;
+        padding: 0.4rem 0.55rem;
+        font-size: 0.88rem;
+    }
+}
+
+/* Standard phone screens (<= 440px): Compact spacing and padding to fit comfortably on 360-440px */
+@media (max-width: 440px) {
+    .game-header {
+        padding: 0.35rem 0.45rem;
+    }
+
+    .action-bar {
+        gap: 0.22rem;
+    }
+
+    .action-buttons-group {
+        gap: 0.2rem;
+    }
+
+    .action-buttons-group .btn {
+        min-height: 40px;
+        padding: 0.35rem 0.42rem;
         font-size: 0.85rem;
+    }
+
+    .undo-btn, .redo-btn {
         min-width: 38px;
     }
 
+    .undo-btn .btn-icon, .redo-btn .btn-icon {
+        font-size: 1.2rem;
+    }
+
+    .action-meta-group {
+        gap: 0.2rem;
+    }
+
     .action-meta-group .timer-box {
-        padding: 0.4rem 0.45rem;
-        font-size: 0.85rem;
-        min-width: 3.4rem;
+        min-height: 40px;
+        padding: 0.35rem 0.42rem;
+        font-size: 0.875rem;
+        min-width: 3.2rem;
+    }
+
+    .menu-toggle-btn {
+        min-width: 38px;
+        min-height: 40px;
+        padding: 0.35rem 0.45rem;
+        font-size: 1.05rem;
+    }
+}
+
+/* Ultra-narrow phone screens (<= 360px) */
+@media (max-width: 360px) {
+    .game-header {
+        padding: 0.25rem 0.25rem;
+    }
+
+    .action-buttons-group {
+        gap: 0.15rem;
+    }
+
+    .action-buttons-group .btn {
+        min-height: 38px;
+        padding: 0.3rem 0.32rem;
+        font-size: 0.8rem;
+    }
+
+    .undo-btn, .redo-btn {
+        min-width: 34px;
+    }
+
+    .action-meta-group {
+        gap: 0.15rem;
+    }
+
+    .action-meta-group .timer-box {
+        min-height: 38px;
+        padding: 0.3rem 0.3rem;
+        font-size: 0.8rem;
+        min-width: 2.8rem;
+    }
+
+    .menu-toggle-btn {
+        min-width: 34px;
+        min-height: 38px;
+        padding: 0.3rem 0.3rem;
+        font-size: 1rem;
     }
 }
 
