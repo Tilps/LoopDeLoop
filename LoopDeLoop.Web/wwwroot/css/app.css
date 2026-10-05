@@ -13,6 +13,50 @@
     --radius: 8px;
     --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+    --btn-secondary-bg: #f1f5f9;
+    --btn-secondary-hover: #e2e8f0;
+    --btn-secondary-text: #334155;
+
+    --edge-empty: #e2e8f0;
+    --edge-filled: #1e293b;
+    --edge-fixed: #10b981;
+    --edge-cross: #64748b;
+    --edge-cross-marked: #10b981;
+    --vertex-dot: #475569;
+    --clue-default: #1e293b;
+    --clue-satisfied: #94a3b8;
+    --cell-yellow: #fef3c7;
+    --cell-gray: #e2e8f0;
+    --overlay-bg: rgba(255, 255, 255, 0.88);
+}
+
+[data-theme="dark"] {
+    --bg-primary: #0b0f19;
+    --bg-surface: #111827;
+    --border-color: #1f2937;
+    --text-primary: #f9fafb;
+    --text-secondary: #9ca3af;
+    --primary: #3b82f6;
+    --primary-hover: #60a5fa;
+    --success: #10b981;
+    --success-hover: #34d399;
+
+    --btn-secondary-bg: #1f2937;
+    --btn-secondary-hover: #374151;
+    --btn-secondary-text: #e5e7eb;
+
+    --edge-empty: #1e293b;
+    --edge-filled: #38bdf8;
+    --edge-fixed: #34d399;
+    --edge-cross: #64748b;
+    --edge-cross-marked: #34d399;
+    --vertex-dot: #64748b;
+    --clue-default: #f9fafb;
+    --clue-satisfied: #6b7280;
+    --cell-yellow: #713f12;
+    --cell-gray: #1f2937;
+    --overlay-bg: rgba(17, 24, 39, 0.88);
 }
 
 * {
@@ -27,6 +71,7 @@ body, html {
     color: var(--text-primary);
     height: 100%;
     overflow: hidden;
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .game-container {
@@ -48,6 +93,7 @@ body, html {
     gap: 1rem;
     box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);
     z-index: 10;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .brand {
@@ -62,16 +108,6 @@ body, html {
     color: var(--primary);
     margin: 0;
     letter-spacing: -0.025em;
-}
-
-.brand-badge {
-    font-size: 0.7rem;
-    background: #eff6ff;
-    color: var(--primary);
-    border: 1px solid #bfdbfe;
-    padding: 0.15rem 0.4rem;
-    border-radius: 9999px;
-    font-weight: 600;
 }
 
 .controls-group {
@@ -98,7 +134,7 @@ body, html {
     font-size: 0.875rem;
     color: var(--text-primary);
     outline: none;
-    transition: border-color 0.15s ease;
+    transition: border-color 0.15s ease, background-color 0.2s ease, color 0.2s ease;
 }
 
 .select-input:focus, .text-input:focus {
@@ -126,7 +162,7 @@ body, html {
 }
 
 .checkbox-label:hover {
-    background-color: #f1f5f9;
+    background-color: var(--btn-secondary-hover);
     color: var(--text-primary);
 }
 
@@ -167,13 +203,13 @@ body, html {
 }
 
 .btn-secondary {
-    background-color: #f1f5f9;
-    color: #334155;
+    background-color: var(--btn-secondary-bg);
+    color: var(--btn-secondary-text);
     border-color: var(--border-color);
 }
 
 .btn-secondary:hover:not(:disabled) {
-    background-color: #e2e8f0;
+    background-color: var(--btn-secondary-hover);
 }
 
 .btn-success {
@@ -189,13 +225,14 @@ body, html {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 1.15rem;
     font-weight: 700;
-    background-color: #f1f5f9;
+    background-color: var(--btn-secondary-bg);
     padding: 0.35rem 0.75rem;
     border-radius: var(--radius);
-    color: #1e293b;
+    color: var(--text-primary);
     border: 1px solid var(--border-color);
     min-width: 4.5rem;
     text-align: center;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 /* Board Area */
@@ -208,6 +245,7 @@ body, html {
     padding: 1rem;
     overflow: hidden;
     touch-action: none;
+    background-color: var(--bg-primary);
 }
 
 .svg-board {
@@ -228,45 +266,45 @@ body, html {
 .cell-text {
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-weight: 700;
-    fill: #1e293b;
+    fill: var(--clue-default);
     user-select: none;
     pointer-events: none;
 }
 
 .cell-text-satisfied {
-    fill: #94a3b8;
+    fill: var(--clue-satisfied);
 }
 
 .cell-text-error {
-    fill: #ef4444;
+    fill: var(--danger);
 }
 
 .edge-empty {
-    stroke: #e2e8f0;
+    stroke: var(--edge-empty);
     stroke-width: 1.5;
     stroke-linecap: round;
 }
 
 .edge-filled {
-    stroke: #1e293b;
+    stroke: var(--edge-filled);
     stroke-width: 4.5;
     stroke-linecap: round;
 }
 
 .edge-filled-marked {
-    stroke: #10b981;
+    stroke: var(--edge-fixed);
     stroke-width: 4.5;
     stroke-linecap: round;
 }
 
 .edge-cross {
-    stroke: #64748b;
+    stroke: var(--edge-cross);
     stroke-width: 2.2;
     stroke-linecap: round;
 }
 
 .edge-cross-marked {
-    stroke: #10b981;
+    stroke: var(--edge-cross-marked);
     stroke-width: 2.2;
     stroke-linecap: round;
 }
@@ -279,14 +317,14 @@ body, html {
 }
 
 .vertex-dot {
-    fill: #475569;
+    fill: var(--vertex-dot);
 }
 
 /* Progress / Overlay */
 .overlay-spinner {
     position: absolute;
     inset: 0;
-    background: rgba(255, 255, 255, 0.88);
+    background: var(--overlay-bg);
     backdrop-filter: blur(4px);
     display: flex;
     flex-direction: column;
@@ -299,7 +337,7 @@ body, html {
 .spinner {
     width: 3rem;
     height: 3rem;
-    border: 4px solid #e2e8f0;
+    border: 4px solid var(--border-color);
     border-top-color: var(--primary);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
@@ -321,14 +359,14 @@ body, html {
 .spinner-text {
     font-size: 1.05rem;
     font-weight: 600;
-    color: #334155;
+    color: var(--text-primary);
     text-align: center;
 }
 
 .progress-bar-container {
     width: 100%;
     height: 10px;
-    background-color: #e2e8f0;
+    background-color: var(--border-color);
     border-radius: 9999px;
     overflow: hidden;
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
@@ -336,16 +374,81 @@ body, html {
 
 .progress-bar-fill {
     height: 100%;
-    background: linear-gradient(90deg, #3b82f6, #2563eb);
+    background: linear-gradient(90deg, #3b82f6, var(--primary));
     border-radius: 9999px;
     transition: width 0.1s ease-out;
+}
+
+/* Floating Zoom HUD */
+.zoom-hud {
+    position: absolute;
+    bottom: 1.25rem;
+    right: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    padding: 0.3rem;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    z-index: 20;
+    user-select: none;
+}
+
+.zoom-btn {
+    width: 2.25rem;
+    height: 2.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: calc(var(--radius) - 2px);
+    color: var(--text-primary);
+    font-size: 1.15rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.zoom-btn:hover {
+    background: var(--btn-secondary-hover);
+}
+
+/* Toast Notification */
+.toast-notification {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #0f172a;
+    color: #ffffff;
+    padding: 0.65rem 1.25rem;
+    border-radius: 9999px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    box-shadow: var(--shadow-lg);
+    z-index: 1000;
+    animation: toast-in 0.25s ease-out;
+    pointer-events: none;
+}
+
+[data-theme="dark"] .toast-notification {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+@keyframes toast-in {
+    from { transform: translate(-50%, 1rem); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
 }
 
 /* Modals */
 .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(2px);
     display: flex;
     align-items: center;
@@ -354,13 +457,14 @@ body, html {
 }
 
 .modal-card {
-    background: #ffffff;
+    background: var(--bg-surface);
     border-radius: 12px;
     padding: 2rem;
     max-width: 480px;
     width: 90%;
     box-shadow: var(--shadow-lg);
     text-align: center;
+    border: 1px solid var(--border-color);
 }
 
 .modal-title {
@@ -368,12 +472,12 @@ body, html {
     font-weight: 700;
     margin-top: 0;
     margin-bottom: 0.5rem;
-    color: #0f172a;
+    color: var(--text-primary);
 }
 
 .modal-body {
     font-size: 1rem;
-    color: #475569;
+    color: var(--text-secondary);
     margin-bottom: 1.5rem;
     line-height: 1.6;
     text-align: left;
@@ -403,10 +507,12 @@ body, html {
 }
 
 .shortcut-badge {
-    background: #f1f5f9;
+    background: var(--btn-secondary-bg);
+    color: var(--text-primary);
     padding: 0.15rem 0.35rem;
     border-radius: 4px;
     border: 1px solid var(--border-color);
     font-weight: 600;
     font-size: 0.7rem;
+}
 }

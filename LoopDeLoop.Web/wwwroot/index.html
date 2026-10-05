@@ -9,11 +9,20 @@
     <link rel="preload" id="webassembly" />
     <link rel="stylesheet" href="css/app.css" />
     <script type="importmap"></script>
+    <script>
+        (function() {
+            try {
+                const theme = localStorage.getItem('loopdeloop_theme') || 
+                    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (_) {}
+        })();
+    </script>
 </head>
 
 <body>
     <div id="app">
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:system-ui,-apple-system,sans-serif;background-color:#f8fafc;">
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:system-ui,-apple-system,sans-serif;background-color:var(--bg-primary,#f8fafc);">
             <style>
                 .initial-loader {
                     width: 48px;
@@ -40,6 +49,53 @@
     </div>
 
     <script>
+        window.loopHelpers = {
+            copyToClipboard: async (text) => {
+                try {
+                    if (navigator.clipboard) {
+                        await navigator.clipboard.writeText(text);
+                        return true;
+                    }
+                } catch (_) {}
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                const ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                return ok;
+            },
+            getUrlHash: () => window.location.hash || '',
+            setUrlHash: (hash) => {
+                if (history.replaceState) {
+                    history.replaceState(null, null, hash ? '#' + hash : window.location.pathname);
+                } else {
+                    window.location.hash = hash;
+                }
+            },
+            getBaseUrl: () => window.location.href.split('#')[0],
+            setTheme: (theme) => {
+                document.documentElement.setAttribute('data-theme', theme);
+                try { localStorage.setItem('loopdeloop_theme', theme); } catch (_) {}
+            },
+            getTheme: () => {
+                try {
+                    const saved = localStorage.getItem('loopdeloop_theme');
+                    if (saved) return saved;
+                } catch (_) {}
+                return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            },
+            loadGameState: () => {
+                try { return localStorage.getItem('loopdeloop_gamestate'); } catch (_) { return null; }
+            },
+            saveGameState: (json) => {
+                try { localStorage.setItem('loopdeloop_gamestate', json); } catch (_) {}
+            },
+            clearGameState: () => {
+                try { localStorage.removeItem('loopdeloop_gamestate'); } catch (_) {}
+            }
+        };
+
         window.registerLoopShortcuts = (dotNetRef) => {
             window.addEventListener('keydown', (e) => {
                 if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
@@ -66,6 +122,12 @@
             const svg = document.getElementById(svgId);
             if (!svg) return;
 
+            const activePointers = new Map();
+            let isMiddlePanning = false;
+            let lastMouseX = 0, lastMouseY = 0;
+            let pinchStartDist = 0;
+            let pinchStartMidX = 0, pinchStartMidY = 0;
+
             function getSvgCoords(e) {
                 let pt = svg.createSVGPoint();
                 pt.x = e.clientX;
@@ -78,21 +140,92 @@
 
             svg.onpointerdown = (e) => {
                 e.preventDefault();
-                let coords = getSvgCoords(e);
-                if (!coords) return;
-                dotNetRef.invokeMethodAsync('OnSvgPointerDown', coords.x, coords.y, e.button, e.shiftKey);
+                activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+                if (activePointers.size === 1) {
+                    if (e.button === 1) {
+                        isMiddlePanning = true;
+                        lastMouseX = e.clientX;
+                        lastMouseY = e.clientY;
+                        return;
+                    }
+                    let coords = getSvgCoords(e);
+                    if (!coords) return;
+                    dotNetRef.invokeMethodAsync('OnSvgPointerDown', coords.x, coords.y, e.button, e.shiftKey);
+                } else if (activePointers.size === 2) {
+                    dotNetRef.invokeMethodAsync('OnSvgPointerUp');
+                    const pts = Array.from(activePointers.values());
+                    pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+                    pinchStartMidX = (pts[0].x + pts[1].x) / 2;
+                    pinchStartMidY = (pts[0].y + pts[1].y) / 2;
+                }
             };
 
             svg.onpointermove = (e) => {
-                if (e.buttons === 0) return;
-                let coords = getSvgCoords(e);
-                if (!coords) return;
-                dotNetRef.invokeMethodAsync('OnSvgPointerMove', coords.x, coords.y);
+                if (!activePointers.has(e.pointerId)) return;
+                activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+                if (activePointers.size === 1) {
+                    if (isMiddlePanning) {
+                        let dx = e.clientX - lastMouseX;
+                        let dy = e.clientY - lastMouseY;
+                        lastMouseX = e.clientX;
+                        lastMouseY = e.clientY;
+                        let ctm = svg.getScreenCTM();
+                        let svgDx = ctm ? (dx / ctm.a) : dx;
+                        let svgDy = ctm ? (dy / ctm.d) : dy;
+                        dotNetRef.invokeMethodAsync('OnPan', svgDx, svgDy);
+                        return;
+                    }
+                    if (e.buttons === 0) return;
+                    let coords = getSvgCoords(e);
+                    if (!coords) return;
+                    dotNetRef.invokeMethodAsync('OnSvgPointerMove', coords.x, coords.y);
+                } else if (activePointers.size === 2) {
+                    const pts = Array.from(activePointers.values());
+                    const currentDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+                    const currentMidX = (pts[0].x + pts[1].x) / 2;
+                    const currentMidY = (pts[0].y + pts[1].y) / 2;
+
+                    const scale = pinchStartDist > 0 ? (currentDist / pinchStartDist) : 1;
+                    const dx = currentMidX - pinchStartMidX;
+                    const dy = currentMidY - pinchStartMidY;
+                    let ctm = svg.getScreenCTM();
+                    let svgDx = ctm ? (dx / ctm.a) : dx;
+                    let svgDy = ctm ? (dy / ctm.d) : dy;
+
+                    dotNetRef.invokeMethodAsync('OnTwoFingerPanZoom', svgDx, svgDy, scale);
+
+                    pinchStartDist = currentDist;
+                    pinchStartMidX = currentMidX;
+                    pinchStartMidY = currentMidY;
+                }
             };
 
-            window.addEventListener('pointerup', () => {
-                dotNetRef.invokeMethodAsync('OnSvgPointerUp');
-            });
+            const onPointerEnd = (e) => {
+                if (activePointers.has(e.pointerId)) {
+                    activePointers.delete(e.pointerId);
+                }
+                if (e.button === 1) {
+                    isMiddlePanning = false;
+                }
+                if (activePointers.size === 0) {
+                    isMiddlePanning = false;
+                    dotNetRef.invokeMethodAsync('OnSvgPointerUp');
+                } else if (activePointers.size === 1) {
+                    pinchStartDist = 0;
+                }
+            };
+
+            svg.onpointerup = onPointerEnd;
+            svg.onpointercancel = onPointerEnd;
+            window.addEventListener('pointerup', onPointerEnd);
+
+            svg.onwheel = (e) => {
+                e.preventDefault();
+                let factor = e.deltaY < 0 ? 1.15 : 0.87;
+                dotNetRef.invokeMethodAsync('OnWheelZoom', factor);
+            };
 
             svg.oncontextmenu = (e) => {
                 e.preventDefault();

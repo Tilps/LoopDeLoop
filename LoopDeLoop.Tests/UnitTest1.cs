@@ -198,6 +198,94 @@ namespace LoopDeLoop.Tests
             markedEdges.Clear();
             Assert.IsFalse(markedEdges.Contains(0));
         }
+
+        [TestMethod]
+        public void PuzzleCompression_RoundTrip()
+        {
+            var mesh = PuzzleHelper.MakeMesh(3, 3, MeshType.Square, 0);
+            mesh.Generate();
+            string original = mesh.SaveToString();
+
+            string compressed = PuzzleCompression.CompressToUrlSafe(original);
+            Assert.IsFalse(string.IsNullOrEmpty(compressed));
+            Assert.IsTrue(compressed.Length < original.Length, $"Compressed ({compressed.Length}) should be smaller than original ({original.Length})");
+
+            string decompressed = PuzzleCompression.DecompressFromUrlSafe(compressed);
+            Assert.AreEqual(original, decompressed);
+
+            var reloaded = new Mesh(0, 0, MeshType.Square);
+            reloaded.LoadFromText(decompressed.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries));
+            Assert.AreEqual(mesh.Cells.Count, reloaded.Cells.Count);
+            Assert.AreEqual(mesh.Edges.Count, reloaded.Edges.Count);
+        }
+
+        [TestMethod]
+        public void ReconstructionFromClues_Succeeds()
+        {
+            var types = new[] { MeshType.Square, MeshType.Triangle, MeshType.Hexagonal, MeshType.Octagon };
+            foreach (var type in types)
+            {
+                PuzzleHelper.GetDefaultSize(type, out int w, out int h);
+                var mesh1 = PuzzleHelper.MakeMesh(w, h, type, 0);
+                mesh1.Generate();
+
+                int[] clues = mesh1.Cells.Select(c => c.TargetCount).ToArray();
+
+                var mesh2 = PuzzleHelper.MakeMesh(w, h, type, 0);
+                Assert.AreEqual(mesh1.Cells.Count, mesh2.Cells.Count);
+                for (int i = 0; i < clues.Length; i++)
+                {
+                    mesh2.Cells[i].TargetCount = clues[i];
+                }
+
+                var state1 = mesh1.TrySolve();
+                Assert.AreEqual(SolveState.Solved, state1, $"Mesh1 of type {type} should be solved");
+                var state2 = mesh2.TrySolve();
+                Assert.AreEqual(SolveState.Solved, state2, $"Mesh2 of type {type} should solve identically");
+            }
+        }
+
+        [TestMethod]
+        public void PuzzleCodec_RoundTrip_ProducesUltraCompactString()
+        {
+            var types = new[]
+            {
+                MeshType.Square,
+                MeshType.SquareSymmetrical,
+                MeshType.Triangle,
+                MeshType.Hexagonal,
+                MeshType.Hexagonal2,
+                MeshType.Hexagonal3,
+                MeshType.Octagon,
+                MeshType.Square2,
+                MeshType.Pentagon
+            };
+
+            foreach (var type in types)
+            {
+                PuzzleHelper.GetDefaultSize(type, out int w, out int h);
+                var mesh = PuzzleHelper.MakeMesh(w, h, type, 0);
+                mesh.Generate();
+
+                string encoded = PuzzleCodec.Encode(mesh, w, h);
+                Console.WriteLine($"{type} ({w}x{h}) [{encoded.Length} chars]: {encoded}");
+                Assert.IsFalse(string.IsNullOrWhiteSpace(encoded));
+                Assert.IsTrue(encoded.Length < 120, $"Encoded string for {type} should be ultra-compact (was {encoded.Length}: {encoded})");
+
+                bool success = PuzzleCodec.TryDecode(encoded, out var decoded, out int decW, out int decH, out var decType);
+                Assert.IsTrue(success, $"Decoding {type} should succeed");
+                Assert.IsNotNull(decoded);
+                Assert.AreEqual(w, decW);
+                Assert.AreEqual(h, decH);
+                Assert.AreEqual(type, decType);
+                Assert.AreEqual(mesh.Cells.Count, decoded.Cells.Count);
+
+                for (int i = 0; i < mesh.Cells.Count; i++)
+                {
+                    Assert.AreEqual(mesh.Cells[i].TargetCount, decoded.Cells[i].TargetCount, $"Cell {i} clue mismatch in {type}");
+                }
+            }
+        }
     }
 }
 

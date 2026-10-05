@@ -1822,6 +1822,14 @@ namespace LoopDeLoop
         }
         private EdgePairRestriction[,] edgePairRestrictions;
 
+        public void SetClue(int cellIndex, int target)
+        {
+            if (cellIndex >= 0 && cellIndex < cells.Count)
+            {
+                AddTarget(cells[cellIndex], target);
+            }
+        }
+
         internal void AddTarget(Cell cell, int target)
         {
             if (cell.TargetCount != -1)

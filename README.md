@@ -67,3 +67,4 @@ dotnet run --project LoopDeLoop
   - **Unfix** (`Ctrl+U`): Unlock fixed edges so they can be changed again.
   - **Revert** (`Ctrl+R`): Discard subsequent moves and roll back to the saved checkpoint.
 - **History**: **Undo** (`Ctrl+Z`) and **Redo** (`Ctrl+Y`).
+not just square grids.  It is probably not bug free, but it has been manually tested quite a lot.

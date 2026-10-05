@@ -198,6 +198,160 @@ namespace LoopDeLoop.Web.Services
                 IsSolved = false;
             }
         }
+
+        public SavedGameState? ExportState()
+        {
+            if (CurrentMesh == null) return null;
+
+            int[] edgeStates = new int[CurrentMesh.Edges.Count];
+            for (int i = 0; i < CurrentMesh.Edges.Count; i++)
+            {
+                edgeStates[i] = (int)CurrentMesh.Edges[i].State;
+            }
+
+            int[] cellColors = new int[CurrentMesh.Cells.Count];
+            for (int i = 0; i < CurrentMesh.Cells.Count; i++)
+            {
+                cellColors[i] = CurrentMesh.Cells[i].Color;
+            }
+
+            PuzzleHelper.ParseSize(SizeText, CurrentType, out int w, out int h);
+            string puzzleEncoded = PuzzleCodec.Encode(CurrentMesh, w, h);
+
+            return new SavedGameState
+            {
+                Puzzle = puzzleEncoded,
+                EdgeStates = edgeStates,
+                CellColors = cellColors,
+                MarkedEdges = MarkedEdges.ToArray(),
+                ElapsedSeconds = ElapsedTime.TotalSeconds,
+                IsSolved = IsSolved,
+                DisallowFalseMove = DisallowFalseMove,
+                ShowCellColors = ShowCellColors,
+                Type = CurrentType.ToString(),
+                Size = SizeText,
+                Difficulty = Difficulty
+            };
+        }
+
+        public bool RestoreState(SavedGameState state)
+        {
+            if (string.IsNullOrEmpty(state.Puzzle)) return false;
+
+            Mesh? mesh = null;
+            if (PuzzleCodec.TryDecode(state.Puzzle, out var decodedMesh, out int w, out int h, out var decodedType))
+            {
+                mesh = decodedMesh;
+            }
+            else
+            {
+                var lines = state.Puzzle.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                mesh = new Mesh(0, 0, MeshType.Square);
+                if (!mesh.LoadFromText(lines)) return false;
+            }
+
+            if (mesh == null) return false;
+
+            CurrentMesh = mesh;
+            CurrentType = mesh.MeshType;
+            if (!string.IsNullOrEmpty(state.Size)) SizeText = state.Size;
+            Difficulty = state.Difficulty;
+            DisallowFalseMove = state.DisallowFalseMove;
+            ShowCellColors = state.ShowCellColors;
+            TotalCells = mesh.Cells.Count;
+            PrunedProgress = 0;
+            IsGenerating = false;
+            UndoTree = new UndoTree();
+            MarkedEdges.Clear();
+
+            if (state.EdgeStates != null && state.EdgeStates.Length == mesh.Edges.Count)
+            {
+                for (int i = 0; i < state.EdgeStates.Length; i++)
+                {
+                    mesh.Edges[i].State = (EdgeState)state.EdgeStates[i];
+                }
+            }
+
+            if (state.CellColors != null && state.CellColors.Length == mesh.Cells.Count)
+            {
+                for (int i = 0; i < state.CellColors.Length; i++)
+                {
+                    mesh.Cells[i].Color = state.CellColors[i];
+                }
+            }
+
+            if (state.MarkedEdges != null)
+            {
+                foreach (int m in state.MarkedEdges)
+                {
+                    if (m >= 0 && m < mesh.Edges.Count)
+                        MarkedEdges.Add(m);
+                }
+            }
+
+            if (state.ElapsedSeconds > 0)
+            {
+                StartTime = DateTime.UtcNow.AddSeconds(-state.ElapsedSeconds);
+            }
+            else
+            {
+                StartTime = DateTime.UtcNow;
+            }
+
+            IsSolved = state.IsSolved;
+            CheckSolution();
+            NotifyChanged();
+            return true;
+        }
+
+        public bool LoadPuzzleText(string puzzleText)
+        {
+            if (string.IsNullOrEmpty(puzzleText)) return false;
+
+            Mesh? mesh = null;
+            if (PuzzleCodec.TryDecode(puzzleText, out var decodedMesh, out int w, out int h, out var decodedType))
+            {
+                mesh = decodedMesh;
+                SizeText = $"{w}x{h}";
+            }
+            else
+            {
+                var lines = puzzleText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                mesh = new Mesh(0, 0, MeshType.Square);
+                if (!mesh.LoadFromText(lines)) return false;
+            }
+
+            if (mesh == null) return false;
+
+            CurrentMesh = mesh;
+            CurrentType = mesh.MeshType;
+            TotalCells = mesh.Cells.Count;
+            PrunedProgress = 0;
+            IsGenerating = false;
+            UndoTree = new UndoTree();
+            MarkedEdges.Clear();
+            StartTime = DateTime.UtcNow;
+            IsSolved = false;
+
+            CheckSolution();
+            NotifyChanged();
+            return true;
+        }
+    }
+
+    public class SavedGameState
+    {
+        public string Puzzle { get; set; } = string.Empty;
+        public int[]? EdgeStates { get; set; }
+        public int[]? CellColors { get; set; }
+        public int[]? MarkedEdges { get; set; }
+        public double ElapsedSeconds { get; set; }
+        public bool IsSolved { get; set; }
+        public bool DisallowFalseMove { get; set; }
+        public bool ShowCellColors { get; set; }
+        public string Type { get; set; } = "Square";
+        public string Size { get; set; } = "10x10";
+        public int Difficulty { get; set; } = 1;
     }
 }
 

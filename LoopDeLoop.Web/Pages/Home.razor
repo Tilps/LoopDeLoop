@@ -88,6 +88,12 @@
             <button class="btn btn-secondary" @onclick="Game.RevertToFix" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Revert to Checkpoint (Ctrl+R)">
                 Revert
             </button>
+            <button class="btn btn-secondary" @onclick="SharePuzzle" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Copy shareable link to this puzzle">
+                🔗 Share
+            </button>
+            <button class="btn btn-secondary" @onclick="ToggleTheme" title="Toggle Dark/Light Mode">
+                @(isDarkMode ? "☀️" : "🌙")
+            </button>
             <button class="btn btn-secondary" @onclick="() => showHelpModal = true" title="Instructions & Rules">
                 Help
             </button>
@@ -137,16 +143,23 @@
             }
 
             float pad = 30.0f;
-            float vbX = minX - pad;
-            float vbY = minY - pad;
-            float vbW = (maxX - minX) + pad * 2;
-            float vbH = (maxY - minY) + pad * 2;
-            if (vbW < 10) vbW = 100;
-            if (vbH < 10) vbH = 100;
+            float baseW = (maxX - minX) + pad * 2;
+            float baseH = (maxY - minY) + pad * 2;
+            if (baseW < 10) baseW = 100;
+            if (baseH < 10) baseH = 100;
+
+            float centerX = (minX + maxX) / 2.0f;
+            float centerY = (minY + maxY) / 2.0f;
+
+            float curW = baseW / zoomScale;
+            float curH = baseH / zoomScale;
+
+            float effX = centerX - (curW / 2.0f) + panX;
+            float effY = centerY - (curH / 2.0f) + panY;
 
             float vertexRadius = 3.5f;
 
-            <svg id="game-board-svg" class="svg-board" viewBox="@($"{vbX:F1} {vbY:F1} {vbW:F1} {vbH:F1}")" preserveAspectRatio="xMidYMid meet">
+            <svg id="game-board-svg" class="svg-board" viewBox="@($"{effX:F1} {effY:F1} {curW:F1} {curH:F1}")" preserveAspectRatio="xMidYMid meet">
                 <!-- Layer 1: Cell backgrounds (for interior/exterior shading) -->
                 <g class="cells-layer" style="pointer-events: none;">
                     @for (int c = 0; c < mesh.Cells.Count; c++)
@@ -155,8 +168,8 @@
                         var pointsStr = string.Join(" ", cell.Intersections.Select(i => $"{(mesh.Intersections[i].X * S):F1},{(mesh.Intersections[i].Y * S):F1}"));
 
                         string cellFill = "transparent";
-                        if (cell.Color == 1) cellFill = "#fef3c7"; // Warm yellow (inside)
-                        else if (cell.Color == -1) cellFill = "#e2e8f0"; // Cool gray (outside)
+                        if (cell.Color == 1) cellFill = "var(--cell-yellow)";
+                        else if (cell.Color == -1) cellFill = "var(--cell-gray)";
 
                         <polygon points="@pointsStr"
                                  fill="@cellFill"
@@ -207,9 +220,9 @@
                             float inradius = MathF.Sqrt(minEdgeDistSq);
                             float fontSize = Math.Clamp(inradius * 0.95f, 13.0f, 22.0f);
 
-                            string numColor = "#1e293b";
-                            if (cell.FilledCount == cell.TargetCount) numColor = "#64748b";
-                            else if (cell.FilledCount > cell.TargetCount) numColor = "#ef4444";
+                            string numColor = "var(--clue-default)";
+                            if (cell.FilledCount == cell.TargetCount) numColor = "var(--clue-satisfied)";
+                            else if (cell.FilledCount > cell.TargetCount) numColor = "var(--danger)";
 
                             @RenderCellClue(midX, midY, cell.TargetCount, numColor, fontSize)
                         }
@@ -273,6 +286,13 @@
                     }
                 </g>
             </svg>
+
+            <!-- Floating Pan & Zoom Controls -->
+            <div class="zoom-hud">
+                <button class="zoom-btn" @onclick="() => ZoomBy(1.25f)" title="Zoom In (+)">+</button>
+                <button class="zoom-btn" @onclick="() => ZoomBy(0.8f)" title="Zoom Out (−)">−</button>
+                <button class="zoom-btn" @onclick="ResetZoom" title="Reset Pan & Zoom">⟲</button>
+            </div>
         }
     </main>
 
@@ -287,10 +307,17 @@
             <span class="shortcut-badge">Ctrl+R</span> Revert
         </div>
         <div>
-            Left-Click / Drag: Draw line &bull; Right-Click / Drag: Mark X &bull; Shift: Reverse cycle &bull; Fixed edges locked
+            Left-Click / Drag: Draw line &bull; Right-Click / Drag: Mark X &bull; Shift: Reverse cycle &bull; Fixed edges locked &bull; Two fingers / Wheel: Pan & Zoom
         </div>
     </footer>
 </div>
+
+@if (showShareToast)
+{
+    <div class="toast-notification">
+        Link copied to clipboard!
+    </div>
+}
 
 <!-- Victory Modal -->
 @if (Game.IsSolved && showVictoryModal)
@@ -303,6 +330,7 @@
                 <p>Congratulations! You successfully solved the loop in <strong>@(Game.ElapsedTime.ToString(@"mm\:ss"))</strong>!</p>
             </div>
             <div class="modal-actions" style="justify-content: center;">
+                <button class="btn btn-secondary" @onclick="SharePuzzle">🔗 Share Link</button>
                 <button class="btn btn-secondary" @onclick="() => showVictoryModal = false">Review Board</button>
                 <button class="btn btn-success" @onclick="GeneratePuzzle">New Puzzle</button>
             </div>
@@ -331,6 +359,8 @@
                     <li><strong>Clicking inside cells</strong>: automatically routes to the closest edge of the cell!</li>
                     <li><strong>Cell shading option</strong>: when enabled, clicking near the center of a cell shades it (Yellow = inside, Gray = outside).</li>
                     <li><strong>Restrict invalid option</strong>: when enabled, moves causing obvious contradictions (e.g. vertex degree > 2 or clue count exceeded) are blocked. When off (default), moves cycle freely regardless of rules.</li>
+                    <li><strong>Two-Finger Touch / Wheel</strong>: Pan by dragging with two fingers (or middle-mouse drag); pinch to zoom (or use mouse wheel or HUD buttons). Single-finger drag remains for drawing lines!</li>
+                    <li><strong>Share</strong>: Copy a compressed link carrying the exact puzzle to share with friends.</li>
                     <li><strong>Fix (Ctrl+F)</strong>: Save a checkpoint (current moves turn green and become locked against changes).</li>
                     <li><strong>Unfix (Ctrl+U)</strong>: Clear checkpoint and unlock fixed edges.</li>
                     <li><strong>Revert (Ctrl+R)</strong>: Rollback all moves made after your last checkpoint.</li>
@@ -349,6 +379,12 @@
     private string selectedType = "Square";
     private bool showVictoryModal = true;
     private bool showHelpModal = false;
+    private bool isDarkMode = false;
+    private bool showShareToast = false;
+
+    private float zoomScale = 1.0f;
+    private float panX = 0f;
+    private float panY = 0f;
 
     private bool isPointerDown = false;
     private EdgeState? dragTargetState = null;
@@ -395,7 +431,131 @@
             {
                 await JS.InvokeVoidAsync("registerLoopShortcuts", selfRef);
             }
-            await GeneratePuzzle();
+
+            try
+            {
+                string theme = await JS.InvokeAsync<string>("loopHelpers.getTheme");
+                isDarkMode = (theme == "dark");
+            }
+            catch {}
+
+            bool loaded = false;
+            // 1. Check URL hash for shared puzzle (#p=... or #puzzle=...)
+            try
+            {
+                string hash = await JS.InvokeAsync<string>("loopHelpers.getUrlHash");
+                if (!string.IsNullOrEmpty(hash))
+                {
+                    if (hash.StartsWith("#")) hash = hash.Substring(1);
+                    string code = hash;
+                    if (code.StartsWith("p=")) code = code.Substring(2);
+                    else if (code.StartsWith("puzzle=")) code = code.Substring(7);
+
+                    // A) Check if it's the new ultra-compact format (e.g. sq/10x10/...)
+                    if (PuzzleCodec.TryDecode(code, out _, out _, out _, out _))
+                    {
+                        string? savedJson = await JS.InvokeAsync<string?>("loopHelpers.loadGameState");
+                        if (!string.IsNullOrEmpty(savedJson))
+                        {
+                            try
+                            {
+                                var savedState = System.Text.Json.JsonSerializer.Deserialize<SavedGameState>(savedJson);
+                                if (savedState != null && (savedState.Puzzle == code || savedState.Puzzle == hash))
+                                {
+                                    if (Game.RestoreState(savedState))
+                                    {
+                                        loaded = true;
+                                        selectedType = Game.CurrentType.ToString();
+                                    }
+                                }
+                            }
+                            catch {}
+                        }
+
+                        if (!loaded && Game.LoadPuzzleText(code))
+                        {
+                            loaded = true;
+                            selectedType = Game.CurrentType.ToString();
+                        }
+                    }
+                    // B) Fallback for legacy compressed URLs:
+                    else
+                    {
+                        try
+                        {
+                            string puzzleText = PuzzleCompression.Decompress(code);
+                            if (!string.IsNullOrEmpty(puzzleText))
+                            {
+                                string? savedJson = await JS.InvokeAsync<string?>("loopHelpers.loadGameState");
+                                if (!string.IsNullOrEmpty(savedJson))
+                                {
+                                    try
+                                    {
+                                        var savedState = System.Text.Json.JsonSerializer.Deserialize<SavedGameState>(savedJson);
+                                        if (savedState != null && savedState.Puzzle == puzzleText)
+                                        {
+                                            if (Game.RestoreState(savedState))
+                                            {
+                                                loaded = true;
+                                                selectedType = Game.CurrentType.ToString();
+                                            }
+                                        }
+                                    }
+                                    catch {}
+                                }
+
+                                if (!loaded && Game.LoadPuzzleText(puzzleText))
+                                {
+                                    loaded = true;
+                                    selectedType = Game.CurrentType.ToString();
+                                }
+                            }
+                        }
+                        catch {}
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to load puzzle from hash: {ex.Message}");
+            }
+
+            // 2. Check localStorage if no hash loaded
+            if (!loaded)
+            {
+                try
+                {
+                    string? savedJson = await JS.InvokeAsync<string?>("loopHelpers.loadGameState");
+                    if (!string.IsNullOrEmpty(savedJson))
+                    {
+                        var savedState = System.Text.Json.JsonSerializer.Deserialize<SavedGameState>(savedJson);
+                        if (savedState != null && Game.RestoreState(savedState))
+                        {
+                            loaded = true;
+                            selectedType = Game.CurrentType.ToString();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to restore local state: {ex.Message}");
+                }
+            }
+
+            // 3. Fallback to generating fresh puzzle
+            if (!loaded)
+            {
+                await GeneratePuzzle();
+            }
+            else
+            {
+                ResetZoom();
+                if (selfRef != null)
+                {
+                    await JS.InvokeVoidAsync("initLoopBoard", "game-board-svg", selfRef);
+                }
+                StateHasChanged();
+            }
         }
         else if (Game.CurrentMesh != null && selfRef != null)
         {
@@ -412,6 +572,25 @@
             showVictoryModal = true;
         }
         lastSolvedState = Game.IsSolved;
+
+        // Auto-save game state to localStorage
+        if (!Game.IsGenerating && Game.CurrentMesh != null)
+        {
+            try
+            {
+                var state = Game.ExportState();
+                if (state != null)
+                {
+                    string json = System.Text.Json.JsonSerializer.Serialize(state);
+                    _ = JS.InvokeVoidAsync("loopHelpers.saveGameState", json);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error auto-saving state: {ex.Message}");
+            }
+        }
+
         InvokeAsync(StateHasChanged);
     }
 
@@ -419,11 +598,95 @@
     {
         showVictoryModal = false;
         lastSolvedState = false;
+        ResetZoom();
+
+        try
+        {
+            await JS.InvokeVoidAsync("loopHelpers.setUrlHash", "");
+        }
+        catch {}
+
         await Game.GenerateNewPuzzleAsync();
         if (selfRef != null)
         {
             await JS.InvokeVoidAsync("initLoopBoard", "game-board-svg", selfRef);
         }
+    }
+
+    private async Task ToggleTheme()
+    {
+        isDarkMode = !isDarkMode;
+        try
+        {
+            await JS.InvokeVoidAsync("loopHelpers.setTheme", isDarkMode ? "dark" : "light");
+        }
+        catch {}
+    }
+
+    private async Task SharePuzzle()
+    {
+        if (Game.CurrentMesh == null) return;
+        try
+        {
+            PuzzleHelper.ParseSize(Game.SizeText, Game.CurrentType, out int w, out int h);
+            string compact = PuzzleCodec.Encode(Game.CurrentMesh, w, h);
+            await JS.InvokeVoidAsync("loopHelpers.setUrlHash", $"p={compact}");
+            string baseUrl = await JS.InvokeAsync<string>("loopHelpers.getBaseUrl");
+            string fullUrl = $"{baseUrl}#p={compact}";
+            await JS.InvokeAsync<bool>("loopHelpers.copyToClipboard", fullUrl);
+            showShareToast = true;
+            StateHasChanged();
+            _ = Task.Delay(2500).ContinueWith(_ =>
+            {
+                showShareToast = false;
+                InvokeAsync(StateHasChanged);
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error sharing puzzle: {ex.Message}");
+        }
+    }
+
+    private void ZoomBy(float factor)
+    {
+        zoomScale = Math.Clamp(zoomScale * factor, 0.4f, 8.0f);
+        StateHasChanged();
+    }
+
+    private void ResetZoom()
+    {
+        zoomScale = 1.0f;
+        panX = 0f;
+        panY = 0f;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnTwoFingerPanZoom(double svgDx, double svgDy, double scale)
+    {
+        panX -= (float)svgDx;
+        panY -= (float)svgDy;
+        if (scale > 0 && Math.Abs(scale - 1.0) > 0.001)
+        {
+            zoomScale = Math.Clamp(zoomScale * (float)scale, 0.4f, 8.0f);
+        }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnPan(double svgDx, double svgDy)
+    {
+        panX -= (float)svgDx;
+        panY -= (float)svgDy;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnWheelZoom(double factor)
+    {
+        zoomScale = Math.Clamp(zoomScale * (float)factor, 0.4f, 8.0f);
+        StateHasChanged();
     }
 
     private void OnTypeChanged(ChangeEventArgs e)
