@@ -373,18 +373,22 @@
         }
     }
 
+    private bool lastSolvedState = false;
+
     private void HandleStateChanged()
     {
-        if (Game.IsSolved)
+        if (Game.IsSolved && !lastSolvedState)
         {
             showVictoryModal = true;
         }
+        lastSolvedState = Game.IsSolved;
         InvokeAsync(StateHasChanged);
     }
 
     private async Task GeneratePuzzle()
     {
         showVictoryModal = false;
+        lastSolvedState = false;
         await Game.GenerateNewPuzzleAsync();
         if (selfRef != null)
         {
@@ -494,7 +498,7 @@
     [JSInvokable]
     public void OnSvgPointerDown(double x, double y, int button, bool shiftKey)
     {
-        if (Game.CurrentMesh == null || Game.IsSolved || Game.IsGenerating) return;
+        if (Game.CurrentMesh == null || Game.IsGenerating) return;
 
         float fx = (float)x;
         float fy = (float)y;
@@ -525,7 +529,7 @@
     [JSInvokable]
     public void OnSvgPointerMove(double x, double y)
     {
-        if (!isPointerDown || Game.CurrentMesh == null || Game.IsSolved || Game.IsGenerating) return;
+        if (!isPointerDown || Game.CurrentMesh == null || Game.IsGenerating) return;
         if (!dragTargetState.HasValue) return;
 
         float fx = (float)x;

@@ -85,7 +85,7 @@ namespace LoopDeLoop.Web.Services
 
         public void ToggleEdge(int edgeIndex, bool isAlternative)
         {
-            if (CurrentMesh == null || edgeIndex < 0 || edgeIndex >= CurrentMesh.Edges.Count || IsSolved)
+            if (CurrentMesh == null || edgeIndex < 0 || edgeIndex >= CurrentMesh.Edges.Count)
                 return;
 
             if (MarkedEdges.Contains(edgeIndex))
@@ -106,7 +106,7 @@ namespace LoopDeLoop.Web.Services
 
         public void SetEdgeDirect(int edgeIndex, EdgeState targetState)
         {
-            if (CurrentMesh == null || edgeIndex < 0 || edgeIndex >= CurrentMesh.Edges.Count || IsSolved)
+            if (CurrentMesh == null || edgeIndex < 0 || edgeIndex >= CurrentMesh.Edges.Count)
                 return;
 
             if (MarkedEdges.Contains(edgeIndex))
@@ -125,7 +125,7 @@ namespace LoopDeLoop.Web.Services
 
         public void ToggleCellColor(int cellIndex, bool isAlternative)
         {
-            if (CurrentMesh == null || cellIndex < 0 || cellIndex >= CurrentMesh.Cells.Count || IsSolved)
+            if (CurrentMesh == null || cellIndex < 0 || cellIndex >= CurrentMesh.Cells.Count)
                 return;
 
             var action = new PuzzleCellColorAction(CurrentMesh, cellIndex, isAlternative);
@@ -172,6 +172,7 @@ namespace LoopDeLoop.Web.Services
         {
             MarkedEdges.Clear();
             UndoTree.ClearMark();
+            CheckSolution();
             NotifyChanged();
         }
 
@@ -185,10 +186,15 @@ namespace LoopDeLoop.Web.Services
         public void CheckSolution()
         {
             if (CurrentMesh == null) return;
-            if (PuzzleHelper.CheckIsSolved(CurrentMesh))
+            bool currentlySolved = PuzzleHelper.CheckIsSolved(CurrentMesh);
+            if (currentlySolved && !IsSolved)
             {
                 IsSolved = true;
                 Fix(); // Auto-fix solution upon victory
+            }
+            else if (!currentlySolved && IsSolved)
+            {
+                IsSolved = false;
             }
         }
     }
