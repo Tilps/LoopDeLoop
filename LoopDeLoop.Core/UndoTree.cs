@@ -164,19 +164,19 @@ namespace LoopDeLoop
             }
         }
 
-        internal void Mark()
+        public void Mark()
         {
             marked = current;
         }
         UndoNode marked = null;
 
-        internal void RevertToMark()
+        public void RevertToMark()
         {
             while (current != marked && CanUndo)
                 Undo();
         }
 
-        internal object ClearMark()
+        public object ClearMark()
         {
             UndoNode oldMarked = marked;
             marked = null;
@@ -184,13 +184,13 @@ namespace LoopDeLoop
         }
 
         bool markNext = false;
-        internal object MarkNext()
+        public object MarkNext()
         {
             markNext = true;
             return marked;
         }
 
-        internal void SetMarkedDirect(object prevMarkPos)
+        public void SetMarkedDirect(object prevMarkPos)
         {
             marked = (UndoNode)prevMarkPos;
         }

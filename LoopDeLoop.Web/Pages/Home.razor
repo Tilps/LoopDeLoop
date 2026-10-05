@@ -1,0 +1,390 @@
+@page "/"
+@inject GameService Game
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Loop-de-loop - Slitherlink Puzzle Game</PageTitle>
+
+<div class="game-container" @onpointerup="OnPointerUp" @onpointerleave="OnPointerUp">
+    <!-- Header / Controls -->
+    <header class="game-header">
+        <div class="brand">
+            <h1 class="brand-title">Loop-de-loop</h1>
+            <span class="brand-badge">.NET 10</span>
+        </div>
+
+        <div class="controls-group">
+            <div class="control-item">
+                <label>Grid:</label>
+                <select class="select-input" value="@selectedType" @onchange="OnTypeChanged" disabled="@Game.IsGenerating">
+                    <option value="Square">Square</option>
+                    <option value="Square Symmetrical">Square Symmetrical</option>
+                    <option value="Triangle">Triangle</option>
+                    <option value="Hexagon">Hexagon</option>
+                    <option value="Hexagon2">Hexagon 2</option>
+                    <option value="Hexagon3">Hexagon 3</option>
+                    <option value="Octagon">Octagon</option>
+                    <option value="Square2">Square 2</option>
+                    <option value="Pentagon">Pentagon</option>
+                </select>
+            </div>
+
+            <div class="control-item">
+                <label>Size:</label>
+                <input type="text" class="text-input" @bind="Game.SizeText" placeholder="10x10" disabled="@Game.IsGenerating" />
+            </div>
+
+            <div class="control-item">
+                <label>Difficulty:</label>
+                <select class="select-input" @bind="Game.Difficulty" disabled="@Game.IsGenerating">
+                    <option value="0">Trivial</option>
+                    <option value="1">Easy</option>
+                    <option value="2">Easyish</option>
+                    <option value="3">Moderate</option>
+                    <option value="4">Maybe Harder</option>
+                    <option value="5">Unlimited</option>
+                </select>
+            </div>
+
+            <button class="btn btn-primary" @onclick="GeneratePuzzle" disabled="@Game.IsGenerating">
+                @if (Game.IsGenerating)
+                {
+                    <span>Generating...</span>
+                }
+                else
+                {
+                    <span>New Puzzle</span>
+                }
+            </button>
+        </div>
+
+        <div class="controls-group">
+            <div class="timer-box" title="Elapsed Time">
+                @(Game.ElapsedTime.ToString(@"mm\:ss"))
+            </div>
+
+            <button class="btn btn-secondary" @onclick="Game.Undo" disabled="@(!Game.CanUndo || Game.IsGenerating)" title="Undo (Ctrl+Z)">
+                ↶ Undo
+            </button>
+            <button class="btn btn-secondary" @onclick="Game.Redo" disabled="@(!Game.CanRedo || Game.IsGenerating)" title="Redo (Ctrl+Y)">
+                ↷ Redo
+            </button>
+            <button class="btn btn-secondary" @onclick="Game.Fix" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Save Checkpoint (Ctrl+F)">
+                Fix
+            </button>
+            <button class="btn btn-secondary" @onclick="Game.Unfix" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Clear Checkpoint (Ctrl+U)">
+                Unfix
+            </button>
+            <button class="btn btn-secondary" @onclick="Game.RevertToFix" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Revert to Checkpoint (Ctrl+R)">
+                Revert
+            </button>
+            <button class="btn btn-secondary" @onclick="() => showHelpModal = true" title="Instructions & Rules">
+                Help
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Game Board -->
+    <main class="board-container">
+        @if (Game.IsGenerating)
+        {
+            <div class="overlay-spinner">
+                <div class="spinner"></div>
+                <div class="spinner-text">Generating puzzle... (@Game.PrunedProgress clues checked)</div>
+            </div>
+        }
+
+        @if (Game.CurrentMesh != null)
+        {
+            var mesh = Game.CurrentMesh;
+            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+            foreach (var inters in mesh.Intersections)
+            {
+                if (inters.X < minX) minX = inters.X;
+                if (inters.Y < minY) minY = inters.Y;
+                if (inters.X > maxX) maxX = inters.X;
+                if (inters.Y > maxY) maxY = inters.Y;
+            }
+
+            float padding = 0.8f;
+            float vbX = minX - padding;
+            float vbY = minY - padding;
+            float vbW = (maxX - minX) + padding * 2;
+            float vbH = (maxY - minY) + padding * 2;
+            if (vbW < 1) vbW = 10;
+            if (vbH < 1) vbH = 10;
+
+            float crossLen = 0.18f;
+            float vertexRadius = 0.08f;
+            float fontSize = 0.45f;
+
+            <svg class="svg-board" viewBox="@($"{vbX} {vbY} {vbW} {vbH}")" preserveAspectRatio="xMidYMid meet">
+                <!-- Cells (background and target numbers) -->
+                @for (int c = 0; c < mesh.Cells.Count; c++)
+                {
+                    int cellIdx = c;
+                    var cell = mesh.Cells[cellIdx];
+                    var pointsStr = string.Join(" ", cell.Intersections.Select(i => $"{mesh.Intersections[i].X},{mesh.Intersections[i].Y}"));
+
+                    string cellFill = "transparent";
+                    if (cell.Color == 1) cellFill = "#fef3c7"; // Yellow (inside)
+                    else if (cell.Color == -1) cellFill = "#e2e8f0"; // Gray (outside)
+
+                    float midX = 0, midY = 0;
+                    if (cell.Intersections.Count > 0)
+                    {
+                        foreach (var i in cell.Intersections)
+                        {
+                            midX += mesh.Intersections[i].X;
+                            midY += mesh.Intersections[i].Y;
+                        }
+                        midX /= cell.Intersections.Count;
+                        midY /= cell.Intersections.Count;
+                    }
+
+                    <polygon points="@pointsStr"
+                             fill="@cellFill"
+                             class="cell-poly"
+                             @onclick="() => Game.ToggleCellColor(cellIdx, false)"
+                             @oncontextmenu:preventDefault="true"
+                             @oncontextmenu="() => Game.ToggleCellColor(cellIdx, true)" />
+
+                    @if (cell.TargetCount >= 0)
+                    {
+                        string textClass = "cell-text";
+                        if (cell.FilledCount == cell.TargetCount) textClass += " cell-text-satisfied";
+                        else if (cell.FilledCount > cell.TargetCount) textClass += " cell-text-error";
+
+                        @((MarkupString)$"<text x=\"{midX}\" y=\"{midY}\" font-size=\"{fontSize}\" text-anchor=\"middle\" dominant-baseline=\"central\" class=\"{textClass}\">{cell.TargetCount}</text>")
+                    }
+                }
+
+                <!-- Edges (visual lines & hit areas) -->
+                @for (int e = 0; e < mesh.Edges.Count; e++)
+                {
+                    int edgeIdx = e;
+                    var edge = mesh.Edges[edgeIdx];
+                    mesh.GetEdgeExtent(edge, out float x1, out float y1, out float x2, out float y2);
+                    bool isMarked = Game.MarkedEdges.Contains(edgeIdx);
+
+                    if (edge.State == EdgeState.Filled)
+                    {
+                        <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
+                              class="@(isMarked ? "edge-filled-marked" : "edge-filled")"
+                              stroke-width="0.14" />
+                    }
+                    else if (edge.State == EdgeState.Excluded)
+                    {
+                        float mx = (x1 + x2) / 2.0f;
+                        float my = (y1 + y2) / 2.0f;
+                        string crossClass = isMarked ? "edge-cross-marked" : "edge-cross";
+                        <line x1="@(mx - crossLen)" y1="@(my - crossLen)" x2="@(mx + crossLen)" y2="@(my + crossLen)"
+                              class="@crossClass" stroke-width="0.06" />
+                        <line x1="@(mx + crossLen)" y1="@(my - crossLen)" x2="@(mx - crossLen)" y2="@(my + crossLen)"
+                              class="@crossClass" stroke-width="0.06" />
+                    }
+                    else
+                    {
+                        <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
+                              class="edge-empty"
+                              stroke-width="0.03" />
+                    }
+
+                    <!-- Interactive Hit Line -->
+                    <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
+                          class="edge-hit"
+                          stroke-width="0.45"
+                          @onpointerdown="args => OnEdgePointerDown(edgeIdx, args)"
+                          @onpointerenter="() => OnEdgePointerEnter(edgeIdx)"
+                          @oncontextmenu:preventDefault="true" />
+                }
+
+                <!-- Vertices / Intersections -->
+                @foreach (var inters in mesh.Intersections)
+                {
+                    <circle cx="@inters.X" cy="@inters.Y" r="@vertexRadius" class="vertex-dot" />
+                }
+            </svg>
+        }
+    </main>
+
+    <!-- Footer Shortcuts Info -->
+    <footer class="game-footer">
+        <div>
+            Shortcuts:
+            <span class="shortcut-badge">Ctrl+Z</span> Undo &bull;
+            <span class="shortcut-badge">Ctrl+Y</span> Redo &bull;
+            <span class="shortcut-badge">Ctrl+F</span> Fix &bull;
+            <span class="shortcut-badge">Ctrl+U</span> Unfix &bull;
+            <span class="shortcut-badge">Ctrl+R</span> Revert
+        </div>
+        <div>
+            Left-Click: Cycle (Empty ➔ Filled ➔ Excluded) &bull; Right-Click: Mark Excluded &bull; Drag to draw
+        </div>
+    </footer>
+</div>
+
+<!-- Victory Modal -->
+@if (Game.IsSolved && showVictoryModal)
+{
+    <div class="modal-backdrop">
+        <div class="modal-card">
+            <div class="victory-badge">🏆</div>
+            <h2 class="modal-title">Puzzle Solved!</h2>
+            <div class="modal-body" style="text-align: center;">
+                <p>Congratulations! You successfully solved the loop in <strong>@(Game.ElapsedTime.ToString(@"mm\:ss"))</strong>!</p>
+            </div>
+            <div class="modal-actions" style="justify-content: center;">
+                <button class="btn btn-secondary" @onclick="() => showVictoryModal = false">Review Board</button>
+                <button class="btn btn-success" @onclick="GeneratePuzzle">New Puzzle</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Help / Rules Modal -->
+@if (showHelpModal)
+{
+    <div class="modal-backdrop" @onclick="() => showHelpModal = false">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <h2 class="modal-title">How to Play Loop-de-loop</h2>
+            <div class="modal-body">
+                <p><strong>Goal:</strong> Form a single continuous non-crossing loop by connecting adjacent grid points.</p>
+                <ul>
+                    <li>Numbers inside cells indicate how many of that cell's edges are part of the loop.</li>
+                    <li>Cells without numbers may have any number of edges.</li>
+                    <li>The loop cannot branch or cross itself — every grid vertex along the loop must connect exactly 2 edges.</li>
+                </ul>
+                <p><strong>Controls:</strong></p>
+                <ul>
+                    <li><strong>Left-Click or Drag</strong> on an edge: cycle Empty ➔ Filled ➔ Excluded ➔ Empty.</li>
+                    <li><strong>Right-Click</strong> on an edge: cycle Empty ➔ Excluded ➔ Filled ➔ Empty.</li>
+                    <li><strong>Click a cell</strong>: toggle shading (Yellow / Gray) to keep track of inside vs. outside cells.</li>
+                    <li><strong>Fix</strong>: Save a checkpoint (current moves turn green).</li>
+                    <li><strong>Revert</strong>: Rollback all moves made after your last checkpoint.</li>
+                </ul>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" @onclick="() => showHelpModal = false">Got it!</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string selectedType = "Square";
+    private bool showVictoryModal = true;
+    private bool showHelpModal = false;
+
+    private bool isPointerDown = false;
+    private EdgeState? dragTargetState = null;
+    private IDisposable? timer;
+
+    protected override void OnInitialized()
+    {
+        Game.OnStateChanged += HandleStateChanged;
+        timer = new System.Threading.Timer(_ =>
+        {
+            if (Game.StartTime.HasValue && !Game.IsSolved && !Game.IsGenerating)
+            {
+                InvokeAsync(StateHasChanged);
+            }
+        }, null, 1000, 1000);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("registerLoopShortcuts", DotNetObjectReference.Create(this));
+            await GeneratePuzzle();
+        }
+    }
+
+    private void HandleStateChanged()
+    {
+        if (Game.IsSolved)
+        {
+            showVictoryModal = true;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task GeneratePuzzle()
+    {
+        showVictoryModal = false;
+        await Game.GenerateNewPuzzleAsync();
+    }
+
+    private void OnTypeChanged(ChangeEventArgs e)
+    {
+        selectedType = e.Value?.ToString() ?? "Square";
+        Game.CurrentType = PuzzleHelper.MeshTypeFromString(selectedType);
+        PuzzleHelper.GetDefaultSize(Game.CurrentType, out int w, out int h);
+        Game.SizeText = $"{w}x{h}";
+    }
+
+    private void OnEdgePointerDown(int edgeIndex, PointerEventArgs e)
+    {
+        if (Game.CurrentMesh == null || Game.IsSolved) return;
+
+        isPointerDown = true;
+        bool isAlt = e.Button == 2; // Right click
+        var current = Game.CurrentMesh.Edges[edgeIndex].State;
+
+        // Determine next state
+        if (!isAlt)
+        {
+            dragTargetState = current switch
+            {
+                EdgeState.Empty => EdgeState.Filled,
+                EdgeState.Filled => EdgeState.Excluded,
+                _ => EdgeState.Empty
+            };
+        }
+        else
+        {
+            dragTargetState = current switch
+            {
+                EdgeState.Empty => EdgeState.Excluded,
+                EdgeState.Excluded => EdgeState.Filled,
+                _ => EdgeState.Empty
+            };
+        }
+
+        Game.ToggleEdge(edgeIndex, isAlt);
+    }
+
+    private void OnEdgePointerEnter(int edgeIndex)
+    {
+        if (isPointerDown && dragTargetState.HasValue && Game.CurrentMesh != null && !Game.IsSolved)
+        {
+            Game.SetEdgeDirect(edgeIndex, dragTargetState.Value);
+        }
+    }
+
+    private void OnPointerUp()
+    {
+        isPointerDown = false;
+        dragTargetState = null;
+    }
+
+    [JSInvokable]
+    public void OnShortcut(string action)
+    {
+        switch (action)
+        {
+            case "undo": Game.Undo(); break;
+            case "redo": Game.Redo(); break;
+            case "fix": Game.Fix(); break;
+            case "unfix": Game.Unfix(); break;
+            case "revert": Game.RevertToFix(); break;
+        }
+    }
+
+    public void Dispose()
+    {
+        Game.OnStateChanged -= HandleStateChanged;
+        timer?.Dispose();
+    }
+}

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Loop-de-loop - Slitherlink Puzzle Game</title>
+    <base href="./" />
+    <link rel="preload" id="webassembly" />
+    <link rel="stylesheet" href="css/app.css" />
+    <script type="importmap"></script>
+</head>
+
+<body>
+    <div id="app">
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:system-ui,-apple-system,sans-serif;">
+            <svg class="loading-progress" style="position:relative;inset:auto;margin-bottom:1rem;">
+                <circle r="40%" cx="50%" cy="50%" />
+                <circle r="40%" cx="50%" cy="50%" />
+            </svg>
+            <div class="loading-progress-text" style="position:relative;inset:auto;font-size:1.2rem;color:#334155;">Loading Loop-de-loop (.NET 10 WebAssembly)...</div>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">🗙</span>
+    </div>
+
+    <script>
+        window.registerLoopShortcuts = (dotNetRef) => {
+            window.addEventListener('keydown', (e) => {
+                if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) return;
+                if (e.ctrlKey && (e.key === 'z' || e.key === 'Z')) {
+                    e.preventDefault();
+                    dotNetRef.invokeMethodAsync('OnShortcut', 'undo');
+                } else if (e.ctrlKey && (e.key === 'y' || e.key === 'Y')) {
+                    e.preventDefault();
+                    dotNetRef.invokeMethodAsync('OnShortcut', 'redo');
+                } else if (e.ctrlKey && (e.key === 'f' || e.key === 'F')) {
+                    e.preventDefault();
+                    dotNetRef.invokeMethodAsync('OnShortcut', 'fix');
+                } else if (e.ctrlKey && (e.key === 'u' || e.key === 'U')) {
+                    e.preventDefault();
+                    dotNetRef.invokeMethodAsync('OnShortcut', 'unfix');
+                } else if (e.ctrlKey && (e.key === 'r' || e.key === 'R')) {
+                    e.preventDefault();
+                    dotNetRef.invokeMethodAsync('OnShortcut', 'revert');
+                }
+            });
+        };
+    </script>
+    <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+</body>
+
+</html>
