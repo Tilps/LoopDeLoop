@@ -122,6 +122,10 @@
             const svg = document.getElementById(svgId);
             if (!svg) return;
 
+            svg._dotNetRef = dotNetRef;
+            if (svg._loopInitialized) return;
+            svg._loopInitialized = true;
+
             const activePointers = new Map();
             let isMiddlePanning = false;
             let lastMouseX = 0, lastMouseY = 0;
@@ -140,6 +144,7 @@
 
             svg.onpointerdown = (e) => {
                 e.preventDefault();
+                try { svg.setPointerCapture(e.pointerId); } catch (_) {}
                 activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
                 if (activePointers.size === 1) {
@@ -151,9 +156,11 @@
                     }
                     let coords = getSvgCoords(e);
                     if (!coords) return;
-                    dotNetRef.invokeMethodAsync('OnSvgPointerDown', coords.x, coords.y, e.button, e.shiftKey);
+                    if (svg._dotNetRef) {
+                        svg._dotNetRef.invokeMethodAsync('OnSvgPointerDown', coords.x, coords.y, e.button, e.shiftKey);
+                    }
                 } else if (activePointers.size === 2) {
-                    dotNetRef.invokeMethodAsync('OnSvgPointerUp');
+                    if (svg._dotNetRef) svg._dotNetRef.invokeMethodAsync('OnSvgPointerUp');
                     const pts = Array.from(activePointers.values());
                     pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
                     pinchStartMidX = (pts[0].x + pts[1].x) / 2;
@@ -174,13 +181,15 @@
                         let ctm = svg.getScreenCTM();
                         let svgDx = ctm ? (dx / ctm.a) : dx;
                         let svgDy = ctm ? (dy / ctm.d) : dy;
-                        dotNetRef.invokeMethodAsync('OnPan', svgDx, svgDy);
+                        if (svg._dotNetRef) svg._dotNetRef.invokeMethodAsync('OnPan', svgDx, svgDy);
                         return;
                     }
                     if (e.buttons === 0) return;
                     let coords = getSvgCoords(e);
                     if (!coords) return;
-                    dotNetRef.invokeMethodAsync('OnSvgPointerMove', coords.x, coords.y);
+                    if (svg._dotNetRef) {
+                        svg._dotNetRef.invokeMethodAsync('OnSvgPointerMove', coords.x, coords.y);
+                    }
                 } else if (activePointers.size === 2) {
                     const pts = Array.from(activePointers.values());
                     const currentDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
@@ -194,7 +203,9 @@
                     let svgDx = ctm ? (dx / ctm.a) : dx;
                     let svgDy = ctm ? (dy / ctm.d) : dy;
 
-                    dotNetRef.invokeMethodAsync('OnTwoFingerPanZoom', svgDx, svgDy, scale);
+                    if (svg._dotNetRef) {
+                        svg._dotNetRef.invokeMethodAsync('OnTwoFingerPanZoom', svgDx, svgDy, scale);
+                    }
 
                     pinchStartDist = currentDist;
                     pinchStartMidX = currentMidX;
@@ -203,6 +214,7 @@
             };
 
             const onPointerEnd = (e) => {
+                try { svg.releasePointerCapture(e.pointerId); } catch (_) {}
                 if (activePointers.has(e.pointerId)) {
                     activePointers.delete(e.pointerId);
                 }
@@ -211,7 +223,7 @@
                 }
                 if (activePointers.size === 0) {
                     isMiddlePanning = false;
-                    dotNetRef.invokeMethodAsync('OnSvgPointerUp');
+                    if (svg._dotNetRef) svg._dotNetRef.invokeMethodAsync('OnSvgPointerUp');
                 } else if (activePointers.size === 1) {
                     pinchStartDist = 0;
                 }
@@ -224,7 +236,7 @@
             svg.onwheel = (e) => {
                 e.preventDefault();
                 let factor = e.deltaY < 0 ? 1.15 : 0.87;
-                dotNetRef.invokeMethodAsync('OnWheelZoom', factor);
+                if (svg._dotNetRef) svg._dotNetRef.invokeMethodAsync('OnWheelZoom', factor);
             };
 
             svg.oncontextmenu = (e) => {
