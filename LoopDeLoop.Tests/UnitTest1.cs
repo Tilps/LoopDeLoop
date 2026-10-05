@@ -136,6 +136,43 @@ namespace LoopDeLoop.Tests
             tree.Undo();
             Assert.AreEqual(EdgeState.Empty, mesh.Edges[0].State);
         }
+
+        [TestMethod]
+        public void DisallowFalseMove_ControlsRuleViolationBehavior()
+        {
+            var mesh = new Mesh(3, 3, MeshType.Square);
+            var tree = new UndoTree();
+
+            // Find an intersection with >= 3 edges
+            int interIdx = -1;
+            for (int i = 0; i < mesh.Intersections.Count; i++)
+            {
+                if (mesh.Intersections[i].Edges.Count >= 3)
+                {
+                    interIdx = i;
+                    break;
+                }
+            }
+            Assert.IsTrue(interIdx >= 0);
+            var edgeIndices = mesh.Intersections[interIdx].Edges;
+
+            // Fill first two edges (degree 2 at vertex is valid)
+            tree.Do(new PuzzleSetEdgeStateAction(mesh, edgeIndices[0], EdgeState.Filled, disallowFalseMove: true));
+            tree.Do(new PuzzleSetEdgeStateAction(mesh, edgeIndices[1], EdgeState.Filled, disallowFalseMove: true));
+
+            // Third edge filled at same vertex causes degree 3 (local violation).
+            // When disallowFalseMove is true, the move should be rejected.
+            var actionDisallowed = new PuzzleSetEdgeStateAction(mesh, edgeIndices[2], EdgeState.Filled, disallowFalseMove: true);
+            bool disallowedResult = tree.Do(actionDisallowed);
+            Assert.IsFalse(disallowedResult, "Move should be rejected when disallowFalseMove is true");
+            Assert.AreEqual(EdgeState.Empty, mesh.Edges[edgeIndices[2]].State);
+
+            // When disallowFalseMove is false (default), the move should be allowed.
+            var actionAllowed = new PuzzleSetEdgeStateAction(mesh, edgeIndices[2], EdgeState.Filled, disallowFalseMove: false);
+            bool allowedResult = tree.Do(actionAllowed);
+            Assert.IsTrue(allowedResult, "Move should be allowed when disallowFalseMove is false");
+            Assert.AreEqual(EdgeState.Filled, mesh.Edges[edgeIndices[2]].State);
+        }
     }
 }
 

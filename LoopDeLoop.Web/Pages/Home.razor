@@ -5,7 +5,7 @@
 
 <PageTitle>Loop-de-loop - Slitherlink Puzzle Game</PageTitle>
 
-<div class="game-container" @onpointerup="OnPointerUp" @onpointerleave="OnPointerUp">
+<div class="game-container">
     <!-- Header / Controls -->
     <header class="game-header">
         <div class="brand">
@@ -59,6 +59,17 @@
         </div>
 
         <div class="controls-group">
+            <label class="checkbox-label" title="Disallow moves that cause obvious rule violations (exceeding clue counts or vertex degree > 2)">
+                <input type="checkbox" @bind="Game.DisallowFalseMove" />
+                <span>Restrict invalid</span>
+            </label>
+            <label class="checkbox-label" title="Enable cell coloring for inside/outside marking (when off, clicking inside routes to nearest edge)">
+                <input type="checkbox" @bind="Game.ShowCellColors" />
+                <span>Cell shading</span>
+            </label>
+        </div>
+
+        <div class="controls-group">
             <div class="timer-box" title="Elapsed Time">
                 @(Game.ElapsedTime.ToString(@"mm\:ss"))
             </div>
@@ -97,7 +108,6 @@
         @if (Game.CurrentMesh != null)
         {
             var mesh = Game.CurrentMesh;
-            const float S = 50.0f; // Scale factor: 50 pixels per grid unit
 
             float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
             foreach (var inters in mesh.Intersections)
@@ -121,13 +131,12 @@
             float crossLen = 7.0f;
             float vertexRadius = 3.5f;
 
-            <svg class="svg-board" viewBox="@($"{vbX:F1} {vbY:F1} {vbW:F1} {vbH:F1}")" preserveAspectRatio="xMidYMid meet">
+            <svg id="game-board-svg" class="svg-board" viewBox="@($"{vbX:F1} {vbY:F1} {vbW:F1} {vbH:F1}")" preserveAspectRatio="xMidYMid meet">
                 <!-- Layer 1: Cell backgrounds (for interior/exterior shading) -->
-                <g class="cells-layer">
+                <g class="cells-layer" style="pointer-events: none;">
                     @for (int c = 0; c < mesh.Cells.Count; c++)
                     {
-                        int cellIdx = c;
-                        var cell = mesh.Cells[cellIdx];
+                        var cell = mesh.Cells[c];
                         var pointsStr = string.Join(" ", cell.Intersections.Select(i => $"{(mesh.Intersections[i].X * S):F1},{(mesh.Intersections[i].Y * S):F1}"));
 
                         string cellFill = "transparent";
@@ -137,15 +146,12 @@
                         <polygon points="@pointsStr"
                                  fill="@cellFill"
                                  class="cell-poly"
-                                 @onclick="() => Game.ToggleCellColor(cellIdx, false)"
-                                 @onpointerdown:stopPropagation="true"
-                                 @oncontextmenu:preventDefault="true"
-                                 @oncontextmenu="() => Game.ToggleCellColor(cellIdx, true)" />
+                                 style="pointer-events: none;" />
                     }
                 </g>
 
                 <!-- Layer 2: Empty Grid Edges (faint background guidelines) -->
-                <g class="empty-edges-layer">
+                <g class="empty-edges-layer" style="pointer-events: none;">
                     @for (int e = 0; e < mesh.Edges.Count; e++)
                     {
                         var edge = mesh.Edges[e];
@@ -154,13 +160,14 @@
                             mesh.GetEdgeExtent(edge, out float rawX1, out float rawY1, out float rawX2, out float rawY2);
                             float x1 = rawX1 * S, y1 = rawY1 * S, x2 = rawX2 * S, y2 = rawY2 * S;
                             <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
-                                  class="edge-empty" />
+                                  class="edge-empty"
+                                  style="pointer-events: none;" />
                         }
                     }
                 </g>
 
                 <!-- Layer 3: Cell Clue Numbers (rendered as pure SVG text, always on top of background lines) -->
-                <g class="cell-clues-layer">
+                <g class="cell-clues-layer" style="pointer-events: none;">
                     @for (int c = 0; c < mesh.Cells.Count; c++)
                     {
                         var cell = mesh.Cells[c];
@@ -195,7 +202,7 @@
                 </g>
 
                 <!-- Layer 4: Active Edges (Filled loops & Excluded cross marks) -->
-                <g class="active-edges-layer">
+                <g class="active-edges-layer" style="pointer-events: none;">
                     @for (int e = 0; e < mesh.Edges.Count; e++)
                     {
                         int edgeIdx = e;
@@ -209,7 +216,8 @@
                             if (edge.State == EdgeState.Filled)
                             {
                                 <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
-                                      class="@(isMarked ? "edge-filled-marked" : "edge-filled")" />
+                                      class="@(isMarked ? "edge-filled-marked" : "edge-filled")"
+                                      style="pointer-events: none;" />
                             }
                             else if (edge.State == EdgeState.Excluded)
                             {
@@ -217,37 +225,21 @@
                                 float my = (y1 + y2) / 2.0f;
                                 string crossClass = isMarked ? "edge-cross-marked" : "edge-cross";
                                 <line x1="@(mx - crossLen)" y1="@(my - crossLen)" x2="@(mx + crossLen)" y2="@(my + crossLen)"
-                                      class="@crossClass" />
+                                      class="@crossClass"
+                                      style="pointer-events: none;" />
                                 <line x1="@(mx + crossLen)" y1="@(my - crossLen)" x2="@(mx - crossLen)" y2="@(my + crossLen)"
-                                      class="@crossClass" />
+                                      class="@crossClass"
+                                      style="pointer-events: none;" />
                             }
                         }
                     }
                 </g>
 
                 <!-- Layer 5: Intersection Vertices (clean corner dots) -->
-                <g class="vertices-layer">
+                <g class="vertices-layer" style="pointer-events: none;">
                     @foreach (var inters in mesh.Intersections)
                     {
-                        <circle cx="@(inters.X * S)" cy="@(inters.Y * S)" r="@vertexRadius" class="vertex-dot" />
-                    }
-                </g>
-
-                <!-- Layer 6: Invisible Hit Targets (captures mouse clicks & drag smoothly) -->
-                <g class="hit-targets-layer">
-                    @for (int e = 0; e < mesh.Edges.Count; e++)
-                    {
-                        int edgeIdx = e;
-                        var edge = mesh.Edges[edgeIdx];
-                        mesh.GetEdgeExtent(edge, out float rawX1, out float rawY1, out float rawX2, out float rawY2);
-                        float x1 = rawX1 * S, y1 = rawY1 * S, x2 = rawX2 * S, y2 = rawY2 * S;
-
-                        <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
-                              class="edge-hit"
-                              @onpointerdown="args => OnEdgePointerDown(edgeIdx, args)"
-                              @onpointerdown:stopPropagation="true"
-                              @onpointerenter="() => OnEdgePointerEnter(edgeIdx)"
-                              @oncontextmenu:preventDefault="true" />
+                        <circle cx="@(inters.X * S)" cy="@(inters.Y * S)" r="@vertexRadius" class="vertex-dot" style="pointer-events: none;" />
                     }
                 </g>
             </svg>
@@ -265,7 +257,7 @@
             <span class="shortcut-badge">Ctrl+R</span> Revert
         </div>
         <div>
-            Left-Click / Drag: Cycle (Empty ➔ Filled ➔ Excluded) &bull; Right-Click: Mark Excluded &bull; Click cell: Shade
+            Left-Click / Drag: Draw line / cycle &bull; Right-Click / Drag: Mark X &bull; Inside clicks route to nearest edge
         </div>
     </footer>
 </div>
@@ -303,11 +295,13 @@
                 </ul>
                 <p><strong>Controls:</strong></p>
                 <ul>
-                    <li><strong>Left-Click or Drag</strong> on an edge: cycle Empty ➔ Filled ➔ Excluded ➔ Empty.</li>
-                    <li><strong>Right-Click</strong> on an edge: cycle Empty ➔ Excluded ➔ Filled ➔ Empty.</li>
-                    <li><strong>Click a cell</strong>: toggle shading (Yellow / Gray) to keep track of inside vs. outside cells.</li>
-                    <li><strong>Fix</strong>: Save a checkpoint (current moves turn green).</li>
-                    <li><strong>Revert</strong>: Rollback all moves made after your last checkpoint.</li>
+                    <li><strong>Left-Click or Drag</strong> on an edge: draw / cycle Empty ➔ Filled ➔ Excluded ➔ Empty.</li>
+                    <li><strong>Right-Click or Drag</strong>: mark Excluded crosses (X).</li>
+                    <li><strong>Clicking inside cells</strong>: automatically routes to the closest edge of the cell!</li>
+                    <li><strong>Cell shading option</strong>: when enabled, clicking near the center of a cell shades it (Yellow = inside, Gray = outside).</li>
+                    <li><strong>Restrict invalid option</strong>: when enabled, moves causing obvious contradictions (e.g. vertex degree > 2 or clue count exceeded) are blocked. When off (default), moves cycle freely regardless of rules.</li>
+                    <li><strong>Fix (Ctrl+F)</strong>: Save a checkpoint (current moves turn green).</li>
+                    <li><strong>Revert (Ctrl+R)</strong>: Rollback all moves made after your last checkpoint.</li>
                 </ul>
             </div>
             <div class="modal-actions">
@@ -318,13 +312,18 @@
 }
 
 @code {
+    private const float S = 50.0f; // Scale factor: 50 pixels per grid unit
+
     private string selectedType = "Square";
     private bool showVictoryModal = true;
     private bool showHelpModal = false;
 
     private bool isPointerDown = false;
     private EdgeState? dragTargetState = null;
+    private int lastClosestEdge = -1;
+    private int lastClosestCell = -1;
     private IDisposable? timer;
+    private DotNetObjectReference<Home>? selfRef;
 
     private RenderFragment RenderCellClue(float x, float y, int clue, string color, float fontSize) => builder =>
     {
@@ -345,6 +344,7 @@
 
     protected override void OnInitialized()
     {
+        selfRef = DotNetObjectReference.Create(this);
         Game.OnStateChanged += HandleStateChanged;
         timer = new System.Threading.Timer(_ =>
         {
@@ -359,8 +359,15 @@
     {
         if (firstRender)
         {
-            await JS.InvokeVoidAsync("registerLoopShortcuts", DotNetObjectReference.Create(this));
+            if (selfRef != null)
+            {
+                await JS.InvokeVoidAsync("registerLoopShortcuts", selfRef);
+            }
             await GeneratePuzzle();
+        }
+        else if (Game.CurrentMesh != null && selfRef != null)
+        {
+            await JS.InvokeVoidAsync("initLoopBoard", "game-board-svg", selfRef);
         }
     }
 
@@ -377,6 +384,10 @@
     {
         showVictoryModal = false;
         await Game.GenerateNewPuzzleAsync();
+        if (selfRef != null)
+        {
+            await JS.InvokeVoidAsync("initLoopBoard", "game-board-svg", selfRef);
+        }
     }
 
     private void OnTypeChanged(ChangeEventArgs e)
@@ -387,49 +398,148 @@
         Game.SizeText = $"{w}x{h}";
     }
 
-    private void OnEdgePointerDown(int edgeIndex, PointerEventArgs e)
+    private static float DistanceToSegmentSq(float px, float py, float sx, float sy, float ex, float ey)
     {
-        if (Game.CurrentMesh == null || Game.IsSolved) return;
+        float dx = ex - sx;
+        float dy = ey - sy;
+        float lenSq = dx * dx + dy * dy;
+        if (lenSq == 0)
+        {
+            float ddx = px - sx;
+            float ddy = py - sy;
+            return ddx * ddx + ddy * ddy;
+        }
+        float t = Math.Clamp(((px - sx) * dx + (py - sy) * dy) / lenSq, 0.0f, 1.0f);
+        float nearX = sx + t * dx;
+        float nearY = sy + t * dy;
+        float distx = nearX - px;
+        float disty = nearY - py;
+        return distx * distx + disty * disty;
+    }
+
+    private void FindClosest(float px, float py, out int closestEdge, out int closestCell, float minSep = 0.0f)
+    {
+        closestEdge = -1;
+        closestCell = -1;
+        if (Game.CurrentMesh == null) return;
+
+        var mesh = Game.CurrentMesh;
+        float distanceSq = float.MaxValue;
+        float secondDistanceSq = float.MaxValue;
+
+        for (int i = 0; i < mesh.Edges.Count; i++)
+        {
+            mesh.GetEdgeExtent(mesh.Edges[i], out float rawX1, out float rawY1, out float rawX2, out float rawY2);
+            float curDistSq = DistanceToSegmentSq(px, py, rawX1 * S, rawY1 * S, rawX2 * S, rawY2 * S);
+            if (curDistSq <= distanceSq)
+            {
+                secondDistanceSq = distanceSq;
+                distanceSq = curDistSq;
+                closestEdge = i;
+            }
+            else if (curDistSq <= secondDistanceSq)
+            {
+                secondDistanceSq = curDistSq;
+            }
+        }
+
+        if (Game.ShowCellColors)
+        {
+            for (int c = 0; c < mesh.Cells.Count; c++)
+            {
+                var cell = mesh.Cells[c];
+                float sumX = 0, sumY = 0;
+                foreach (int inters in cell.Intersections)
+                {
+                    sumX += mesh.Intersections[inters].X * S;
+                    sumY += mesh.Intersections[inters].Y * S;
+                }
+                float cx = sumX / cell.Intersections.Count;
+                float cy = sumY / cell.Intersections.Count;
+                float distx = cx - px;
+                float disty = cy - py;
+                float curDistSq = distx * distx + disty * disty;
+                if (curDistSq <= distanceSq)
+                {
+                    closestEdge = -1;
+                    closestCell = c;
+                    secondDistanceSq = distanceSq;
+                    distanceSq = curDistSq;
+                }
+                else if (curDistSq <= secondDistanceSq)
+                {
+                    secondDistanceSq = curDistSq;
+                }
+            }
+        }
+
+        // Ignore clicks too far away (> 1.2 grid units from any element)
+        float maxAllowedSq = (1.2f * S) * (1.2f * S);
+        if (distanceSq > maxAllowedSq)
+        {
+            closestEdge = -1;
+            closestCell = -1;
+            return;
+        }
+
+        if (minSep > 0 && distanceSq + 2 * minSep * MathF.Sqrt(distanceSq) + minSep * minSep > secondDistanceSq)
+        {
+            closestEdge = -1;
+            closestCell = -1;
+        }
+    }
+
+    [JSInvokable]
+    public void OnSvgPointerDown(double x, double y, int button)
+    {
+        if (Game.CurrentMesh == null || Game.IsSolved || Game.IsGenerating) return;
 
         isPointerDown = true;
-        bool isAlt = e.Button == 2; // Right click
-        var current = Game.CurrentMesh.Edges[edgeIndex].State;
+        float fx = (float)x;
+        float fy = (float)y;
+        FindClosest(fx, fy, out int closestEdge, out int closestCell, 0.0f);
 
-        // Determine next state
-        if (!isAlt)
-        {
-            dragTargetState = current switch
-            {
-                EdgeState.Empty => EdgeState.Filled,
-                EdgeState.Filled => EdgeState.Excluded,
-                _ => EdgeState.Empty
-            };
-        }
-        else
-        {
-            dragTargetState = current switch
-            {
-                EdgeState.Empty => EdgeState.Excluded,
-                EdgeState.Excluded => EdgeState.Filled,
-                _ => EdgeState.Empty
-            };
-        }
+        lastClosestEdge = closestEdge;
+        lastClosestCell = closestCell;
 
-        Game.ToggleEdge(edgeIndex, isAlt);
+        if (closestEdge != -1)
+        {
+            bool isAlt = button == 2; // Right click
+            Game.ToggleEdge(closestEdge, isAlt);
+            dragTargetState = Game.CurrentMesh.Edges[closestEdge].State;
+        }
+        else if (closestCell != -1 && Game.ShowCellColors)
+        {
+            bool isAlt = button == 2;
+            Game.ToggleCellColor(closestCell, isAlt);
+        }
     }
 
-    private void OnEdgePointerEnter(int edgeIndex)
+    [JSInvokable]
+    public void OnSvgPointerMove(double x, double y)
     {
-        if (isPointerDown && dragTargetState.HasValue && Game.CurrentMesh != null && !Game.IsSolved)
+        if (!isPointerDown || Game.CurrentMesh == null || Game.IsSolved || Game.IsGenerating) return;
+        if (!dragTargetState.HasValue) return;
+
+        float fx = (float)x;
+        float fy = (float)y;
+        float minSep = 8.0f; // 8px buffer to avoid edge flutter during drag
+        FindClosest(fx, fy, out int closestEdge, out int closestCell, minSep);
+
+        if (closestEdge != -1 && closestEdge != lastClosestEdge)
         {
-            Game.SetEdgeDirect(edgeIndex, dragTargetState.Value);
+            lastClosestEdge = closestEdge;
+            Game.SetEdgeDirect(closestEdge, dragTargetState.Value);
         }
     }
 
-    private void OnPointerUp()
+    [JSInvokable]
+    public void OnSvgPointerUp()
     {
         isPointerDown = false;
         dragTargetState = null;
+        lastClosestEdge = -1;
+        lastClosestCell = -1;
     }
 
     [JSInvokable]
@@ -449,5 +559,6 @@
     {
         Game.OnStateChanged -= HandleStateChanged;
         timer?.Dispose();
+        selfRef?.Dispose();
     }
 }

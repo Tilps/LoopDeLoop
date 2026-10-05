@@ -195,16 +195,18 @@ namespace LoopDeLoop
 
     public class PuzzleSetEdgeStateAction : IAction
     {
-        public PuzzleSetEdgeStateAction(Mesh mesh, int edgeIndex, EdgeState targetState)
+        public PuzzleSetEdgeStateAction(Mesh mesh, int edgeIndex, EdgeState targetState, bool disallowFalseMove = false)
         {
             this.mesh = mesh;
             this.edgeIndex = edgeIndex;
             this.targetState = targetState;
+            this.disallowFalseMove = disallowFalseMove;
         }
 
         private readonly Mesh mesh;
         private readonly int edgeIndex;
         private readonly EdgeState targetState;
+        private readonly bool disallowFalseMove;
         private List<IAction> actionsPerformed;
         private bool successful;
 
@@ -222,9 +224,17 @@ namespace LoopDeLoop
             if (closest.State != EdgeState.Empty)
             {
                 IAction unsetAction = new UnsetAction(mesh, edgeIndex);
-                if (!unsetAction.Perform() || !unsetAction.Successful)
+                bool res = unsetAction.Perform();
+                if ((!res || !unsetAction.Successful) && disallowFalseMove)
                 {
+                    if (res && !unsetAction.Successful)
+                        actionsPerformed.Add(unsetAction);
+                    Unperform();
                     return false;
+                }
+                else if (!res || !unsetAction.Successful)
+                {
+                    successful = false;
                 }
                 actionsPerformed.Add(unsetAction);
             }
@@ -232,11 +242,15 @@ namespace LoopDeLoop
             if (targetState != EdgeState.Empty)
             {
                 bool res = mesh.Perform(edgeIndex, targetState, actionsPerformed, 0);
-                if (!res)
+                if (!res && disallowFalseMove)
                 {
                     successful = false;
                     Unperform();
                     return false;
+                }
+                else if (!res)
+                {
+                    successful = false;
                 }
             }
 
@@ -253,7 +267,7 @@ namespace LoopDeLoop
 
         public bool Equals(IAction other)
         {
-            return other is PuzzleSetEdgeStateAction o && o.mesh == mesh && o.edgeIndex == edgeIndex && o.targetState == targetState;
+            return other is PuzzleSetEdgeStateAction o && o.mesh == mesh && o.edgeIndex == edgeIndex && o.targetState == targetState && o.disallowFalseMove == disallowFalseMove;
         }
     }
 }

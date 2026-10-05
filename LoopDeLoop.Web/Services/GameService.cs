@@ -16,6 +16,9 @@ namespace LoopDeLoop.Web.Services
         public string SizeText { get; set; } = "10x10";
         public int Difficulty { get; set; } = 1; // Easy
 
+        public bool DisallowFalseMove { get; set; } = false;
+        public bool ShowCellColors { get; set; } = false;
+
         public bool IsGenerating { get; private set; }
         public int PrunedProgress { get; private set; }
         public int TotalCells { get; private set; }
@@ -90,7 +93,7 @@ namespace LoopDeLoop.Web.Services
                 ? (current == EdgeState.Empty ? EdgeState.Filled : (current == EdgeState.Filled ? EdgeState.Excluded : EdgeState.Empty))
                 : (current == EdgeState.Empty ? EdgeState.Excluded : (current == EdgeState.Excluded ? EdgeState.Filled : EdgeState.Empty));
 
-            var action = new PuzzleSetEdgeStateAction(CurrentMesh, edgeIndex, next);
+            var action = new PuzzleSetEdgeStateAction(CurrentMesh, edgeIndex, next, DisallowFalseMove);
             if (UndoTree.Do(action))
             {
                 CheckSolution();
@@ -106,7 +109,7 @@ namespace LoopDeLoop.Web.Services
             if (CurrentMesh.Edges[edgeIndex].State == targetState)
                 return;
 
-            var action = new PuzzleSetEdgeStateAction(CurrentMesh, edgeIndex, targetState);
+            var action = new PuzzleSetEdgeStateAction(CurrentMesh, edgeIndex, targetState, DisallowFalseMove);
             if (UndoTree.Do(action))
             {
                 CheckSolution();

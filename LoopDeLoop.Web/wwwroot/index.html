@@ -50,6 +50,43 @@
                 }
             });
         };
+
+        window.initLoopBoard = (svgId, dotNetRef) => {
+            const svg = document.getElementById(svgId);
+            if (!svg) return;
+
+            function getSvgCoords(e) {
+                let pt = svg.createSVGPoint();
+                pt.x = e.clientX;
+                pt.y = e.clientY;
+                let ctm = svg.getScreenCTM();
+                if (!ctm) return null;
+                let p = pt.matrixTransform(ctm.inverse());
+                return { x: p.x, y: p.y };
+            }
+
+            svg.onpointerdown = (e) => {
+                e.preventDefault();
+                let coords = getSvgCoords(e);
+                if (!coords) return;
+                dotNetRef.invokeMethodAsync('OnSvgPointerDown', coords.x, coords.y, e.button);
+            };
+
+            svg.onpointermove = (e) => {
+                if (e.buttons === 0) return;
+                let coords = getSvgCoords(e);
+                if (!coords) return;
+                dotNetRef.invokeMethodAsync('OnSvgPointerMove', coords.x, coords.y);
+            };
+
+            window.addEventListener('pointerup', () => {
+                dotNetRef.invokeMethodAsync('OnSvgPointerUp');
+            });
+
+            svg.oncontextmenu = (e) => {
+                e.preventDefault();
+            };
+        };
     </script>
     <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
 </body>
