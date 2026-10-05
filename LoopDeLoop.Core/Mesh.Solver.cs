@@ -422,7 +422,7 @@ namespace LoopDeLoop
           */
             return true;
         }
-        private Dictionary<int, int> oldFirstOrder;
+        private Dictionary<int, int>? oldFirstOrder;
 
         private List<int> GetAffectingEdges(int i)
         {
@@ -500,7 +500,7 @@ namespace LoopDeLoop
         }
 #endif
 
-        private bool IterativeTrySolveInternal(List<IAction> realChanges, ref bool changed, int iterativeRecDepth, IAction locusAction)
+        private bool IterativeTrySolveInternal(List<IAction> realChanges, ref bool changed, int iterativeRecDepth, IAction? locusAction)
         {
             if (iterativeSolverDepth < 0)
                 return true;
@@ -509,7 +509,8 @@ namespace LoopDeLoop
             if (iterativeRecDepth != this.iterativeRecDepth)
             {
                 iterTopLevel = false;
-                GatherLocals(realChanges, trials, locusAction);
+                if (locusAction != null)
+                    GatherLocals(realChanges, trials, locusAction);
             }
             else
             {
@@ -517,7 +518,7 @@ namespace LoopDeLoop
             }
             List<IAction> edgeChanges1 = new List<IAction>();
             List<IAction> edgeChanges2 = new List<IAction>();
-            IAction lastTrial = null;
+            IAction? lastTrial = null;
             for (int i = 0; i < trials.Count; i++)
             {
                 if (pruning && earlyFail)
@@ -765,7 +766,7 @@ namespace LoopDeLoop
         }
 
         DisjointTracker[] smallTrackerPool = new DisjointTracker[10];
-        private DisjointTracker connectableTracker;
+        private DisjointTracker? connectableTracker;
 
         private bool CheckConnectable()
         {
@@ -1273,19 +1274,19 @@ namespace LoopDeLoop
             return Perform(edgeIndex, state, backup, int.MaxValue);
         }
 
-        EdgeState[] edgesSeen;
-        TriState[,] edgePairsSeen;
+        EdgeState[] edgesSeen = null!;
+        TriState[,] edgePairsSeen = null!;
         List<KeyValuePair<int, int>> edgePairsToClean = new List<KeyValuePair<int, int>>();
-        TriState[,] cellPairsSeen;
+        TriState[,] cellPairsSeen = null!;
         List<KeyValuePair<int, int>> cellPairsToClean = new List<KeyValuePair<int, int>>();
-        EdgePairRestriction[,] edgeRestrictsSeen;
+        EdgePairRestriction[,] edgeRestrictsSeen = null!;
         List<KeyValuePair<int, int>> edgeRestrictsToClean = new List<KeyValuePair<int, int>>();
-        bool[] cellsSeen;
-        bool[] cellColorEdgeColorsSeen;
-        bool[] intersectsSeen;
-        bool[] interactsSeen;
-        bool[] interactsSeen2;
-        bool[] interactsSeen3;
+        bool[] cellsSeen = null!;
+        bool[] cellColorEdgeColorsSeen = null!;
+        bool[] intersectsSeen = null!;
+        bool[] interactsSeen = null!;
+        bool[] interactsSeen2 = null!;
+        bool[] interactsSeen3 = null!;
 
         public bool UseColoring
         {
@@ -1410,21 +1411,21 @@ namespace LoopDeLoop
         }
 
         public int deepestNonEmpty = -1;
-        private bool Perform(IAction action, List<IAction> backup)
+        private bool Perform(IAction? action, List<IAction> backup)
         {
             return Perform(action, backup, int.MaxValue);
         }
-        private bool Perform(IAction action, List<IAction> backup, int maxDepth)
+        private bool Perform(IAction? action, List<IAction> backup, int maxDepth)
         {
             return Perform(action, backup, maxDepth, null);
         }
 
-        List<IAction>[] moves;
-        List<int>[] toConsiderEdges;
-        List<int>[] toConsiderEdgeSets;
-        List<int>[] toConsiderEdgeColors;
-        List<int>[] toConsiderCellCounts;
-        List<int>[] toConsiderCellColors;
+        List<IAction>[] moves = null!;
+        List<int>[] toConsiderEdges = null!;
+        List<int>[] toConsiderEdgeSets = null!;
+        List<int>[] toConsiderEdgeColors = null!;
+        List<int>[] toConsiderCellCounts = null!;
+        List<int>[] toConsiderCellColors = null!;
 
         private void AllocateForPerform(int size)
         {
@@ -1465,7 +1466,7 @@ namespace LoopDeLoop
 
         }
 
-        private bool Perform(IAction action, List<IAction> backup, int maxDepth, List<int> initialCellsAffected)
+        private bool Perform(IAction? action, List<IAction> backup, int maxDepth, List<int>? initialCellsAffected)
         {
             if (maxDepth > edges.Count)
                 maxDepth = edges.Count;
@@ -2023,7 +2024,7 @@ namespace LoopDeLoop
             return true;
         }
 
-        private void AddEdgetToConsider(IAction sourceAction, List<int>[] toConsider, int curDepth, int other)
+        private void AddEdgetToConsider(IAction? sourceAction, List<int>[] toConsider, int curDepth, int other)
         {
             int depth = curDepth;
             if (sourceAction != null)
@@ -2036,7 +2037,7 @@ namespace LoopDeLoop
                 toConsider[depth].Add(other);
         }
 
-        private void AddCellToConsider(IAction sourceAction, List<int>[] toConsider, int curDepth, int cell)
+        private void AddCellToConsider(IAction? sourceAction, List<int>[] toConsider, int curDepth, int cell)
         {
             int depth = curDepth;
             if (sourceAction != null)
@@ -2417,9 +2418,9 @@ namespace LoopDeLoop
         {
             if (useCellColoring)
             {
-                Cell cell = null;
+                Cell? cell = null;
                 int cellIndex = -2;
-                Cell otherCell = null;
+                Cell? otherCell = null;
                 int otherC = -2;
                 for (var index = 0; index < e.Cells.Count; index++)
                 {
@@ -2435,7 +2436,9 @@ namespace LoopDeLoop
                         otherCell = cells[otherC];
                     }
                 }
-                if (otherC != -2)
+                if (cell == null)
+                    return true;
+                if (otherC != -2 && otherCell != null)
                 {
                     if (e.State == EdgeState.Empty)
                     {
@@ -2702,7 +2705,7 @@ namespace LoopDeLoop
                             continue;
                         otherCellColor = 1;
                     }
-                    List<int> cellColorSet1 = otherCellColor != 0 ? cellColorSets[Math.Abs(otherCellColor) - 1] : null;
+                    List<int>? cellColorSet1 = otherCellColor != 0 ? cellColorSets[Math.Abs(otherCellColor) - 1] : null;
                     if (cellColorSet1 == null)
                     {
                         cellColorSet1 = new List<int>();
@@ -2873,8 +2876,8 @@ namespace LoopDeLoop
             }
             return true;
         }
-        int[] colorCountsPos;
-        int[] colorCountsNeg;
+        int[] colorCountsPos = null!;
+        int[] colorCountsNeg = null!;
         List<int> usedColorCounts = new List<int>();
 
         private bool GatherCellCountCellColoringMoves(Cell cell, List<IAction>[] moves, int curDepth, int cellIndex)
@@ -3351,7 +3354,7 @@ namespace LoopDeLoop
             if (UseCellPairs || (topLevel && UseCellPairsTopLevel))
             {
                 Cell cell1 = cells[edge.Cells[0]];
-                Cell cell2 = null;
+                Cell? cell2 = null;
                 if (edge.Cells.Count > 1)
                     cell2 = cells[edge.Cells[1]];
                 Intersection inters1 = intersections[edge.Intersections[0]];
@@ -3536,9 +3539,10 @@ namespace LoopDeLoop
                 return hashcode;
             }
 
-            public override bool Equals(object obj)
+            public override bool Equals(object? obj)
             {
-                SuccessLookup other = (SuccessLookup)obj;
+                if (obj is not SuccessLookup other)
+                    return false;
                 if (other.curNumber != curNumber)
                     return false;
                 if (other.success.Length != success.Length)
@@ -3557,7 +3561,7 @@ namespace LoopDeLoop
 
         private int[,] GetMaps(uint[] success, int curNumber)
         {
-            int[,] map;
+            int[,]? map;
             SuccessLookup key = new SuccessLookup{success=success, curNumber=curNumber};
             if (!successLookup.TryGetValue(key, out map))
             {
@@ -3646,7 +3650,7 @@ namespace LoopDeLoop
             }
             // make cur number the number of unique numbers for use below rather than making a new variable :P
             curNumber--;
-            List<int[]> result = RetrieveActions(targets, baseLine, curNumber, numbering);
+            List<int[]>? result = RetrieveActions(targets, baseLine, curNumber, numbering);
             if (result == null)
                 return false;
             return ProcessRetrievedActions(moves, curDepth, edgesSeen, edgeNumber, edgePairsSeen, edgeRestrictsSeen, result);
@@ -3737,9 +3741,10 @@ namespace LoopDeLoop
                 hashcode ^= curNumber;
                 return hashcode;
             }
-            public override bool Equals(object obj)
+            public override bool Equals(object? obj)
             {
-                PatternLookup other = (PatternLookup)obj;
+                if (obj is not PatternLookup other)
+                    return false;
                 if (other.curNumber != curNumber)
                     return false;
                 if (other.targets.Count != targets.Count)
@@ -3785,12 +3790,12 @@ namespace LoopDeLoop
             }
         }
 
-        Dictionary<PatternLookup, List<int[]>> patternLookup = new Dictionary<PatternLookup, List<int[]>>();
+        Dictionary<PatternLookup, List<int[]>?> patternLookup = new Dictionary<PatternLookup, List<int[]>?>();
         List<uint> emptyList = new List<uint>();
 
-        private List<int[]> RetrieveActions(List<KeyValuePair<uint, List<int>>> targets, int[] baseLine, int curNumber, int[] numbering)
+        private List<int[]>? RetrieveActions(List<KeyValuePair<uint, List<int>>> targets, int[] baseLine, int curNumber, int[] numbering)
         {
-            List<int[]> result;
+            List<int[]>? result;
             PatternLookup key;
             if (useEdgeRestricts)
             {
@@ -3930,7 +3935,7 @@ namespace LoopDeLoop
                             result.Add(new int[] { 0, j, reallyFilled ? 1 : 0 });
                         }
                     }
-                    int[,] maps = null;
+                    int[,]? maps = null;
                     if (UseColoring || UseEdgeRestricts)
                         maps = GetMaps(success, curNumber);
                     if (UseColoring)
@@ -3939,7 +3944,7 @@ namespace LoopDeLoop
                         {
                             for (int j = i + 1; j < curNumber; j++)
                             {
-                                int value = maps[i, j];
+                                int value = maps![i, j];
                                 bool same = ((value & 2) != 0) && ((value & 4) != 0);
                                 bool opposite = ((value & 1) != 0) && ((value & 8) != 0);
                                 if (same || opposite)
@@ -3982,7 +3987,7 @@ namespace LoopDeLoop
                         {
                             for (int j = i + 1; j < curNumber; j++)
                             {
-                                int value = maps[i, j];
+                                int value = maps![i, j];
                                 bool not11 = (value & 1) != 0;
                                 bool not00 = (value & 8) != 0;
                                 bool not10 = (value & 2) != 0;

@@ -105,7 +105,7 @@ namespace LoopDeLoop
             }
         }
 
-        public async Task GenerateAsync(IProgress<int> progress = null, CancellationToken cancellationToken = default)
+        public async Task GenerateAsync(IProgress<int>? progress = null, CancellationToken cancellationToken = default)
         {
             AbortPrune = false;
             bool done = false;
@@ -147,7 +147,7 @@ namespace LoopDeLoop
             }
         }
 
-        bool[] boringEdges;
+        bool[]? boringEdges;
 
         private double RateBoringness()
         {
@@ -241,7 +241,7 @@ namespace LoopDeLoop
                 for (var i = 0; i < inter.Edges.Count; i++)
                 {
                     int edge = inter.Edges[i];
-                    if (boringEdges[edge])
+                    if (boringEdges![edge])
                         return true;
                 }
             }
@@ -395,7 +395,7 @@ namespace LoopDeLoop
         {
             Intersection prevInters = intersections[prev];
             Edge prevEdge = edges[prevInters.Edges[prevIntersEdge]];
-            Intersection curInters = null;
+            Intersection? curInters = null;
             int curIntersIndex = -1;
             for (var index = 0; index < prevEdge.Intersections.Length; index++)
             {
@@ -408,6 +408,8 @@ namespace LoopDeLoop
                     break;
                 }
             }
+            if (curInters == null)
+                return false;
             if (curIntersIndex == start)
                 return true;
             if (!CanReach(start, curIntersIndex))
@@ -570,7 +572,7 @@ namespace LoopDeLoop
             }
             return restricts;
         }
-        private EdgePairRestriction[,] edgePairRestrictions;
+        private EdgePairRestriction[,] edgePairRestrictions = null!;
 
         public void SetClue(int cellIndex, int target)
         {
@@ -602,7 +604,7 @@ namespace LoopDeLoop
             cell.TargetCount = -1;
         }
 
-        public event EventHandler PrunedCountProgress;
+        public event EventHandler? PrunedCountProgress;
 
         public bool AbortPrune = false;
 
@@ -752,7 +754,7 @@ namespace LoopDeLoop
             }
         }
 
-        private async Task PruneCountsAsync(List<int> cellsOfVariance, List<int> cellsOfDoubleVariance, IProgress<int> progress = null, CancellationToken cancellationToken = default)
+        private async Task PruneCountsAsync(List<int> cellsOfVariance, List<int> cellsOfDoubleVariance, IProgress<int>? progress = null, CancellationToken cancellationToken = default)
         {
             SolveState state = TrySolve();
             if (state != SolveState.Solved)

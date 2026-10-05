@@ -30,7 +30,7 @@ namespace LoopDeLoop
         }
         class UndoNode
         {
-            public UndoNode(IAction action, UndoNode parent, ref int curIndex)
+            public UndoNode(IAction? action, UndoNode? parent, ref int curIndex)
             {
                 Index = curIndex;
                 curIndex++;
@@ -46,11 +46,11 @@ namespace LoopDeLoop
                 CurrentlyUndone = false;
             }
             public int Index;
-            public IAction Action;
+            public IAction? Action;
             public bool CurrentlyUndone;
-            public UndoNode Parent;
+            public UndoNode? Parent;
             public List<UndoNode> Children;
-            public UndoNode LastDoneChild;
+            public UndoNode? LastDoneChild;
         }
 
         int curIndex = 0;
@@ -64,7 +64,7 @@ namespace LoopDeLoop
                 return false;
             foreach (UndoNode child in current.Children)
             {
-                if (child.Action.Equals(action))
+                if (child.Action != null && child.Action.Equals(action))
                 {
                     current.LastDoneChild = child;
                     return Redo();
@@ -84,7 +84,7 @@ namespace LoopDeLoop
             return true;
         }
 
-        public event EventHandler CanUndoRedoMaybeChanged;
+        public event EventHandler? CanUndoRedoMaybeChanged;
 
         private void OnCanUndoRedoMaybeChanged(EventArgs e)
         {
@@ -102,7 +102,7 @@ namespace LoopDeLoop
 
         public bool Undo()
         {
-            if (current.Action == null)
+            if (current.Action == null || current.Parent == null)
                 return false;
             current.Action.Unperform();
             current.CurrentlyUndone = true;
@@ -141,8 +141,8 @@ namespace LoopDeLoop
 
         public bool Redo()
         {
-            UndoNode next = current.LastDoneChild;
-            if (next == null)
+            UndoNode? next = current.LastDoneChild;
+            if (next == null || next.Action == null)
                 return false;
             bool res = next.Action.Perform();
             if (!res)
@@ -164,7 +164,7 @@ namespace LoopDeLoop
                 return false;
             foreach (UndoNode child in current.Children)
             {
-                if (child.Action.Equals(action))
+                if (child.Action != null && child.Action.Equals(action))
                 {
                     current.LastDoneChild = child;
                     return Redo();
@@ -179,7 +179,10 @@ namespace LoopDeLoop
             {
                 List<IAction> res = new List<IAction>();
                 foreach (UndoNode child in current.Children)
-                    res.Add(child.Action);
+                {
+                    if (child.Action != null)
+                        res.Add(child.Action);
+                }
                 return res;
             }
         }
@@ -188,7 +191,7 @@ namespace LoopDeLoop
         {
             marked = current;
         }
-        UndoNode marked = null;
+        UndoNode? marked = null;
 
         public void RevertToMark()
         {
@@ -196,23 +199,23 @@ namespace LoopDeLoop
                 Undo();
         }
 
-        public object ClearMark()
+        public object? ClearMark()
         {
-            UndoNode oldMarked = marked;
+            UndoNode? oldMarked = marked;
             marked = null;
             return oldMarked;
         }
 
         bool markNext = false;
-        public object MarkNext()
+        public object? MarkNext()
         {
             markNext = true;
             return marked;
         }
 
-        public void SetMarkedDirect(object prevMarkPos)
+        public void SetMarkedDirect(object? prevMarkPos)
         {
-            marked = (UndoNode)prevMarkPos;
+            marked = prevMarkPos as UndoNode;
         }
     }
 }

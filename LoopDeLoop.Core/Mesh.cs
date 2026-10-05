@@ -97,7 +97,7 @@ namespace LoopDeLoop
         public float X;
         public float Y;
         public int EdgeSet;
-        public ChainNode EdgeSetEntry;
+        public ChainNode? EdgeSetEntry;
 
         public Intersection Clone()
         {
@@ -190,8 +190,11 @@ namespace LoopDeLoop
             float eps;
 #region IComparer<float> Members
 
-            public int Compare(Point a, Point b)
+            public int Compare(Point? a, Point? b)
             {
+                if (ReferenceEquals(a, b)) return 0;
+                if (a == null) return -1;
+                if (b == null) return 1;
                 if (Math.Abs(a.X - b.X) < eps)
                 {
                     if (Math.Abs(a.Y - b.Y) < eps)
@@ -212,13 +215,13 @@ namespace LoopDeLoop
 
     public class MeshChangeUpdateEventArgs
     {
-        public MeshChangeUpdateEventArgs(Mesh current, List<IAction> justDone, bool success)
+        public MeshChangeUpdateEventArgs(Mesh current, List<IAction>? justDone, bool success)
         {
             this.CurrentMesh = current;
             this.JustDone = justDone;
             this.SuccessfulAttempt = success;
         }
-        public MeshChangeUpdateEventArgs(Mesh current, List<IAction> justDone, bool success, bool starting)
+        public MeshChangeUpdateEventArgs(Mesh current, List<IAction>? justDone, bool success, bool starting)
         {
             this.CurrentMesh = current;
             this.JustDone = justDone;
@@ -228,7 +231,7 @@ namespace LoopDeLoop
 
         public bool SuccessfulAttempt;
 
-        public List<IAction> JustDone;
+        public List<IAction>? JustDone;
 
         public Mesh CurrentMesh;
 
@@ -274,6 +277,10 @@ namespace LoopDeLoop
             this.useCellPairs = other.useCellPairs;
             this.useCellPairsTopLevel = other.useCellPairsTopLevel;
             this.useEdgeRestricts = other.useEdgeRestricts;
+            if (other.edgePairRestrictions != null)
+                this.edgePairRestrictions = (EdgePairRestriction[,])other.edgePairRestrictions.Clone();
+            else
+                this.edgePairRestrictions = new EdgePairRestriction[edges.Count, edges.Count];
         }
 
 #region Mesh Construction using known prototype.
@@ -288,7 +295,7 @@ namespace LoopDeLoop
         }
 #endregion
 
-        public event MeshChangeUpdateEventHandler MeshChangeUpdate;
+        public event MeshChangeUpdateEventHandler? MeshChangeUpdate;
 
         public MeshType MeshType
         {
@@ -382,7 +389,7 @@ namespace LoopDeLoop
                 return edgeDistancesCache;
             }
         }
-        int[,] edgeDistancesCache;
+        int[,]? edgeDistancesCache;
 
         public void GetEdgeExtent(Edge e, out float startX, out float startY, out float endX, out float endY)
         {
@@ -486,23 +493,23 @@ namespace LoopDeLoop
         }
         private bool considerMultipleLoops = false;
 
-        public Mesh FinalSolution
+        public Mesh? FinalSolution
         {
             get
             {
                 return finalSolution;
             }
         }
-        Mesh finalSolution;
+        Mesh? finalSolution;
 
-        public int[] FinalDepthPatern
+        public int[]? FinalDepthPatern
         {
             get
             {
                 return finalDepthPatern;
             }
         }
-        int[] finalDepthPatern;
+        int[]? finalDepthPatern;
 
         public Mesh SolutionFound
         {
@@ -827,7 +834,7 @@ namespace LoopDeLoop
 
         private void GenerateCheck()
         {
-            if (pruning && !earlyFail)
+            if (pruning && !earlyFail && finalSolution != null)
             {
                 // We've found a solution, we can check that against the known solution to see if we've removed enough cells to force multiple solutions to exist.
                 for (int i = 0; i < edges.Count; i++)
@@ -1262,16 +1269,16 @@ namespace LoopDeLoop
 
     public class LoopPath
     {
-        public List<PathSegment> PathOptions;
+        public List<PathSegment> PathOptions = new List<PathSegment>();
         public int PathStart;
         public int PathEnd;
     }
 
     public class PathSegment
     {
-        public LoopPath Parent;
+        public LoopPath? Parent;
         // Positive for an edge number, negative for a path index.
-        public List<int> PathBits;
+        public List<int> PathBits = new List<int>();
     }
 
     public class SetAction : IAction
@@ -1307,17 +1314,20 @@ namespace LoopDeLoop
         public List<int> GetAffectedEdges()
         {
             List<int> res = new List<int>();
-            for (var index = 0; index < edgeSetChanges.Count; index++)
+            if (edgeSetChanges != null)
             {
-                int[] change = edgeSetChanges[index];
-// Ignore changes to the number of sets.
-                if (change.Length > 1 && change[0] != edge)
-                    res.Add(change[0]);
+                for (var index = 0; index < edgeSetChanges.Count; index++)
+                {
+                    int[] change = edgeSetChanges[index];
+                    // Ignore changes to the number of sets.
+                    if (change.Length > 1 && change[0] != edge)
+                        res.Add(change[0]);
+                }
             }
             res.Add(edge);
             return res;
         }
-        private List<int[]> edgeSetChanges;
+        private List<int[]>? edgeSetChanges;
 
         public bool Successful
         {
@@ -1348,16 +1358,17 @@ namespace LoopDeLoop
 
         public void Unperform()
         {
-            mesh.UnperformSetZero(edge, newState, edgeSetChanges);
+            if (edgeSetChanges != null)
+                mesh.UnperformSetZero(edge, newState, edgeSetChanges);
         }
 
 #endregion
 
 #region IEquatable<IAction> Members
 
-        public bool Equals(IAction other)
+        public bool Equals(IAction? other)
         {
-            SetAction otherAction = other as SetAction;
+            SetAction? otherAction = other as SetAction;
             if (otherAction == null)
                 return false;
             else
@@ -1371,10 +1382,10 @@ namespace LoopDeLoop
             return HashCode.Combine(mesh.GetHashCode(), edge, (int)newState);
         }
 
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
-            if (obj is IAction)
-                return Equals((IAction)obj);
+            if (obj is IAction action)
+                return Equals(action);
             return false;
         }
     }
@@ -1399,7 +1410,7 @@ namespace LoopDeLoop
         }
         private int edge;
         private EdgeState oldState;
-        private List<int[]> edgeSetChanges;
+        private List<int[]>? edgeSetChanges;
 
         public bool Successful
         {
@@ -1430,16 +1441,17 @@ namespace LoopDeLoop
 
         public void Unperform()
         {
-            mesh.UnperformUnsetZero(edge, oldState, edgeSetChanges);
+            if (edgeSetChanges != null)
+                mesh.UnperformUnsetZero(edge, oldState, edgeSetChanges);
         }
 
 #endregion
 
 #region IEquatable<IAction> Members
 
-        public bool Equals(IAction other)
+        public bool Equals(IAction? other)
         {
-            UnsetAction otherAction = other as UnsetAction;
+            UnsetAction? otherAction = other as UnsetAction;
             if (otherAction == null)
                 return false;
             else
@@ -1453,10 +1465,10 @@ namespace LoopDeLoop
             return HashCode.Combine(mesh.GetHashCode(), edge);
         }
 
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
-            if (obj is IAction)
-                return Equals((IAction)obj);
+            if (obj is IAction action)
+                return Equals(action);
             return false;
         }
     }
@@ -1501,17 +1513,20 @@ namespace LoopDeLoop
         public List<int> GetAffectedEdges()
         {
             List<int> res = new List<int>();
-            for (var index = 0; index < colorSetChanges.Count; index++)
+            if (colorSetChanges != null)
             {
-                int[] change = colorSetChanges[index];
-// Ignore changes to the number of sets.
-                if (change.Length > 1)
-                    res.Add(change[0]);
+                for (var index = 0; index < colorSetChanges.Count; index++)
+                {
+                    int[] change = colorSetChanges[index];
+                    // Ignore changes to the number of sets.
+                    if (change.Length > 1)
+                        res.Add(change[0]);
+                }
             }
             return res;
         }
 
-        private List<int[]> colorSetChanges;
+        private List<int[]>? colorSetChanges;
 
         public bool Successful
         {
@@ -1551,16 +1566,17 @@ namespace LoopDeLoop
 
         public void Unperform()
         {
-            mesh.UnjoinColor(colorSetChanges);
+            if (colorSetChanges != null)
+                mesh.UnjoinColor(colorSetChanges);
         }
 
 #endregion
 
 #region IEquatable<IAction> Members
 
-        public bool Equals(IAction other)
+        public bool Equals(IAction? other)
         {
-            ColorJoinAction otherAction = other as ColorJoinAction;
+            ColorJoinAction? otherAction = other as ColorJoinAction;
             if (otherAction == null)
                 return false;
             else
@@ -1574,10 +1590,10 @@ namespace LoopDeLoop
             return HashCode.Combine(mesh.GetHashCode(), edge1, edge2, same ? 1 : 0);
         }
 
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
-            if (obj is IAction)
-                return Equals((IAction)obj);
+            if (obj is IAction action)
+                return Equals(action);
             return false;
         }
     }
@@ -1596,7 +1612,7 @@ namespace LoopDeLoop
 #endif
         }
 #if DEBUG
-        public StackTrace st;
+        public StackTrace? st;
 #endif
         private Mesh mesh;
         public int Cell1
@@ -1627,17 +1643,20 @@ namespace LoopDeLoop
         public List<int> GetAffectedCells()
         {
             List<int> res = new List<int>();
-            for (var index = 0; index < colorSetChanges.Count; index++)
+            if (colorSetChanges != null)
             {
-                int[] change = colorSetChanges[index];
-// Ignore changes to the number of sets.
-                if (change.Length > 1)
-                    res.Add(change[0]);
+                for (var index = 0; index < colorSetChanges.Count; index++)
+                {
+                    int[] change = colorSetChanges[index];
+                    // Ignore changes to the number of sets.
+                    if (change.Length > 1)
+                        res.Add(change[0]);
+                }
             }
             return res;
         }
 
-        private List<int[]> colorSetChanges;
+        private List<int[]>? colorSetChanges;
 
         public bool Successful
         {
@@ -1677,16 +1696,17 @@ namespace LoopDeLoop
 
         public void Unperform()
         {
-            mesh.UnjoinCellColor(colorSetChanges);
+            if (colorSetChanges != null)
+                mesh.UnjoinCellColor(colorSetChanges);
         }
 
 #endregion
 
 #region IEquatable<IAction> Members
 
-        public bool Equals(IAction other)
+        public bool Equals(IAction? other)
         {
-            CellColorJoinAction otherAction = other as CellColorJoinAction;
+            CellColorJoinAction? otherAction = other as CellColorJoinAction;
             if (otherAction == null)
                 return false;
             else
@@ -1700,10 +1720,10 @@ namespace LoopDeLoop
             return HashCode.Combine(mesh.GetHashCode(), cell1, cell1, same ? 1 : 0);
         }
 
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
-            if (obj is IAction)
-                return Equals((IAction)obj);
+            if (obj is IAction action)
+                return Equals(action);
             return false;
         }
     }
@@ -1767,9 +1787,9 @@ namespace LoopDeLoop
 
 #region IEquatable<IAction> Members
 
-        public bool Equals(IAction other)
+        public bool Equals(IAction? other)
         {
-            CellColorClearAction otherAction = other as CellColorClearAction;
+            CellColorClearAction? otherAction = other as CellColorClearAction;
             if (otherAction == null)
                 return false;
             else
@@ -1783,10 +1803,10 @@ namespace LoopDeLoop
             return HashCode.Combine(mesh.GetHashCode(), cell1);
         }
 
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
-            if (obj is IAction)
-                return Equals((IAction)obj);
+            if (obj is IAction action)
+                return Equals(action);
             return false;
         }
     }
@@ -1805,7 +1825,7 @@ namespace LoopDeLoop
 #endif
         }
 #if DEBUG
-        public StackTrace st;
+        public StackTrace? st;
 #endif
         private Mesh mesh;
         public int Edge1
@@ -1889,9 +1909,9 @@ namespace LoopDeLoop
 
 #region IEquatable<IAction> Members
 
-        public bool Equals(IAction other)
+        public bool Equals(IAction? other)
         {
-            EdgeRestrictionAction otherAction = other as EdgeRestrictionAction;
+            EdgeRestrictionAction? otherAction = other as EdgeRestrictionAction;
             if (otherAction == null)
                 return false;
             else
@@ -1905,10 +1925,10 @@ namespace LoopDeLoop
             return HashCode.Combine(mesh.GetHashCode(), edge1, edge2, (int)state);
         }
 
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
-            if (obj is IAction)
-                return Equals((IAction)obj);
+            if (obj is IAction action)
+                return Equals(action);
             return false;
         }
     }
@@ -1936,8 +1956,12 @@ namespace LoopDeLoop
     {
 #region IComparer<IAction> Members
 
-        public int Compare(IAction x, IAction y)
+        public int Compare(IAction? x, IAction? y)
         {
+            if (ReferenceEquals(x, y)) return 0;
+            if (x == null) return -1;
+            if (y == null) return 1;
+
             if (x is SetAction)
             {
                 if (y is SetAction)
@@ -1994,18 +2018,18 @@ namespace LoopDeLoop
 
     public class Chain
     {
-        public ChainNode Start;
-        public ChainNode End;
+        public ChainNode? Start;
+        public ChainNode? End;
     }
 
     public class ChainNode
     {
         public int Intersection;
 
-        public ChainNode Link1;
-        public ChainNode Link2;
+        public ChainNode? Link1;
+        public ChainNode? Link2;
 
-        public ChainNode GetNext(ChainNode prior)
+        public ChainNode? GetNext(ChainNode? prior)
         {
             if (prior == Link1)
                 return Link2;
@@ -2070,8 +2094,8 @@ namespace LoopDeLoop
                 throw new InvalidOperationException("Can't break from chain, not joined.");
         }
 
-        public int[] EdgesToLink1;
-        public int[] EdgesToLink2;
+        public int[]? EdgesToLink1;
+        public int[]? EdgesToLink2;
     }
 
     /// <summary>

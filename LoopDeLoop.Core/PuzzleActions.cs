@@ -19,7 +19,7 @@ namespace LoopDeLoop
         private readonly bool isAlternativeCycle;
         private readonly int autoMove;
         private readonly bool disallowFalseMove;
-        private List<IAction> actionsPerformed;
+        private List<IAction>? actionsPerformed;
         private bool successful;
 
         public bool Successful => successful;
@@ -99,7 +99,7 @@ namespace LoopDeLoop
             }
         }
 
-        public bool Equals(IAction other)
+        public bool Equals(IAction? other)
         {
             if (other is not PuzzleEdgeAction o) return false;
             return o.mesh == mesh && o.edgeIndex == edgeIndex && o.isAlternativeCycle == isAlternativeCycle;
@@ -118,7 +118,7 @@ namespace LoopDeLoop
         private readonly Mesh mesh;
         private readonly int cellIndex;
         private readonly bool reverse;
-        private List<IAction> actionsPerformed;
+        private List<IAction>? actionsPerformed;
         private bool successful;
 
         public bool Successful => successful;
@@ -186,7 +186,7 @@ namespace LoopDeLoop
             }
         }
 
-        public bool Equals(IAction other)
+        public bool Equals(IAction? other)
         {
             if (other is not PuzzleCellColorAction o) return false;
             return o.mesh == mesh && o.cellIndex == cellIndex && o.reverse == reverse;
@@ -207,7 +207,7 @@ namespace LoopDeLoop
         private readonly int edgeIndex;
         private readonly EdgeState targetState;
         private readonly bool disallowFalseMove;
-        private List<IAction> actionsPerformed;
+        private List<IAction>? actionsPerformed;
         private bool successful;
 
         public bool Successful => successful;
@@ -265,7 +265,7 @@ namespace LoopDeLoop
             }
         }
 
-        public bool Equals(IAction other)
+        public bool Equals(IAction? other)
         {
             return other is PuzzleSetEdgeStateAction o && o.mesh == mesh && o.edgeIndex == edgeIndex && o.targetState == targetState && o.disallowFalseMove == disallowFalseMove;
         }
