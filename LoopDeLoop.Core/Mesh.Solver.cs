@@ -151,6 +151,9 @@ namespace LoopDeLoop
 
         private SolveState RecursiveTrySolveInternal(List<IAction> trials, int index)
         {
+            if (AbortPrune)
+                throw new OperationCanceledException();
+
             if (pruning && earlyFail)
             {
                 earlyFail = false;
@@ -521,6 +524,9 @@ namespace LoopDeLoop
             IAction? lastTrial = null;
             for (int i = 0; i < trials.Count; i++)
             {
+                if (AbortPrune)
+                    throw new OperationCanceledException();
+
                 if (pruning && earlyFail)
                 {
                     if (iterTopLevel)

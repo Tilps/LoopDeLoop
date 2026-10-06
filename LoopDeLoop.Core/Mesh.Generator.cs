@@ -76,6 +76,63 @@ namespace LoopDeLoop
             }
         }
 
+        private async Task GenerateInitialLoopAsync(Random rnd, List<IAction> backup, CancellationToken cancellationToken = default)
+        {
+            int targetCount = (int)Math.Floor(intersections.Count * generateLengthFraction);
+            long countSum = 0;
+            int tries = 0;
+            int loopTries = 0;
+            bool loopToSmall = true;
+            long lastYieldTicks = Stopwatch.GetTimestamp();
+
+            while (loopToSmall)
+            {
+                if (AbortPrune || cancellationToken.IsCancellationRequested)
+                    return;
+
+                long currentTicks = Stopwatch.GetTimestamp();
+                double elapsedMs = (currentTicks - lastYieldTicks) * 1000.0 / Stopwatch.Frequency;
+                if (elapsedMs >= 16.0)
+                {
+                    lastYieldTicks = currentTicks;
+                    await Task.Delay(1, cancellationToken);
+                    if (AbortPrune || cancellationToken.IsCancellationRequested)
+                        return;
+                }
+
+                loopToSmall = false;
+                FullClear();
+                backup.Clear();
+                int start = rnd.Next(intersections.Count);
+                Intersection inters = intersections[start];
+                int edgeIntersIndex = rnd.Next(inters.Edges.Count);
+                int edgeIndex = inters.Edges[edgeIntersIndex];
+                Perform(edgeIndex, EdgeState.Filled, backup, 0);
+                bool success = CreateLoop(rnd, start, start, edgeIntersIndex);
+                int count = 0;
+                for (var index = 0; index < edges.Count; index++)
+                {
+                    Edge edge = edges[index];
+                    if (edge.State == EdgeState.Filled)
+                        count++;
+                }
+                countSum += count;
+                tries++;
+                if (count < targetCount || RateBoringness() > GenerateBoringFraction)
+                {
+                    if (loopTries > 100 && count >= countSum / tries)
+                    {
+                        if (TryExpandLoop(rnd, targetCount - count))
+                            break;
+                    }
+                    loopToSmall = true;
+                    loopTries++;
+                    if (loopTries > 1000)
+                        break;
+                }
+            }
+        }
+
         public void Generate()
         {
             AbortPrune = false;
@@ -114,7 +171,7 @@ namespace LoopDeLoop
             while (!done && !cancellationToken.IsCancellationRequested && !AbortPrune)
             {
                 done = true;
-                GenerateInitialLoop(rnd, backup);
+                await GenerateInitialLoopAsync(rnd, backup, cancellationToken);
                 if (cancellationToken.IsCancellationRequested || AbortPrune) break;
                 UpdateCounts();
                 List<int> cellsOfVariance = new List<int>();
@@ -135,6 +192,7 @@ namespace LoopDeLoop
                     {
                         done = false;
                         progress?.Report(0);
+                        await Task.Delay(1, cancellationToken);
                     }
                     else
                         throw;
@@ -756,7 +814,15 @@ namespace LoopDeLoop
 
         private async Task PruneCountsAsync(List<int> cellsOfVariance, List<int> cellsOfDoubleVariance, IProgress<int>? progress = null, CancellationToken cancellationToken = default)
         {
+            if (AbortPrune || cancellationToken.IsCancellationRequested)
+                return;
+
+            await Task.Delay(1, cancellationToken);
+
             SolveState state = TrySolve();
+            if (AbortPrune || cancellationToken.IsCancellationRequested)
+                return;
+
             if (state != SolveState.Solved)
                 throw new Exception("Can't solve it anyway");
             try

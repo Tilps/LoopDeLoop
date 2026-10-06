@@ -154,16 +154,16 @@
                 <div class="spinner"></div>
                 <div class="spinner-content">
                     <div class="spinner-text">
-                        @if (Game.TotalCells > 0)
+                        @if (Game.PrunedProgress > 0 && Game.TotalCells > 0)
                         {
-                            <span>Generating puzzle... (@Game.PrunedProgress / @Game.TotalCells clues checked)</span>
+                            <span>Pruning clues... (@Game.PrunedProgress / @Game.TotalCells checked)</span>
                         }
                         else
                         {
-                            <span>Generating puzzle...</span>
+                            <span>Generating initial loop...</span>
                         }
                     </div>
-                    @if (Game.TotalCells > 0)
+                    @if (Game.PrunedProgress > 0 && Game.TotalCells > 0)
                     {
                         <div class="progress-bar-container">
                             <div class="progress-bar-fill" style="width: @(Math.Clamp((double)Game.PrunedProgress / Game.TotalCells * 100, 0, 100).ToString("F0"))%"></div>
