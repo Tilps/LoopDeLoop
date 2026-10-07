@@ -294,6 +294,10 @@ namespace LoopDeLoop
                     return "Cairo Pentagons";
                 case MeshType.Hexagonal4:
                     return "Hexagon 4";
+                case MeshType.Square3:
+                    return "Square 3";
+                case MeshType.PentagonHexagon2:
+                    return "Pentagon-Hexagon 2";
             }
             return "Square";
 

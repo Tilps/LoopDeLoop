@@ -368,6 +368,14 @@ namespace LoopDeLoop
             {
                 ConstructHexagonal4(width, height);
             }
+            else if (type == MeshType.Square3)
+            {
+                ConstructSquare3(width, height);
+            }
+            else if (type == MeshType.PentagonHexagon2)
+            {
+                ConstructPentagonHexagon2(width, height);
+            }
         }
 
 #region Mesh construction helpers.
@@ -1206,6 +1214,133 @@ namespace LoopDeLoop
                             }
                         }
                     }
+                }
+            }
+
+            CreateCells();
+            NormalizeCoordinates();
+        }
+
+        private void ConstructSquare3(int width, int height)
+        {
+            ApproxPointStorage storage = new ApproxPointStorage(0.001f);
+            List<int> intersects = new List<int>();
+
+            float side = 1.0f;
+            float halfSide = side / 2f;
+            float triangleHeight = MathF.Sqrt(3f) * halfSide; // altitude of equilateral triangle (Square2's triangleBit)
+            float colSpacing = triangleHeight + halfSide;
+            float rowSpacing = triangleHeight + halfSide;
+
+            void AddPoly(params (float X, float Y)[] pts)
+            {
+                intersects.Clear();
+                foreach (var pt in pts)
+                    AddIntersection(storage, intersects, pt.X, pt.Y);
+                AddPolyBoundry(intersects);
+            }
+
+            for (int row = 0; row < height; row++)
+            {
+                for (int col = 0; col < width; col++)
+                {
+                    // Alternating checkerboard tilt: squares tilt at +/- 30 degrees
+                    bool tiltClockwise = (row + col) % 2 == 0;
+
+                    float cellX = colSpacing * col + (tiltClockwise ? halfSide : 0f);
+                    float cellY = halfSide + rowSpacing * row + (tiltClockwise ? 0f : halfSide);
+
+                    var sqTopLeft = (cellX, cellY);
+                    var sqTopRight = (cellX + triangleHeight, tiltClockwise ? cellY + halfSide : cellY - halfSide);
+                    var sqBottomRight = (cellX + triangleHeight + (tiltClockwise ? -halfSide : halfSide),
+                                         cellY + triangleHeight + (tiltClockwise ? halfSide : -halfSide));
+                    var sqBottomLeft = (cellX + (tiltClockwise ? -halfSide : halfSide), cellY + triangleHeight);
+
+                    // 1. Tilted square
+                    AddPoly(sqTopLeft, sqTopRight, sqBottomRight, sqBottomLeft);
+
+                    // 2. Top boundary triangle (row == 0)
+                    if (row == 0)
+                    {
+                        var topPeak = (cellX + (tiltClockwise ? triangleHeight : 0f),
+                                       tiltClockwise ? cellY - halfSide : cellY - side);
+                        AddPoly(sqTopLeft, topPeak, sqTopRight);
+                    }
+
+                    // 3. Bottom triangle
+                    var bottomPeak = (cellX + (tiltClockwise ? -halfSide : triangleHeight + halfSide),
+                                      cellY + triangleHeight + (tiltClockwise ? side : halfSide));
+                    AddPoly(bottomPeak, sqBottomLeft, sqBottomRight);
+
+                    // 4. Right triangle (col < width - 1)
+                    if (col < width - 1)
+                    {
+                        var rightPeak = (cellX + triangleHeight + (tiltClockwise ? halfSide : side),
+                                         cellY + (tiltClockwise ? triangleHeight + halfSide : -halfSide));
+                        AddPoly(sqTopRight, rightPeak, sqBottomRight);
+                    }
+                }
+            }
+
+            CreateCells();
+            NormalizeCoordinates();
+        }
+
+        private void ConstructPentagonHexagon2(int width, int height)
+        {
+            ApproxPointStorage storage = new ApproxPointStorage(0.001f);
+            List<int> intersects = new List<int>();
+
+            float side = 1.0f;
+            float sqrt3 = MathF.Sqrt(3f);
+            float halfSide = 0.5f * side;
+            float triangleHeight = sqrt3 * halfSide; // altitude of 30-60-90 triangle
+            float hexWidth = 2f * triangleHeight;    // full width of the hexagon
+            float colSpacing = hexWidth;
+            float rowSpacing = 4f * side;
+
+            void AddPoly(params (float X, float Y)[] pts)
+            {
+                intersects.Clear();
+                foreach (var pt in pts)
+                    AddIntersection(storage, intersects, pt.X, pt.Y);
+                AddPolyBoundry(intersects);
+            }
+
+            for (int row = 0; row < height; row++)
+            {
+                for (int col = 0; col < width; col++)
+                {
+                    float cellX = col * colSpacing;
+                    float cellY = row * rowSpacing;
+
+                    // 1. Top pentagon (flat top at cellY, pointing downward)
+                    var topTopLeft = (cellX, cellY);
+                    var topTopRight = (cellX + hexWidth, cellY);
+                    var topMidRight = (cellX + hexWidth, cellY + side);
+                    var topPeak = (cellX + triangleHeight, cellY + side + halfSide);
+                    var topMidLeft = (cellX, cellY + side);
+                    AddPoly(topTopLeft, topTopRight, topMidRight, topPeak, topMidLeft);
+
+                    // 2. Bottom pentagon (flat bottom at cellY + rowSpacing, pointing upward)
+                    float botY = cellY + rowSpacing;
+                    var botBotLeft = (cellX, botY);
+                    var botMidLeft = (cellX, botY - side);
+                    var botPeak = (cellX + triangleHeight, botY - side - halfSide);
+                    var botMidRight = (cellX + hexWidth, botY - side);
+                    var botBotRight = (cellX + hexWidth, botY);
+                    AddPoly(botBotLeft, botMidLeft, botPeak, botMidRight, botBotRight);
+
+                    // 3. Hexagon (connecting the pentagons to the right)
+                    float hexCenterColX = cellX + hexWidth;
+                    float hexTopY = cellY + side;
+                    var hexTop = (hexCenterColX, hexTopY);
+                    var hexTopRight = (hexCenterColX + triangleHeight, hexTopY + halfSide);
+                    var hexBotRight = (hexCenterColX + triangleHeight, hexTopY + halfSide + side);
+                    var hexBottom = (hexCenterColX, hexTopY + 2f * side);
+                    var hexBotLeft = (hexCenterColX - triangleHeight, hexTopY + halfSide + side);
+                    var hexTopLeft = (hexCenterColX - triangleHeight, hexTopY + halfSide);
+                    AddPoly(hexTop, hexTopRight, hexBotRight, hexBottom, hexBotLeft, hexTopLeft);
                 }
             }
 

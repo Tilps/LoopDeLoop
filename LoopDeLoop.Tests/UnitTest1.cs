@@ -36,7 +36,9 @@ namespace LoopDeLoop.Tests
                 MeshType.DiamondSquare,
                 MeshType.PentagonHexagon,
                 MeshType.HexPentagons,
-                MeshType.Hexagonal4
+                MeshType.Hexagonal4,
+                MeshType.Square3,
+                MeshType.PentagonHexagon2
             };
 
             foreach (var type in types)

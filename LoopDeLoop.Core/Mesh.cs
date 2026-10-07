@@ -154,7 +154,11 @@ namespace LoopDeLoop
         FloretPentagons,
         Hexagonal4,
         CairoPentagons,
+        Square3,
+        PentagonHexagon2,
         HexPentagons = FloretPentagons,
+        SnubSquare = Square3,
+        PrismaticPentagons = PentagonHexagon2,
     }
 
 #region ApproxPointStorage class to help with constructing grids.

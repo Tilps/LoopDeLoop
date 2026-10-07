@@ -25,7 +25,9 @@ namespace LoopDeLoop.Tests
             MeshType.PentagonHexagon,
             MeshType.FloretPentagons,
             MeshType.CairoPentagons,
-            MeshType.Hexagonal4
+            MeshType.Hexagonal4,
+            MeshType.Square3,
+            MeshType.PentagonHexagon2
         };
 
         [TestMethod]
@@ -155,7 +157,9 @@ namespace LoopDeLoop.Tests
                 MeshType.PentagonHexagon,
                 MeshType.FloretPentagons,
                 MeshType.CairoPentagons,
-                MeshType.Hexagonal4
+                MeshType.Hexagonal4,
+                MeshType.Square3,
+                MeshType.PentagonHexagon2
             };
 
             foreach (var type in newTypes)

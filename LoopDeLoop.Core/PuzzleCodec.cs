@@ -25,6 +25,8 @@ namespace LoopDeLoop
             MeshType.FloretPentagons => "floret",
             MeshType.CairoPentagons => "cairo",
             MeshType.Hexagonal4 => "hex4",
+            MeshType.Square3 => "sq3",
+            MeshType.PentagonHexagon2 => "penhex2",
             _ => "sq"
         };
 
@@ -47,6 +49,8 @@ namespace LoopDeLoop
             "floret" or "floretpentagons" or "hexpen" or "hexpentagons" => MeshType.FloretPentagons,
             "cairo" or "cairopentagons" => MeshType.CairoPentagons,
             "hex4" or "hexagonal4" => MeshType.Hexagonal4,
+            "sq3" or "square3" or "snub" or "snubsq" => MeshType.Square3,
+            "penhex2" or "pentagonhexagon2" or "prism" or "prismatic" => MeshType.PentagonHexagon2,
             _ => MeshType.Square
         };
 

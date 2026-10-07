@@ -136,6 +136,28 @@ namespace LoopDeLoop.Tests
             var mesh = new Mesh(layers, layers, MeshType.AsymmetricPentagons);
             AssertMeshStructureValid(mesh, $"AsymmetricPentagons_L{layers}");
         }
+
+        [TestMethod]
+        [DataRow(2, 2)]
+        [DataRow(3, 3)]
+        [DataRow(4, 3)]
+        [DataRow(5, 5)]
+        public void Validate_Square3(int w, int h)
+        {
+            var mesh = new Mesh(w, h, MeshType.Square3);
+            AssertMeshStructureValid(mesh, $"Square3_{w}x{h}");
+        }
+
+        [TestMethod]
+        [DataRow(2, 2)]
+        [DataRow(3, 3)]
+        [DataRow(4, 3)]
+        [DataRow(5, 4)]
+        public void Validate_PentagonHexagon2(int w, int h)
+        {
+            var mesh = new Mesh(w, h, MeshType.PentagonHexagon2);
+            AssertMeshStructureValid(mesh, $"PentagonHexagon2_{w}x{h}");
+        }
     }
 }
 

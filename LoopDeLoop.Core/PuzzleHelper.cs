@@ -41,6 +41,7 @@ namespace LoopDeLoop
             {
                 case MeshType.Octagon:
                 case MeshType.Square2:
+                case MeshType.Square3:
                 case MeshType.FloretPentagons:
                 case MeshType.CairoPentagons:
                 case MeshType.Kites:
@@ -62,6 +63,7 @@ namespace LoopDeLoop
                 case MeshType.Hexagonal3:
                 case MeshType.Hexagonal4:
                 case MeshType.PentagonHexagon:
+                case MeshType.PentagonHexagon2:
                 case MeshType.DiamondSquare:
                     width = 4;
                     height = 4;
@@ -112,12 +114,14 @@ namespace LoopDeLoop
                 "Hexagon3" => MeshType.Hexagonal3,
                 "Octagon" => MeshType.Octagon,
                 "Square2" => MeshType.Square2,
+                "Square3" or "Square 3" or "Snub Square" or "SnubSquare" => MeshType.Square3,
                 "Pentagon" => MeshType.Pentagon,
                 "Kites" => MeshType.Kites,
                 "Asymmetric Pentagons" or "AsymmetricPentagons" => MeshType.AsymmetricPentagons,
                 "Diamonds" => MeshType.Diamonds,
                 "Diamond-Square" or "DiamondSquare" => MeshType.DiamondSquare,
                 "Pentagon-Hexagon" or "PentagonHexagon" => MeshType.PentagonHexagon,
+                "Pentagon-Hexagon 2" or "PentagonHexagon2" or "Prismatic Pentagons" or "PrismaticPentagons" => MeshType.PentagonHexagon2,
                 "Floret Pentagons" or "FloretPentagons" or "Hex-Pentagons" or "HexPentagons" => MeshType.FloretPentagons,
                 "Cairo Pentagons" or "CairoPentagons" => MeshType.CairoPentagons,
                 "Hexagon 4" or "Hexagon4" or "Hexagonal4" => MeshType.Hexagonal4,
