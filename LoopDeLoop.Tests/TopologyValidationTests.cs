@@ -153,6 +153,7 @@ namespace LoopDeLoop.Tests
         [DataRow(3, 3)]
         [DataRow(4, 3)]
         [DataRow(5, 4)]
+        [DataRow(8, 4)]
         public void Validate_PentagonHexagon2(int w, int h)
         {
             var mesh = new Mesh(w, h, MeshType.PentagonHexagon2);

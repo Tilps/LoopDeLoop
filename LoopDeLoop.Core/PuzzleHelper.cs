@@ -63,9 +63,12 @@ namespace LoopDeLoop
                 case MeshType.Hexagonal3:
                 case MeshType.Hexagonal4:
                 case MeshType.PentagonHexagon:
-                case MeshType.PentagonHexagon2:
                 case MeshType.DiamondSquare:
                     width = 4;
+                    height = 4;
+                    break;
+                case MeshType.PentagonHexagon2:
+                    width = 8;
                     height = 4;
                     break;
                 default:
