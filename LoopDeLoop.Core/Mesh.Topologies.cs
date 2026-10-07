@@ -1061,11 +1061,9 @@ namespace LoopDeLoop
             NormalizeCoordinates();
         }
 
-        private record AsymmetricPentagonPiece((float X, float Y)[] V, float Angle);
-
         private void ConstructAsymmetricPentagons(int layersCount)
         {
-            int layers = Math.Max(1, Math.Min(8, layersCount));
+            int layers = Math.Max(1, layersCount);
             ApproxPointStorage storage = new ApproxPointStorage(0.001f);
             List<int> intersects = new List<int>();
 
@@ -1078,15 +1076,10 @@ namespace LoopDeLoop
             float angle240 = 2f * angle120;
             float sideLen = 1.0f;
 
-            void AddPoly(params (float X, float Y)[] pts)
-            {
-                intersects.Clear();
-                foreach (var pt in pts)
-                    AddIntersection(storage, intersects, pt.X, pt.Y);
-                AddPolyBoundry(intersects);
-            }
+            (float X, float Y) Rotate((float X, float Y) pt, float rad) =>
+                (pt.X * MathF.Cos(rad) - pt.Y * MathF.Sin(rad), pt.X * MathF.Sin(rad) + pt.Y * MathF.Cos(rad));
 
-            AsymmetricPentagonPiece AddPentagon((float X, float Y) start, float angle, bool mirrored = false)
+            (float X, float Y)[] CalcVertices((float X, float Y) start, float angle, bool mirrored)
             {
                 float a1 = mirrored ? angle + angle100 : angle + angle20;
                 float a2 = angle + angle120;
@@ -1097,118 +1090,87 @@ namespace LoopDeLoop
                 (float X, float Y) v2 = (v1.X + MathF.Sin(a1) * sideLen, v1.Y - MathF.Cos(a1) * sideLen);
                 (float X, float Y) v3 = (v2.X + MathF.Sin(a2) * sideLen, v2.Y - MathF.Cos(a2) * sideLen);
                 (float X, float Y) v4 = (v3.X + MathF.Sin(a3) * sideLen, v3.Y - MathF.Cos(a3) * sideLen);
+                return new[] { v0, v1, v2, v3, v4 };
+            }
 
-                AddPoly(v0, v1, v2, v3, v4);
-                return new AsymmetricPentagonPiece(new[] { v0, v1, v2, v3, v4 }, angle);
+            void AddPentagonPiece((float X, float Y) start, float angle, bool mirrored = false)
+            {
+                intersects.Clear();
+                foreach (var pt in CalcVertices(start, angle, mirrored))
+                    AddIntersection(storage, intersects, pt.X, pt.Y);
+                AddPolyBoundry(intersects);
             }
 
             // Layer 0: 6 pentagons meeting at center (0, 0)
-            var l0 = new AsymmetricPentagonPiece[6];
             for (int t = 0; t < 6; t++)
-            {
-                float ang = t * angle60;
-                l0[t] = AddPentagon((0, 0), ang);
-            }
+                AddPentagonPiece((0, 0), t * angle60);
 
             if (layers > 1)
             {
-                var l1 = new AsymmetricPentagonPiece[6];
+                var l0Sec0 = CalcVertices((0, 0), 0, false);
+                var l1Sec0 = CalcVertices(l0Sec0[4], angle20, false);
+
+                // Layer 1: 6 pentagons
                 for (int t = 0; t < 6; t++)
-                {
-                    l1[t] = AddPentagon(l0[t].V[4], l0[t].Angle + angle20);
-                }
+                    AddPentagonPiece(Rotate(l0Sec0[4], t * angle60), angle20 + t * angle60);
 
                 if (layers > 2)
                 {
-                    var l2 = new AsymmetricPentagonPiece[6];
+                    // Layer 2: 6 pentagons
                     for (int t = 0; t < 6; t++)
-                    {
-                        l2[t] = AddPentagon(l1[t].V[3], l1[t].Angle + angle140);
-                    }
+                        AddPentagonPiece(Rotate(l1Sec0[3], t * angle60), angle20 + angle140 + t * angle60);
 
                     if (layers > 3)
                     {
-                        var l3 = new AsymmetricPentagonPiece[6][];
-                        for (int t = 0; t < 6; t++)
-                        {
-                            l3[t] = new AsymmetricPentagonPiece[3];
-                            var fObj = AddPentagon(l1[t].V[2], l1[t].Angle + angle60);
-                            var cObj = AddPentagon(fObj.V[4], fObj.Angle + angle20);
-                            var lastObj = AddPentagon(cObj.V[4], cObj.Angle + angle20);
-                            l3[t][0] = fObj;
-                            l3[t][1] = cObj;
-                            l3[t][2] = lastObj;
-                        }
+                        // Sector 0 seeds for Layers 3 and 4
+                        var p3_0 = CalcVertices(l1Sec0[2], angle20 + angle60, false);
+                        var p3_1 = CalcVertices(p3_0[4], angle20 + angle60 + angle20, false);
+                        var p3_2 = CalcVertices(p3_1[4], angle20 + angle60 + 2f * angle20, false);
+                        (float X, float Y)[] seedL3 = new[] { p3_0[0], p3_1[0], p3_2[0] };
 
-                        if (layers > 4)
+                        float uAng = (angle20 + angle60) - angle60;
+                        var p4_0 = CalcVertices(p3_0[3], uAng, true);
+                        var p4_1 = CalcVertices(p3_1[3], uAng + angle20, true);
+                        var p4_2 = CalcVertices(p3_2[3], uAng + 2f * angle20, true);
+                        (float X, float Y)[] seedL4 = new[] { p4_0[0], p4_1[0], p4_2[0] };
+
+                        // Radial step vector (horizontal reflection of seedL3)
+                        (float X, float Y)[] stepS = new[]
                         {
-                            var l4 = new AsymmetricPentagonPiece[6][];
+                            (seedL3[2].X, -seedL3[2].Y),
+                            (seedL3[1].X, -seedL3[1].Y),
+                            (seedL3[0].X, -seedL3[0].Y)
+                        };
+
+                        // Intra-group step vectors along the radial rays
+                        (float X, float Y)[] stepD = new[]
+                        {
+                            (-MathF.Sin(angle20 * 1), MathF.Cos(angle20 * 1)),
+                            (-MathF.Sin(angle20 * 2), MathF.Cos(angle20 * 2)),
+                            (-MathF.Sin(angle20 * 3), MathF.Cos(angle20 * 3))
+                        };
+
+                        // Closed-form generation for arbitrary layers >= 3 without tracking previous layers
+                        for (int l = 3; l < layers; l++)
+                        {
+                            bool isOdd = (l % 2 != 0);
+                            int m = (l - 1) / 2;
+                            bool mirrored = !isOdd;
+                            float baseAngle = isOdd ? 4f * angle20 : angle20; // 80 deg (odd) or 20 deg (even)
+
                             for (int t = 0; t < 6; t++)
                             {
-                                l4[t] = new AsymmetricPentagonPiece[3];
-                                var rObj = l3[t][0];
-                                var oObj = l3[t][1];
-                                var iObj = l3[t][2];
-
-                                float uAng = rObj.Angle - angle60;
-                                l4[t][0] = AddPentagon(rObj.V[3], uAng, mirrored: true);
-                                l4[t][1] = AddPentagon(oObj.V[3], uAng + angle20, mirrored: true);
-                                l4[t][2] = AddPentagon(iObj.V[3], uAng + 2f * angle20, mirrored: true);
-                            }
-
-                            if (layers > 5)
-                            {
-                                var l5 = new AsymmetricPentagonPiece[6][][];
-                                for (int t = 0; t < 6; t++)
+                                float rot = t * angle60;
+                                for (int g = 0; g < 3; g++)
                                 {
-                                    l5[t] = new AsymmetricPentagonPiece[3][];
-                                    for (int rIdx = 0; rIdx < 3; rIdx++)
+                                    (float X, float Y) baseSeed = isOdd ? seedL3[g] : seedL4[g];
+                                    (float X, float Y) baseV0 = (baseSeed.X + (m - 1) * stepS[g].X, baseSeed.Y + (m - 1) * stepS[g].Y);
+                                    float ang = baseAngle + g * angle20;
+
+                                    for (int k = 0; k < m; k++)
                                     {
-                                        l5[t][rIdx] = new AsymmetricPentagonPiece[2];
-                                        var oObj = l4[t][rIdx];
-                                        float fCur = oObj.Angle + angle60;
-
-                                        l5[t][rIdx][0] = AddPentagon(oObj.V[2], fCur);
-                                        l5[t][rIdx][1] = AddPentagon(oObj.V[4], fCur);
-                                    }
-                                }
-
-                                if (layers > 6)
-                                {
-                                    var l6 = new AsymmetricPentagonPiece[6][][];
-                                    for (int t = 0; t < 6; t++)
-                                    {
-                                        l6[t] = new AsymmetricPentagonPiece[3][];
-                                        for (int nIdx = 0; nIdx < 3; nIdx++)
-                                        {
-                                            l6[t][nIdx] = new AsymmetricPentagonPiece[2];
-                                            var eObj = l5[t][nIdx][0];
-                                            var fObj = l5[t][nIdx][1];
-                                            float oCur = eObj.Angle - angle60;
-
-                                            l6[t][nIdx][0] = AddPentagon(eObj.V[3], oCur, mirrored: true);
-                                            l6[t][nIdx][1] = AddPentagon(fObj.V[3], oCur, mirrored: true);
-                                        }
-                                    }
-
-                                    if (layers > 7)
-                                    {
-                                        var l7 = new AsymmetricPentagonPiece[6][][];
-                                        for (int t = 0; t < 6; t++)
-                                        {
-                                            l7[t] = new AsymmetricPentagonPiece[3][];
-                                            for (int nIdx = 0; nIdx < 3; nIdx++)
-                                            {
-                                                l7[t][nIdx] = new AsymmetricPentagonPiece[3];
-                                                var eObj = l6[t][nIdx][0];
-                                                var rObj = l6[t][nIdx][1];
-                                                float cCur = eObj.Angle + angle60;
-
-                                                l7[t][nIdx][0] = AddPentagon(eObj.V[2], cCur);
-                                                l7[t][nIdx][1] = AddPentagon(eObj.V[4], cCur);
-                                                l7[t][nIdx][2] = AddPentagon(rObj.V[4], cCur);
-                                            }
-                                        }
+                                        (float X, float Y) v0Sec0 = (baseV0.X + k * stepD[g].X, baseV0.Y + k * stepD[g].Y);
+                                        AddPentagonPiece(Rotate(v0Sec0, rot), ang + rot, mirrored);
                                     }
                                 }
                             }

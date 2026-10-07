@@ -131,6 +131,9 @@ namespace LoopDeLoop.Tests
         [DataRow(6)]
         [DataRow(7)]
         [DataRow(8)]
+        [DataRow(9)]
+        [DataRow(10)]
+        [DataRow(12)]
         public void Validate_AsymmetricPentagons(int layers)
         {
             var mesh = new Mesh(layers, layers, MeshType.AsymmetricPentagons);
