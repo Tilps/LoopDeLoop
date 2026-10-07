@@ -29,7 +29,14 @@ namespace LoopDeLoop.Tests
                 MeshType.Hexagonal3,
                 MeshType.Octagon,
                 MeshType.Square2,
-                MeshType.Pentagon
+                MeshType.Pentagon,
+                MeshType.Kites,
+                MeshType.AsymmetricPentagons,
+                MeshType.Diamonds,
+                MeshType.DiamondSquare,
+                MeshType.PentagonHexagon,
+                MeshType.HexPentagons,
+                MeshType.Hexagonal4
             };
 
             foreach (var type in types)

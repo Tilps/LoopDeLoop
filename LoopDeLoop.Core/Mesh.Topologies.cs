@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace LoopDeLoop
 {
@@ -335,6 +336,38 @@ namespace LoopDeLoop
                 }
                 CreateCells();
             }
+            else if (type == MeshType.Kites)
+            {
+                ConstructKites(width, height);
+            }
+            else if (type == MeshType.AsymmetricPentagons)
+            {
+                ConstructAsymmetricPentagons(width);
+            }
+            else if (type == MeshType.Diamonds)
+            {
+                ConstructDiamonds(width, height);
+            }
+            else if (type == MeshType.DiamondSquare)
+            {
+                ConstructDiamondSquare(width);
+            }
+            else if (type == MeshType.PentagonHexagon)
+            {
+                ConstructPentagonHexagon(width, height);
+            }
+            else if (type == MeshType.FloretPentagons)
+            {
+                ConstructFloretPentagons(width, height);
+            }
+            else if (type == MeshType.CairoPentagons)
+            {
+                ConstructCairoPentagons(width, height);
+            }
+            else if (type == MeshType.Hexagonal4)
+            {
+                ConstructHexagonal4(width, height);
+            }
         }
 
 #region Mesh construction helpers.
@@ -522,6 +555,662 @@ namespace LoopDeLoop
                 intersections[interIndex].Edges.Add(index);
             }
 
+        }
+
+#endregion
+
+#region New Topologies (KTL-compatible)
+
+        private void NormalizeCoordinates()
+        {
+            if (intersections.Count == 0) return;
+            float minX = float.MaxValue, minY = float.MaxValue;
+            foreach (var inters in intersections)
+            {
+                if (inters.X < minX) minX = inters.X;
+                if (inters.Y < minY) minY = inters.Y;
+            }
+            foreach (var inters in intersections)
+            {
+                inters.X -= minX;
+                inters.Y -= minY;
+            }
+        }
+
+        private void ConstructKites(int width, int height)
+        {
+            ApproxPointStorage storage = new ApproxPointStorage(0.001f);
+            List<int> intersects = new List<int>();
+
+            float hexWidth = 2.0f;
+            float halfWidth = hexWidth / 2f;
+            float quarterWidth = halfWidth / 2f;
+            float sqrt3 = MathF.Sqrt(3f);
+            float rowHeight = sqrt3 * halfWidth;
+            float shortDist = rowHeight / 3f;
+            float longDist = rowHeight - shortDist;
+
+            void AddPoly(params (float X, float Y)[] pts)
+            {
+                intersects.Clear();
+                foreach (var pt in pts)
+                    AddIntersection(storage, intersects, pt.X, pt.Y);
+                AddPolyBoundry(intersects);
+            }
+
+            for (int row = 0; row < height; row++)
+            {
+                int rowWidth = (row % 2 == 1) ? width + 1 : width;
+                for (int col = 0; col < rowWidth; col++)
+                {
+                    float cx = col * hexWidth - (row % 2) * halfWidth;
+                    float cy = row * rowHeight;
+
+                    var top = (cx, cy - longDist);
+                    var bottom = (cx, cy + longDist);
+                    var topLeft = (cx - halfWidth, cy - shortDist);
+                    var topRight = (cx + halfWidth, cy - shortDist);
+                    var midLeft = (cx - halfWidth, cy);
+                    var center = (cx, cy);
+                    var midRight = (cx + halfWidth, cy);
+                    var bottomLeft = (cx - halfWidth, cy + shortDist);
+                    var bottomRight = (cx + halfWidth, cy + shortDist);
+                    var upperMidLeft = (cx - quarterWidth, cy - longDist + shortDist / 2f);
+                    var upperMidRight = (cx + quarterWidth, cy - longDist + shortDist / 2f);
+                    var lowerMidLeft = (cx - quarterWidth, cy + longDist - shortDist / 2f);
+                    var lowerMidRight = (cx + quarterWidth, cy + longDist - shortDist / 2f);
+
+                    AddPoly(upperMidLeft, top, upperMidRight, center);
+                    AddPoly(topLeft, upperMidLeft, center, midLeft);
+                    AddPoly(upperMidRight, topRight, midRight, center);
+                    AddPoly(center, lowerMidRight, bottom, lowerMidLeft);
+                    AddPoly(midLeft, center, lowerMidLeft, bottomLeft);
+                    AddPoly(midRight, bottomRight, lowerMidRight, center);
+                }
+            }
+
+            CreateCells();
+            NormalizeCoordinates();
+        }
+
+        private void ConstructDiamonds(int width, int height)
+        {
+            ApproxPointStorage storage = new ApproxPointStorage(0.001f);
+            List<int> intersects = new List<int>();
+
+            float side = 1.5f;
+            float halfSide = side / 2f;
+            float sqrt3 = MathF.Sqrt(3f);
+            float radius = sqrt3 * halfSide;
+            float colSpacing = 2f * radius;
+            float rowSpacing = 2f * side - halfSide;
+
+            void AddPoly(params (float X, float Y)[] pts)
+            {
+                intersects.Clear();
+                foreach (var pt in pts)
+                    AddIntersection(storage, intersects, pt.X, pt.Y);
+                AddPolyBoundry(intersects);
+            }
+
+            for (int row = 0; row < height; row++)
+            {
+                for (int col = 0; col < width; col++)
+                {
+                    float cx = radius + col * colSpacing + (row % 2) * radius;
+                    float cy = row * rowSpacing + side;
+
+                    var top = (cx, cy - side);
+                    var topLeft = (cx - radius, cy - halfSide);
+                    var topRight = (cx + radius, cy - halfSide);
+                    var center = (cx, cy);
+                    var bottomLeft = (cx - radius, cy + halfSide);
+                    var bottomRight = (cx + radius, cy + halfSide);
+                    var bottom = (cx, cy + side);
+
+                    AddPoly(topLeft, top, topRight, center);
+                    AddPoly(topLeft, center, bottom, bottomLeft);
+                    AddPoly(center, topRight, bottomRight, bottom);
+                }
+            }
+
+            CreateCells();
+            NormalizeCoordinates();
+        }
+
+        private void ConstructDiamondSquare(int layersCount)
+        {
+            int layers = Math.Max(1, Math.Min(10, layersCount));
+            ApproxPointStorage storage = new ApproxPointStorage(0.001f);
+            List<int> intersects = new List<int>();
+
+            float unit = 1.0f;
+            float diag = unit / MathF.Sqrt(2f);
+            float step = 2f * diag;
+
+            void AddPoly(params (float X, float Y)[] pts)
+            {
+                intersects.Clear();
+                foreach (var pt in pts)
+                    AddIntersection(storage, intersects, pt.X, pt.Y);
+                AddPolyBoundry(intersects);
+            }
+
+            (float X, float Y) Rot((float X, float Y) pt, int rot) => rot switch
+            {
+                1 => (-pt.Y, pt.X),
+                2 => (-pt.X, -pt.Y),
+                3 => (pt.Y, -pt.X),
+                _ => pt
+            };
+
+            for (int layer = 1; layer <= layers; layer++)
+            {
+                for (int rot = 0; rot < 4; rot++)
+                {
+                    float offsetDiag = (layer - 1) * diag;
+                    float offsetBase = (layer - 1) * (unit + diag);
+                    for (int c = 0; c < layer; c++)
+                    {
+                        float u = c * step - offsetDiag;
+                        float s = -offsetBase;
+
+                        var dmOrigin = Rot((u, s), rot);
+                        var dmLeft = Rot((u - diag, s - diag), rot);
+                        var dmLeftDown = Rot((u - diag, s - diag - unit), rot);
+                        var dmCenter = Rot((u, s - unit), rot);
+                        var dmRight = Rot((u + diag, s - diag), rot);
+                        var dmRightDown = Rot((u + diag, s - diag - unit), rot);
+                        var dmTip = Rot((u, s - unit - step), rot);
+
+                        AddPoly(dmOrigin, dmLeft, dmLeftDown, dmCenter);
+                        AddPoly(dmOrigin, dmCenter, dmRightDown, dmRight);
+                        AddPoly(dmLeftDown, dmCenter, dmRightDown, dmTip);
+
+                        float mx = c * unit + offsetDiag;
+                        float my = c * unit - offsetBase;
+
+                        var sqBottomLeft = Rot((mx, my), rot);
+                        var sqTopLeft = Rot((mx, my - unit), rot);
+                        var sqTopMid = Rot((mx + diag, my - unit - diag), rot);
+                        var sqRightMid = Rot((mx + diag, my - diag), rot);
+                        var sqBottomRight = Rot((mx + unit, my), rot);
+                        var sqFarRight = Rot((mx + unit + diag, my - diag), rot);
+                        var sqFarTop = Rot((mx + unit + diag, my - unit - diag), rot);
+
+                        if (c > 0)
+                            AddPoly(sqBottomLeft, sqTopLeft, sqTopMid, sqRightMid);
+                        if (c < layer - 1)
+                            AddPoly(sqBottomLeft, sqRightMid, sqFarRight, sqBottomRight);
+                        AddPoly(sqTopMid, sqFarTop, sqFarRight, sqRightMid);
+                    }
+                }
+            }
+
+            CreateCells();
+            NormalizeCoordinates();
+        }
+
+        private void ConstructFloretPentagons(int width, int height)
+        {
+            ApproxPointStorage storage = new ApproxPointStorage(0.001f);
+            List<int> intersects = new List<int>();
+
+            float side = 1.0f;
+            float halfSide = side / 2f;
+            float quarterSide = halfSide / 2f;
+            float sqrt3 = MathF.Sqrt(3f);
+            float hBit = sqrt3 * halfSide / 2f;
+            float colSpacing = 2f * side + quarterSide;
+            float rowSpacing = 5f * hBit;
+            float skewX = halfSide + quarterSide;
+            float skewY = hBit;
+
+            void AddPoly(params (float X, float Y)[] pts)
+            {
+                intersects.Clear();
+                foreach (var pt in pts)
+                    AddIntersection(storage, intersects, pt.X, pt.Y);
+                AddPolyBoundry(intersects);
+            }
+
+            for (int row = 0; row < height; row++)
+            {
+                for (int col = 0; col < width; col++)
+                {
+                    float cx = col * colSpacing + row * skewX;
+                    float cy = row * rowSpacing + col * skewY;
+
+                    var topInner = (cx - quarterSide, cy - 3 * hBit);
+                    var topOuter = (cx + quarterSide, cy - 3 * hBit);
+                    var upperLeftFar = (cx - side, cy - 2 * hBit);
+                    var upperLeftMid = (cx - halfSide, cy - 2 * hBit);
+                    var upperRightMid = (cx + halfSide, cy - 2 * hBit);
+                    var upperRightFar = (cx + side, cy - 2 * hBit);
+                    var upperLeftOuter = (cx - side - quarterSide, cy - hBit);
+                    var upperRightOuter = (cx + side + quarterSide, cy - hBit);
+                    var midLeft = (cx - side, cy);
+                    var center = (cx, cy);
+                    var midRight = (cx + side, cy);
+                    var lowerLeftOuter = (cx - side - quarterSide, cy + hBit);
+                    var lowerRightOuter = (cx + side + quarterSide, cy + hBit);
+                    var lowerLeftFar = (cx - side, cy + 2 * hBit);
+                    var lowerLeftMid = (cx - halfSide, cy + 2 * hBit);
+                    var lowerRightMid = (cx + halfSide, cy + 2 * hBit);
+                    var lowerRightFar = (cx + side, cy + 2 * hBit);
+                    var bottomInner = (cx - quarterSide, cy + 3 * hBit);
+                    var bottomOuter = (cx + quarterSide, cy + 3 * hBit);
+
+                    AddPoly(topInner, topOuter, upperRightMid, center, upperLeftMid);
+                    AddPoly(upperLeftFar, upperLeftMid, center, midLeft, upperLeftOuter);
+                    AddPoly(upperRightMid, upperRightFar, upperRightOuter, midRight, center);
+                    AddPoly(center, lowerLeftMid, lowerLeftFar, lowerLeftOuter, midLeft);
+                    AddPoly(center, midRight, lowerRightOuter, lowerRightFar, lowerRightMid);
+                    AddPoly(center, lowerRightMid, bottomOuter, bottomInner, lowerLeftMid);
+                }
+            }
+
+            CreateCells();
+            NormalizeCoordinates();
+        }
+
+        private void ConstructCairoPentagons(int width, int height)
+        {
+            ApproxPointStorage storage = new ApproxPointStorage(0.001f);
+            List<int> intersects = new List<int>();
+
+            float side = 1.0f;
+            float angle = MathF.PI / 12f;
+            float sinAngle = MathF.Sin(angle) * side;
+            float cosAngle = MathF.Cos(angle) * side;
+            float unitSize = 2f * sinAngle + 2f * cosAngle;
+
+            void AddPoly(params (float X, float Y)[] pts)
+            {
+                intersects.Clear();
+                foreach (var pt in pts)
+                    AddIntersection(storage, intersects, pt.X, pt.Y);
+                AddPolyBoundry(intersects);
+            }
+
+            for (int row = 0; row < height; row++)
+            {
+                for (int col = 0; col < width; col++)
+                {
+                    float tx = col * unitSize;
+                    float ty = row * unitSize;
+
+                    var center = (tx, ty);
+                    var topInner = (tx + sinAngle, ty - cosAngle);
+                    var rightInner = (tx + cosAngle, ty + sinAngle);
+                    var bottomInner = (tx - sinAngle, ty + cosAngle);
+                    var leftInner = (tx - cosAngle, ty - sinAngle);
+
+                    var bottomLeftCorner = (tx - sinAngle - cosAngle, ty + cosAngle + sinAngle);
+                    var bottomRightCorner = (tx + cosAngle + sinAngle, ty + sinAngle + cosAngle);
+                    var topLeftCorner = (tx - cosAngle - sinAngle, ty - sinAngle - cosAngle);
+                    var topRightCorner = (tx + sinAngle + cosAngle, ty - cosAngle - sinAngle);
+
+                    var leftMid = (tx - 2f * sinAngle - cosAngle, ty + sinAngle);
+                    var bottomMid = (tx + sinAngle, ty + 2f * sinAngle + cosAngle);
+                    var topMid = (tx - sinAngle, ty - 2f * sinAngle - cosAngle);
+                    var rightMid = (tx + 2f * sinAngle + cosAngle, ty - sinAngle);
+
+                    AddPoly(topLeftCorner, topMid, topInner, center, leftInner);
+                    AddPoly(topInner, topRightCorner, rightMid, rightInner, center);
+                    AddPoly(rightInner, bottomRightCorner, bottomMid, bottomInner, center);
+                    AddPoly(bottomInner, bottomLeftCorner, leftMid, leftInner, center);
+                }
+            }
+
+            CreateCells();
+            NormalizeCoordinates();
+        }
+
+        private void ConstructPentagonHexagon(int width, int height)
+        {
+            ApproxPointStorage storage = new ApproxPointStorage(0.001f);
+            List<int> intersects = new List<int>();
+
+            float side = 1.0f;
+            float halfSide = side / 2f;
+            float quarterSide = halfSide / 2f;
+            float sqrt3 = MathF.Sqrt(3f);
+            float hBit = sqrt3 * halfSide / 2f;
+            float colSpacing = 8f * hBit;
+            float rowSpacing = 3f * side;
+
+            void AddPoly(params (float X, float Y)[] pts)
+            {
+                intersects.Clear();
+                foreach (var pt in pts)
+                    AddIntersection(storage, intersects, pt.X, pt.Y);
+                AddPolyBoundry(intersects);
+            }
+
+            for (int row = 0; row < height; row++)
+            {
+                for (int col = 0; col < width; col++)
+                {
+                    float cx = col * colSpacing;
+                    float cy = row * rowSpacing;
+
+                    var topPeak = (cx, cy - halfSide - side);
+                    var topFarLeft = (cx - 3 * hBit, cy - 2 * halfSide - quarterSide);
+                    var topFarRight = (cx + 3 * hBit, cy - 2 * halfSide - quarterSide);
+                    var topUpperLeft = (cx - 4 * hBit, cy - 2 * halfSide);
+                    var topUpperMidLeft = (cx - 2 * hBit, cy - 2 * halfSide);
+                    var topUpperMidRight = (cx + 2 * hBit, cy - 2 * halfSide);
+                    var topUpperRight = (cx + 4 * hBit, cy - 2 * halfSide);
+                    var midUpperLeft = (cx - 2 * hBit, cy - halfSide);
+                    var midUpperCenter = (cx, cy - halfSide);
+                    var midUpperRight = (cx + 2 * hBit, cy - halfSide);
+                    var midUpperHexLeft = (cx - hBit, cy - quarterSide);
+                    var midUpperHexRight = (cx + hBit, cy - quarterSide);
+                    var midLeftEdge = (cx - 4 * hBit, cy);
+                    var midRightEdge = (cx + 4 * hBit, cy);
+                    var midLowerHexLeft = (cx - hBit, cy + quarterSide);
+                    var midLowerHexRight = (cx + hBit, cy + quarterSide);
+                    var midLowerLeft = (cx - 2 * hBit, cy + halfSide);
+                    var midLowerCenter = (cx, cy + halfSide);
+                    var midLowerRight = (cx + 2 * hBit, cy + halfSide);
+                    var bottomLowerLeft = (cx - 4 * hBit, cy + 2 * halfSide);
+                    var bottomLowerMidLeft = (cx - 2 * hBit, cy + 2 * halfSide);
+                    var bottomLowerMidRight = (cx + 2 * hBit, cy + 2 * halfSide);
+                    var bottomLowerRight = (cx + 4 * hBit, cy + 2 * halfSide);
+                    var bottomFarLeft = (cx - 3 * hBit, cy + 2 * halfSide + quarterSide);
+                    var bottomFarRight = (cx + 3 * hBit, cy + 2 * halfSide + quarterSide);
+                    var bottomPeak = (cx, cy + halfSide + side);
+
+                    AddPoly(topUpperLeft, topFarLeft, topUpperMidLeft, midUpperLeft, midLeftEdge);
+                    AddPoly(topUpperMidLeft, topPeak, midUpperCenter, midUpperHexLeft, midUpperLeft);
+                    AddPoly(topPeak, topUpperMidRight, midUpperRight, midUpperHexRight, midUpperCenter);
+                    AddPoly(topUpperMidRight, topFarRight, topUpperRight, midRightEdge, midUpperRight);
+                    AddPoly(midLeftEdge, midUpperLeft, midUpperHexLeft, midLowerHexLeft, midLowerLeft);
+                    AddPoly(midUpperHexLeft, midUpperCenter, midUpperHexRight, midLowerHexRight, midLowerCenter, midLowerHexLeft);
+                    AddPoly(midUpperHexRight, midUpperRight, midRightEdge, midLowerRight, midLowerHexRight);
+                    AddPoly(bottomLowerLeft, midLeftEdge, midLowerLeft, bottomLowerMidLeft, bottomFarLeft);
+                    AddPoly(midLowerLeft, midLowerHexLeft, midLowerCenter, bottomPeak, bottomLowerMidLeft);
+                    AddPoly(midLowerCenter, midLowerHexRight, midLowerRight, bottomLowerMidRight, bottomPeak);
+                    AddPoly(midLowerRight, midRightEdge, bottomLowerRight, bottomFarRight, bottomLowerMidRight);
+
+                    if (row < height - 1)
+                    {
+                        var linkLeft = (cx - 3 * hBit, cy + side + halfSide + quarterSide);
+                        var linkMidLeft = (cx - 2 * hBit, cy + 2 * side);
+                        var linkMidRight = (cx + 2 * hBit, cy + 2 * side);
+                        var linkRight = (cx + 3 * hBit, cy + side + halfSide + quarterSide);
+
+                        AddPoly(bottomFarLeft, bottomLowerMidLeft, bottomPeak, linkMidLeft, linkLeft);
+                        AddPoly(bottomPeak, bottomLowerMidRight, bottomFarRight, linkRight, linkMidRight);
+
+                        if (col < width - 1)
+                        {
+                            var gapUpperRight = (cx + 5 * hBit, cy + 2 * halfSide + quarterSide);
+                            var gapMidRight = (cx + 5 * hBit, cy + side + halfSide + quarterSide);
+                            var gapLowerMidRight = (cx + 4 * hBit, cy + 2 * side);
+
+                            AddPoly(bottomLowerRight, bottomFarRight, linkRight, gapLowerMidRight, gapMidRight, gapUpperRight);
+                        }
+                    }
+                }
+            }
+
+            CreateCells();
+            NormalizeCoordinates();
+        }
+
+        private void ConstructHexagonal4(int width, int height)
+        {
+            ApproxPointStorage storage = new ApproxPointStorage(0.001f);
+            List<int> intersects = new List<int>();
+
+            float side = 1.0f;
+            float halfSide = side / 2f;
+            float sqrt3 = MathF.Sqrt(3f);
+            float radius = sqrt3 * halfSide;
+            float unitWidth = 2f * side + 2f * radius;
+            float halfUnitWidth = unitWidth / 2f;
+            float colSpacing = unitWidth - side;
+            float rowSpacing = radius + side + halfSide;
+            float evenRowOffset = unitWidth - halfSide;
+
+            void AddPoly(params (float X, float Y)[] pts)
+            {
+                intersects.Clear();
+                foreach (var pt in pts)
+                    AddIntersection(storage, intersects, pt.X, pt.Y);
+                AddPolyBoundry(intersects);
+            }
+
+            for (int row = 0; row < height; row++)
+            {
+                bool isOddRow = (row % 2 == 1);
+                int rowCount = isOddRow ? width : (width - 1);
+                float rowOffset = isOddRow ? halfUnitWidth : evenRowOffset;
+
+                for (int col = 0; col < rowCount; col++)
+                {
+                    float cx = colSpacing * col + rowOffset;
+                    float cy = rowSpacing * row + halfUnitWidth;
+
+                    var topInner = (cx, cy - side);
+                    var topRightInner = (cx + radius, cy - halfSide);
+                    var bottomRightInner = (cx + radius, cy + halfSide);
+                    var bottomInner = (cx, cy + side);
+                    var bottomLeftInner = (cx - radius, cy + halfSide);
+                    var topLeftInner = (cx - radius, cy - halfSide);
+
+                    var topLeftMid = (cx - radius - halfSide, cy - halfSide - radius);
+                    var topOuterLeft = (cx - halfSide, cy - halfUnitWidth);
+                    var topOuterRight = (cx + halfSide, cy - halfUnitWidth);
+                    var topRightMid = (cx + radius + halfSide, cy - halfSide - radius);
+                    var rightOuterTop = (cx + halfUnitWidth, cy - halfSide);
+                    var rightOuterBottom = (cx + halfUnitWidth, cy + halfSide);
+                    var bottomRightMid = (cx + radius + halfSide, cy + halfSide + radius);
+                    var bottomOuterRight = (cx + halfSide, cy + halfUnitWidth);
+                    var bottomOuterLeft = (cx - halfSide, cy + halfUnitWidth);
+                    var bottomLeftMid = (cx - radius - halfSide, cy + halfSide + radius);
+                    var leftOuterBottom = (cx - halfUnitWidth, cy + halfSide);
+                    var leftOuterTop = (cx - halfUnitWidth, cy - halfSide);
+
+                    AddPoly(topInner, topRightInner, bottomRightInner, bottomInner, bottomLeftInner, topLeftInner);
+                    AddPoly(topRightInner, rightOuterTop, rightOuterBottom, bottomRightInner);
+                    AddPoly(bottomRightInner, rightOuterBottom, bottomRightMid);
+                    AddPoly(bottomRightInner, bottomRightMid, bottomOuterRight, bottomInner);
+                    AddPoly(bottomInner, bottomOuterRight, bottomOuterLeft);
+                    AddPoly(bottomInner, bottomOuterLeft, bottomLeftMid, bottomLeftInner);
+
+                    if (row == 0 || (isOddRow && col == 0))
+                    {
+                        AddPoly(topInner, topLeftInner, topLeftMid, topOuterLeft);
+                    }
+
+                    if (row == 0)
+                    {
+                        AddPoly(topOuterLeft, topOuterRight, topInner);
+                    }
+
+                    if (row == 0 || (isOddRow && col == width - 1))
+                    {
+                        AddPoly(topInner, topOuterRight, topRightMid, topRightInner);
+                        AddPoly(topRightInner, topRightMid, rightOuterTop);
+                    }
+
+                    if (col == 0)
+                    {
+                        AddPoly(bottomLeftInner, bottomLeftMid, leftOuterBottom);
+                        AddPoly(bottomLeftInner, leftOuterBottom, leftOuterTop, topLeftInner);
+                        if (row == 0 || isOddRow)
+                        {
+                            AddPoly(topLeftInner, leftOuterTop, topLeftMid);
+                        }
+                    }
+                }
+            }
+
+            CreateCells();
+            NormalizeCoordinates();
+        }
+
+        private record AsymmetricPentagonPiece((float X, float Y)[] V, float Angle);
+
+        private void ConstructAsymmetricPentagons(int layersCount)
+        {
+            int layers = Math.Max(1, Math.Min(8, layersCount));
+            ApproxPointStorage storage = new ApproxPointStorage(0.001f);
+            List<int> intersects = new List<int>();
+
+            float angle60 = MathF.PI / 3f;
+            float angle20 = angle60 / 3f;
+            float angle100 = angle60 + 2f * angle20;
+            float angle120 = angle100 + angle20;
+            float angle140 = angle120 + angle20;
+            float angle200 = 2f * angle100;
+            float angle240 = 2f * angle120;
+            float sideLen = 1.0f;
+
+            void AddPoly(params (float X, float Y)[] pts)
+            {
+                intersects.Clear();
+                foreach (var pt in pts)
+                    AddIntersection(storage, intersects, pt.X, pt.Y);
+                AddPolyBoundry(intersects);
+            }
+
+            AsymmetricPentagonPiece AddPentagon((float X, float Y) start, float angle, bool mirrored = false)
+            {
+                float a1 = mirrored ? angle + angle100 : angle + angle20;
+                float a2 = angle + angle120;
+                float a3 = mirrored ? angle + angle240 : angle + angle200;
+
+                (float X, float Y) v0 = start;
+                (float X, float Y) v1 = (v0.X + MathF.Sin(angle) * sideLen, v0.Y - MathF.Cos(angle) * sideLen);
+                (float X, float Y) v2 = (v1.X + MathF.Sin(a1) * sideLen, v1.Y - MathF.Cos(a1) * sideLen);
+                (float X, float Y) v3 = (v2.X + MathF.Sin(a2) * sideLen, v2.Y - MathF.Cos(a2) * sideLen);
+                (float X, float Y) v4 = (v3.X + MathF.Sin(a3) * sideLen, v3.Y - MathF.Cos(a3) * sideLen);
+
+                AddPoly(v0, v1, v2, v3, v4);
+                return new AsymmetricPentagonPiece(new[] { v0, v1, v2, v3, v4 }, angle);
+            }
+
+            // Layer 0: 6 pentagons meeting at center (0, 0)
+            var l0 = new AsymmetricPentagonPiece[6];
+            for (int t = 0; t < 6; t++)
+            {
+                float ang = t * angle60;
+                l0[t] = AddPentagon((0, 0), ang);
+            }
+
+            if (layers > 1)
+            {
+                var l1 = new AsymmetricPentagonPiece[6];
+                for (int t = 0; t < 6; t++)
+                {
+                    l1[t] = AddPentagon(l0[t].V[4], l0[t].Angle + angle20);
+                }
+
+                if (layers > 2)
+                {
+                    var l2 = new AsymmetricPentagonPiece[6];
+                    for (int t = 0; t < 6; t++)
+                    {
+                        l2[t] = AddPentagon(l1[t].V[3], l1[t].Angle + angle140);
+                    }
+
+                    if (layers > 3)
+                    {
+                        var l3 = new AsymmetricPentagonPiece[6][];
+                        for (int t = 0; t < 6; t++)
+                        {
+                            l3[t] = new AsymmetricPentagonPiece[3];
+                            var fObj = AddPentagon(l1[t].V[2], l1[t].Angle + angle60);
+                            var cObj = AddPentagon(fObj.V[4], fObj.Angle + angle20);
+                            var lastObj = AddPentagon(cObj.V[4], cObj.Angle + angle20);
+                            l3[t][0] = fObj;
+                            l3[t][1] = cObj;
+                            l3[t][2] = lastObj;
+                        }
+
+                        if (layers > 4)
+                        {
+                            var l4 = new AsymmetricPentagonPiece[6][];
+                            for (int t = 0; t < 6; t++)
+                            {
+                                l4[t] = new AsymmetricPentagonPiece[3];
+                                var rObj = l3[t][0];
+                                var oObj = l3[t][1];
+                                var iObj = l3[t][2];
+
+                                float uAng = rObj.Angle - angle60;
+                                l4[t][0] = AddPentagon(rObj.V[3], uAng, mirrored: true);
+                                l4[t][1] = AddPentagon(oObj.V[3], uAng + angle20, mirrored: true);
+                                l4[t][2] = AddPentagon(iObj.V[3], uAng + 2f * angle20, mirrored: true);
+                            }
+
+                            if (layers > 5)
+                            {
+                                var l5 = new AsymmetricPentagonPiece[6][][];
+                                for (int t = 0; t < 6; t++)
+                                {
+                                    l5[t] = new AsymmetricPentagonPiece[3][];
+                                    for (int rIdx = 0; rIdx < 3; rIdx++)
+                                    {
+                                        l5[t][rIdx] = new AsymmetricPentagonPiece[2];
+                                        var oObj = l4[t][rIdx];
+                                        float fCur = oObj.Angle + angle60;
+
+                                        l5[t][rIdx][0] = AddPentagon(oObj.V[2], fCur);
+                                        l5[t][rIdx][1] = AddPentagon(oObj.V[4], fCur);
+                                    }
+                                }
+
+                                if (layers > 6)
+                                {
+                                    var l6 = new AsymmetricPentagonPiece[6][][];
+                                    for (int t = 0; t < 6; t++)
+                                    {
+                                        l6[t] = new AsymmetricPentagonPiece[3][];
+                                        for (int nIdx = 0; nIdx < 3; nIdx++)
+                                        {
+                                            l6[t][nIdx] = new AsymmetricPentagonPiece[2];
+                                            var eObj = l5[t][nIdx][0];
+                                            var fObj = l5[t][nIdx][1];
+                                            float oCur = eObj.Angle - angle60;
+
+                                            l6[t][nIdx][0] = AddPentagon(eObj.V[3], oCur, mirrored: true);
+                                            l6[t][nIdx][1] = AddPentagon(fObj.V[3], oCur, mirrored: true);
+                                        }
+                                    }
+
+                                    if (layers > 7)
+                                    {
+                                        var l7 = new AsymmetricPentagonPiece[6][][];
+                                        for (int t = 0; t < 6; t++)
+                                        {
+                                            l7[t] = new AsymmetricPentagonPiece[3][];
+                                            for (int nIdx = 0; nIdx < 3; nIdx++)
+                                            {
+                                                l7[t][nIdx] = new AsymmetricPentagonPiece[3];
+                                                var eObj = l6[t][nIdx][0];
+                                                var rObj = l6[t][nIdx][1];
+                                                float cCur = eObj.Angle + angle60;
+
+                                                l7[t][nIdx][0] = AddPentagon(eObj.V[2], cCur);
+                                                l7[t][nIdx][1] = AddPentagon(eObj.V[4], cCur);
+                                                l7[t][nIdx][2] = AddPentagon(rObj.V[4], cCur);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            CreateCells();
+            NormalizeCoordinates();
         }
 
 #endregion

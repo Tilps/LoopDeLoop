@@ -248,90 +248,12 @@ namespace LoopDeLoop
 
         public static bool ParseSize(string val, MeshType type, out int width, out int height)
         {
-            val = val.Trim();
-            width = 10;
-            height = 10;
-            if (val.Length == 0)
-            {
-                if (type == MeshType.Octagon)
-                {
-                    width = 5;
-                    height = 5;
-                }
-                else if (type == MeshType.Square2)
-                {
-                    width = 5;
-                    height = 5;
-                }
-                else if (type == MeshType.Hexagonal)
-                {
-                    width = 5;
-                    height = 10;
-                }
-                else if (type == MeshType.Hexagonal2)
-                {
-                    width = 6;
-                    height = 6;
-                }
-                else if (type == MeshType.Hexagonal3)
-                {
-                    width = 4;
-                    height = 4;
-                }
-                else if (type == MeshType.Triangle)
-                {
-                    width = 6;
-                    height = 6;
-                }
-                else if (type == MeshType.Pentagon)
-                {
-                    width = 6;
-                    height = 6;
-                }
-               return true;
-            }
-            string[] bits = val.Split('x');
-            if (bits.Length == 2)
-            {
-                if (!int.TryParse(bits[0], out width))
-                    return false;
-                if (!int.TryParse(bits[1], out height))
-                    return false;
-                return true;
-            }
-            else if (bits.Length == 1)
-            {
-                if (!int.TryParse(bits[0], out width))
-                    return false;
-                height = width;
-                return true;
-            }
-            return false;
-
+            return PuzzleHelper.ParseSize(val, type, out width, out height);
         }
 
         public static MeshType MeshTypeFromString(string typeName)
         {
-            MeshType type = MeshType.Square;
-            if (typeName == "Square")
-                type = MeshType.Square;
-            else if (typeName == "Square Symmetrical")
-                type = MeshType.SquareSymmetrical;
-            else if (typeName == "Triangle")
-                type = MeshType.Triangle;
-            else if (typeName == "Hexagon")
-                type = MeshType.Hexagonal;
-            else if (typeName == "Hexagon2")
-                type = MeshType.Hexagonal2;
-            else if (typeName == "Hexagon3")
-                type = MeshType.Hexagonal3;
-            else if (typeName == "Octagon")
-                type = MeshType.Octagon;
-            else if (typeName == "Square2")
-                type = MeshType.Square2;
-            else if (typeName == "Pentagon")
-                type = MeshType.Pentagon;
-            return type;
+            return PuzzleHelper.MeshTypeFromString(typeName);
         }
 
         internal static string StringFromMeshType(MeshType value)
@@ -356,6 +278,22 @@ namespace LoopDeLoop
                     return "Square2";
                 case MeshType.Pentagon:
                     return "Pentagon";
+                case MeshType.Kites:
+                    return "Kites";
+                case MeshType.AsymmetricPentagons:
+                    return "Asymmetric Pentagons";
+                case MeshType.Diamonds:
+                    return "Diamonds";
+                case MeshType.DiamondSquare:
+                    return "Diamond-Square";
+                case MeshType.PentagonHexagon:
+                    return "Pentagon-Hexagon";
+                case MeshType.FloretPentagons:
+                    return "Floret Pentagons";
+                case MeshType.CairoPentagons:
+                    return "Cairo Pentagons";
+                case MeshType.Hexagonal4:
+                    return "Hexagon 4";
             }
             return "Square";
 

@@ -41,6 +41,9 @@ namespace LoopDeLoop
             {
                 case MeshType.Octagon:
                 case MeshType.Square2:
+                case MeshType.FloretPentagons:
+                case MeshType.CairoPentagons:
+                case MeshType.Kites:
                     width = 5;
                     height = 5;
                     break;
@@ -51,10 +54,15 @@ namespace LoopDeLoop
                 case MeshType.Hexagonal2:
                 case MeshType.Triangle:
                 case MeshType.Pentagon:
+                case MeshType.Diamonds:
+                case MeshType.AsymmetricPentagons:
                     width = 6;
                     height = 6;
                     break;
                 case MeshType.Hexagonal3:
+                case MeshType.Hexagonal4:
+                case MeshType.PentagonHexagon:
+                case MeshType.DiamondSquare:
                     width = 4;
                     height = 4;
                     break;
@@ -105,6 +113,14 @@ namespace LoopDeLoop
                 "Octagon" => MeshType.Octagon,
                 "Square2" => MeshType.Square2,
                 "Pentagon" => MeshType.Pentagon,
+                "Kites" => MeshType.Kites,
+                "Asymmetric Pentagons" or "AsymmetricPentagons" => MeshType.AsymmetricPentagons,
+                "Diamonds" => MeshType.Diamonds,
+                "Diamond-Square" or "DiamondSquare" => MeshType.DiamondSquare,
+                "Pentagon-Hexagon" or "PentagonHexagon" => MeshType.PentagonHexagon,
+                "Floret Pentagons" or "FloretPentagons" or "Hex-Pentagons" or "HexPentagons" => MeshType.FloretPentagons,
+                "Cairo Pentagons" or "CairoPentagons" => MeshType.CairoPentagons,
+                "Hexagon 4" or "Hexagon4" or "Hexagonal4" => MeshType.Hexagonal4,
                 _ => Enum.TryParse<MeshType>(typeName, out var result) ? result : MeshType.Square
             };
         }

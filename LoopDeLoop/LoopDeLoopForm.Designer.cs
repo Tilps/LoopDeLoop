@@ -275,7 +275,15 @@ namespace LoopDeLoop
             "Hexagon2",
             "Square2",
             "Pentagon",
-            "Hexagon3"});
+            "Hexagon3",
+            "Kites",
+            "Asymmetric Pentagons",
+            "Diamonds",
+            "Diamond-Square",
+            "Pentagon-Hexagon",
+            "Floret Pentagons",
+            "Cairo Pentagons",
+            "Hexagon 4"});
             this.comboMeshType.Location = new System.Drawing.Point(12, 29);
             this.comboMeshType.Name = "comboMeshType";
             this.comboMeshType.Size = new System.Drawing.Size(92, 21);

@@ -146,67 +146,64 @@ namespace LoopDeLoop
         Pentagon,
         Hexagonal3,
         SquareSymmetrical,
+        Kites,
+        AsymmetricPentagons,
+        Diamonds,
+        DiamondSquare,
+        PentagonHexagon,
+        FloretPentagons,
+        Hexagonal4,
+        CairoPentagons,
+        HexPentagons = FloretPentagons,
     }
 
 #region ApproxPointStorage class to help with constructing grids.
+    /// <summary>
+    /// Spatial grid bucketing for approximate point lookup.
+    /// Recommended usage: choose epsilon to be roughly 1/10th (or smaller) of the smallest distance
+    /// between any two distinct points in the mesh (typically distinct points are >100x epsilon apart).
+    /// Cell size is set to 2 * epsilon. Under standard usage, each bucket contains at most 1 point.
+    /// </summary>
     public class ApproxPointStorage
     {
+        private readonly float eps;
+        private readonly float cellSize;
+        private readonly Dictionary<(long, long), List<(float X, float Y, int Index)>> buckets = new();
+
         public ApproxPointStorage(float eps)
         {
-            comparer = new EpsComparer(eps);
-            lookup = new SortedDictionary<Point, int>(comparer);
+            this.eps = eps;
+            this.cellSize = eps * 2f;
         }
-        EpsComparer comparer;
-
-        SortedDictionary<Point, int> lookup;
 
         public int Add(float x, float y, int newIndex)
         {
-            Point p = new Point(x, y);
-            if (lookup.ContainsKey(p))
-                return lookup[p];
-            else
-                lookup.Add(p, newIndex);
-            return newIndex;
-        }
+            long bx = (long)MathF.Floor(x / cellSize);
+            long by = (long)MathF.Floor(y / cellSize);
 
-        class Point
-        {
-            public Point(float x, float y)
+            for (long dx = -1; dx <= 1; dx++)
             {
-                X = x;
-                Y = y;
-            }
-            public float X;
-            public float Y;
-        }
-
-        class EpsComparer : IComparer<Point>
-        {
-            public EpsComparer(float eps)
-            {
-                this.eps = eps;
-            }
-            float eps;
-#region IComparer<float> Members
-
-            public int Compare(Point? a, Point? b)
-            {
-                if (ReferenceEquals(a, b)) return 0;
-                if (a == null) return -1;
-                if (b == null) return 1;
-                if (Math.Abs(a.X - b.X) < eps)
+                for (long dy = -1; dy <= 1; dy++)
                 {
-                    if (Math.Abs(a.Y - b.Y) < eps)
-                        return 0;
-                    else
-                        return a.Y.CompareTo(b.Y);
+                    if (buckets.TryGetValue((bx + dx, by + dy), out var list))
+                    {
+                        foreach (var pt in list)
+                        {
+                            if (MathF.Abs(pt.X - x) <= eps && MathF.Abs(pt.Y - y) <= eps)
+                                return pt.Index;
+                        }
+                    }
                 }
-                else
-                    return a.X.CompareTo(b.X);
             }
 
-#endregion
+            if (!buckets.TryGetValue((bx, by), out var cellList))
+            {
+                cellList = new List<(float X, float Y, int Index)>();
+                buckets[(bx, by)] = cellList;
+            }
+            System.Diagnostics.Debug.Assert(cellList.Count == 0, "Bucket already contains an entry; points may be unexpectedly close or epsilon is too large.");
+            cellList.Add((x, y, newIndex));
+            return newIndex;
         }
     }
 #endregion

@@ -17,6 +17,14 @@ namespace LoopDeLoop
             MeshType.Octagon => "oct",
             MeshType.Square2 => "sq2",
             MeshType.Pentagon => "pen",
+            MeshType.Kites => "kt",
+            MeshType.AsymmetricPentagons => "asypen",
+            MeshType.Diamonds => "dia",
+            MeshType.DiamondSquare => "diasq",
+            MeshType.PentagonHexagon => "penhex",
+            MeshType.FloretPentagons => "floret",
+            MeshType.CairoPentagons => "cairo",
+            MeshType.Hexagonal4 => "hex4",
             _ => "sq"
         };
 
@@ -31,6 +39,14 @@ namespace LoopDeLoop
             "oct" or "octagon" => MeshType.Octagon,
             "sq2" or "square2" => MeshType.Square2,
             "pen" or "pentagon" => MeshType.Pentagon,
+            "kt" or "kites" => MeshType.Kites,
+            "asypen" or "asymmetricpentagons" => MeshType.AsymmetricPentagons,
+            "dia" or "diamonds" => MeshType.Diamonds,
+            "diasq" or "diamondsquare" => MeshType.DiamondSquare,
+            "penhex" or "pentagonhexagon" => MeshType.PentagonHexagon,
+            "floret" or "floretpentagons" or "hexpen" or "hexpentagons" => MeshType.FloretPentagons,
+            "cairo" or "cairopentagons" => MeshType.CairoPentagons,
+            "hex4" or "hexagonal4" => MeshType.Hexagonal4,
             _ => MeshType.Square
         };
 
