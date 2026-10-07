@@ -125,6 +125,21 @@
                         <span>New Puzzle</span>
                     }
                 </button>
+                <button class="btn btn-secondary" @onclick="PromptResetPuzzle" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Clear all moves and restart timer">
+                    Reset
+                </button>
+            </div>
+
+            <div class="controls-group">
+                <button class="btn btn-secondary" @onclick="RequestHint" disabled="@(Game.CurrentMesh == null || Game.IsGenerating || Game.IsSolved)" title="Highlight next logical deduction (Ctrl+H)">
+                    💡 Hint
+                </button>
+                <button class="btn btn-secondary" @onclick="RequestDoHint" disabled="@(Game.CurrentMesh == null || Game.IsGenerating || Game.IsSolved)" title="Apply next logical deduction (Ctrl+Shift+H)">
+                    ⚡ Do Hint
+                </button>
+                <button class="btn btn-danger-outline" @onclick="PromptSolve" disabled="@(Game.CurrentMesh == null || Game.IsGenerating || Game.IsSolved)" title="Give up and reveal solution">
+                    🏳️ Solve
+                </button>
             </div>
 
             <div class="controls-group">
@@ -351,6 +366,52 @@
                         <circle cx="@(inters.X * S)" cy="@(inters.Y * S)" r="@vertexRadius" class="vertex-dot" style="pointer-events: none;" />
                     }
                 </g>
+
+                <!-- Layer 6: Dynamic Edge Highlights (Invalid move red flash & Hint glow) -->
+                <g class="highlights-layer" style="pointer-events: none;">
+                    @if (Game.InvalidEdgeIndex.HasValue && Game.InvalidEdgeIndex.Value >= 0 && Game.InvalidEdgeIndex.Value < mesh.Edges.Count)
+                    {
+                        var invEdge = mesh.Edges[Game.InvalidEdgeIndex.Value];
+                        mesh.GetEdgeExtent(invEdge, out float rx1, out float ry1, out float rx2, out float ry2);
+                        <line x1="@(rx1 * S)" y1="@(ry1 * S)" x2="@(rx2 * S)" y2="@(ry2 * S)"
+                              class="edge-invalid-highlight"
+                              style="pointer-events: none;" />
+                    }
+                    @if (Game.HintEdgeIndex.HasValue && Game.HintEdgeIndex.Value >= 0 && Game.HintEdgeIndex.Value < mesh.Edges.Count)
+                    {
+                        var hintEdge = mesh.Edges[Game.HintEdgeIndex.Value];
+                        mesh.GetEdgeExtent(hintEdge, out float hx1, out float hy1, out float hx2, out float hy2);
+                        float hsx1 = hx1 * S, hsy1 = hy1 * S, hsx2 = hx2 * S, hsy2 = hy2 * S;
+                        if (!Game.HintIsApplied)
+                        {
+                            <line x1="@hsx1" y1="@hsy1" x2="@hsx2" y2="@hsy2"
+                                  class="edge-hint-neutral"
+                                  style="pointer-events: none;" />
+                        }
+                        else if (Game.HintTargetState == EdgeState.Excluded)
+                        {
+                            float hmx = (hsx1 + hsx2) / 2.0f, hmy = (hsy1 + hsy2) / 2.0f;
+                            float hdx = hsx2 - hsx1, hdy = hsy2 - hsy1;
+                            float hlen = MathF.Sqrt(hdx * hdx + hdy * hdy);
+                            if (hlen < 1e-4f) hlen = 1.0f;
+                            float hux = hdx / hlen, huy = hdy / hlen;
+                            float hvx = -huy, hvy = hux;
+                            float hr = 6.0f;
+                            float ho1x = hr * (hux + hvx), ho1y = hr * (huy + hvy);
+                            float ho2x = hr * (hux - hvx), ho2y = hr * (huy - hvy);
+                            <line x1="@(hmx - ho1x)" y1="@(hmy - ho1y)" x2="@(hmx + ho1x)" y2="@(hmy + ho1y)"
+                                  class="edge-hint-cross" style="pointer-events: none;" />
+                            <line x1="@(hmx - ho2x)" y1="@(hmy - ho2y)" x2="@(hmx + ho2x)" y2="@(hmy + ho2y)"
+                                  class="edge-hint-cross" style="pointer-events: none;" />
+                        }
+                        else
+                        {
+                            <line x1="@hsx1" y1="@hsy1" x2="@hsx2" y2="@hsy2"
+                                  class="edge-hint-highlight"
+                                  style="pointer-events: none;" />
+                        }
+                    }
+                </g>
             </svg>
 
             <!-- Floating Pan & Zoom Controls -->
@@ -370,7 +431,9 @@
             <span class="shortcut-badge">Ctrl+Y</span> Redo &bull;
             <span class="shortcut-badge">Ctrl+F</span> Fix &bull;
             <span class="shortcut-badge">Ctrl+U</span> Unfix &bull;
-            <span class="shortcut-badge">Ctrl+R</span> Revert
+            <span class="shortcut-badge">Ctrl+R</span> Revert &bull;
+            <span class="shortcut-badge">Ctrl+H</span> Hint &bull;
+            <span class="shortcut-badge">Ctrl+Shift+H</span> Do Hint
         </div>
         <div>
             Left-Click / Drag: Draw line &bull; Right-Click / Drag: Mark X &bull; Shift: Reverse cycle &bull; Fixed edges locked &bull; Two fingers / Wheel: Pan & Zoom
@@ -382,6 +445,17 @@
 {
     <div class="toast-notification">
         Link copied to clipboard!
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(Game.HintMessage))
+{
+    <div class="hint-toast-notification">
+        <div class="hint-toast-content">
+            <span class="hint-toast-icon">💡</span>
+            <span class="hint-toast-text">@Game.HintMessage</span>
+        </div>
+        <button class="hint-toast-close" @onclick="Game.ClearHint" title="Dismiss hint">✕</button>
     </div>
 }
 
@@ -430,6 +504,10 @@
                     <li><strong>Fix (Ctrl+F)</strong>: Save a checkpoint (current moves turn green and become locked against changes).</li>
                     <li><strong>Unfix (Ctrl+U)</strong>: Clear checkpoint and unlock fixed edges.</li>
                     <li><strong>Revert (Ctrl+R)</strong>: Rollback all moves made after your last checkpoint.</li>
+                    <li><strong>Hint (Ctrl+H)</strong>: Highlight the next logical deduction with an explanatory hint.</li>
+                    <li><strong>Do Hint (Ctrl+Shift+H)</strong>: Automatically apply the next logical deduction.</li>
+                    <li><strong>Reset Board</strong>: Clear all player moves and restart the timer (in Options menu).</li>
+                    <li><strong>Solve</strong>: Surrender and reveal the complete loop solution (in Options menu).</li>
                 </ul>
             </div>
             <div class="modal-actions">
@@ -439,12 +517,49 @@
     </div>
 }
 
+<!-- Solve Confirmation Modal -->
+@if (showSolveModal)
+{
+    <div class="modal-backdrop" @onclick="() => showSolveModal = false">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <h2 class="modal-title">Give up and reveal solution?</h2>
+            <div class="modal-body">
+                <p>Are you sure you want to reveal the solution? This will complete the loop automatically.</p>
+                <p class="modal-subtext">You will still be able to undo or review the solution.</p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" @onclick="() => showSolveModal = false">Cancel</button>
+                <button class="btn btn-danger" @onclick="ConfirmSolve">Reveal Solution</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Reset Confirmation Modal -->
+@if (showResetModal)
+{
+    <div class="modal-backdrop" @onclick="() => showResetModal = false">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <h2 class="modal-title">Reset Board?</h2>
+            <div class="modal-body">
+                <p>Are you sure you want to clear the board? All drawn lines will be erased and the timer will restart.</p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" @onclick="() => showResetModal = false">Cancel</button>
+                <button class="btn btn-danger" @onclick="ConfirmReset">Reset Board</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private const float S = 50.0f; // Scale factor: 50 pixels per grid unit
 
     private string selectedType = "Square";
-    private bool showVictoryModal = true;
+    private bool showVictoryModal = false;
     private bool showHelpModal = false;
+    private bool showSolveModal = false;
+    private bool showResetModal = false;
     private bool isDarkMode = false;
     private bool showShareToast = false;
     private bool isMenuOpen = false;
@@ -639,7 +754,10 @@
     {
         if (Game.IsSolved && !lastSolvedState)
         {
-            showVictoryModal = true;
+            if (!Game.WasAutoSolved)
+            {
+                showVictoryModal = true;
+            }
         }
         lastSolvedState = Game.IsSolved;
 
@@ -668,6 +786,53 @@
     {
         isMenuOpen = false;
         await GeneratePuzzle();
+    }
+
+    private void PromptResetPuzzle()
+    {
+        if (Game.CurrentMesh == null || Game.IsGenerating) return;
+        if (Game.CanUndo || Game.MarkedEdges.Count > 0)
+        {
+            showResetModal = true;
+        }
+        else
+        {
+            ConfirmReset();
+        }
+    }
+
+    private void ConfirmReset()
+    {
+        showResetModal = false;
+        isMenuOpen = false;
+        showVictoryModal = false;
+        lastSolvedState = false;
+        Game.ResetCurrentPuzzle();
+    }
+
+    private void PromptSolve()
+    {
+        if (Game.CurrentMesh == null || Game.IsGenerating || Game.IsSolved) return;
+        showSolveModal = true;
+    }
+
+    private void ConfirmSolve()
+    {
+        showSolveModal = false;
+        isMenuOpen = false;
+        Game.SolvePuzzle();
+    }
+
+    private void RequestHint()
+    {
+        if (Game.CurrentMesh == null || Game.IsGenerating || Game.IsSolved) return;
+        Game.RequestHint(applyMove: false);
+    }
+
+    private void RequestDoHint()
+    {
+        if (Game.CurrentMesh == null || Game.IsGenerating || Game.IsSolved) return;
+        Game.RequestHint(applyMove: true);
     }
 
     private async Task GeneratePuzzle()
@@ -958,6 +1123,8 @@
             case "fix": Game.Fix(); break;
             case "unfix": Game.Unfix(); break;
             case "revert": Game.RevertToFix(); break;
+            case "hint": RequestHint(); break;
+            case "dohint": RequestDoHint(); break;
         }
     }
 

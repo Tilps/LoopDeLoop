@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LoopDeLoop.Core\LoopDeLoop.Core.csproj" />
+    <ProjectReference Include="..\LoopDeLoop.Web\LoopDeLoop.Web.csproj" />
   </ItemGroup>
 
 </Project>

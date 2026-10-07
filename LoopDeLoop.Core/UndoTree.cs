@@ -100,6 +100,8 @@ namespace LoopDeLoop
             }
         }
 
+        public IAction? CurrentAction => current.Action;
+
         public bool Undo()
         {
             if (current.Action == null || current.Parent == null)

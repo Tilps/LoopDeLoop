@@ -270,5 +270,67 @@ namespace LoopDeLoop
             return other is PuzzleSetEdgeStateAction o && o.mesh == mesh && o.edgeIndex == edgeIndex && o.targetState == targetState && o.disallowFalseMove == disallowFalseMove;
         }
     }
+
+    public class PuzzleBatchSolveAction : IAction
+    {
+        private readonly Mesh mesh;
+        private readonly EdgeState[] oldStates;
+        private readonly int[] oldCellColors;
+        private readonly EdgeState[] newStates;
+
+        public PuzzleBatchSolveAction(Mesh mesh, Mesh solvedMesh)
+        {
+            this.mesh = mesh;
+
+            oldStates = new EdgeState[mesh.Edges.Count];
+            for (int i = 0; i < mesh.Edges.Count; i++)
+            {
+                oldStates[i] = mesh.Edges[i].State;
+            }
+
+            oldCellColors = new int[mesh.Cells.Count];
+            for (int i = 0; i < mesh.Cells.Count; i++)
+            {
+                oldCellColors[i] = mesh.Cells[i].Color;
+            }
+
+            newStates = new EdgeState[mesh.Edges.Count];
+            for (int i = 0; i < mesh.Edges.Count; i++)
+            {
+                newStates[i] = solvedMesh.Edges[i].State;
+            }
+        }
+
+        public bool Successful => true;
+        public string Name => "Solve Puzzle";
+
+        public bool Perform()
+        {
+            for (int i = 0; i < mesh.Edges.Count; i++)
+            {
+                mesh.Edges[i].State = newStates[i];
+            }
+            PuzzleHelper.RecalculateCounts(mesh);
+            return true;
+        }
+
+        public void Unperform()
+        {
+            for (int i = 0; i < mesh.Edges.Count; i++)
+            {
+                mesh.Edges[i].State = oldStates[i];
+            }
+            for (int i = 0; i < mesh.Cells.Count; i++)
+            {
+                mesh.Cells[i].Color = oldCellColors[i];
+            }
+            PuzzleHelper.RecalculateCounts(mesh);
+        }
+
+        public bool Equals(IAction? other)
+        {
+            return other is PuzzleBatchSolveAction o && o.mesh == mesh;
+        }
+    }
 }
 

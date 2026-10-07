@@ -136,6 +136,13 @@
                 } else if (e.ctrlKey && (e.key === 'r' || e.key === 'R')) {
                     e.preventDefault();
                     dotNetRef.invokeMethodAsync('OnShortcut', 'revert');
+                } else if (e.ctrlKey && (e.key === 'h' || e.key === 'H')) {
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        dotNetRef.invokeMethodAsync('OnShortcut', 'dohint');
+                    } else {
+                        dotNetRef.invokeMethodAsync('OnShortcut', 'hint');
+                    }
                 }
             });
         };

@@ -209,6 +209,39 @@ namespace LoopDeLoop
 
             return visitedEdges.Count == filledEdgeCount;
         }
+
+        public static void RecalculateCounts(Mesh mesh)
+        {
+            for (int i = 0; i < mesh.Cells.Count; i++)
+            {
+                var cell = mesh.Cells[i];
+                int filled = 0;
+                int excluded = 0;
+                for (int e = 0; e < cell.Edges.Count; e++)
+                {
+                    var st = mesh.Edges[cell.Edges[e]].State;
+                    if (st == EdgeState.Filled) filled++;
+                    else if (st == EdgeState.Excluded) excluded++;
+                }
+                cell.FilledCount = filled;
+                cell.ExcludedCount = excluded;
+            }
+
+            for (int i = 0; i < mesh.Intersections.Count; i++)
+            {
+                var inter = mesh.Intersections[i];
+                int filled = 0;
+                int excluded = 0;
+                for (int e = 0; e < inter.Edges.Count; e++)
+                {
+                    var st = mesh.Edges[inter.Edges[e]].State;
+                    if (st == EdgeState.Filled) filled++;
+                    else if (st == EdgeState.Excluded) excluded++;
+                }
+                inter.FilledCount = filled;
+                inter.ExcludedCount = excluded;
+            }
+        }
     }
 }
 
