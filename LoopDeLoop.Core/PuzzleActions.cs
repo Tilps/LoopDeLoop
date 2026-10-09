@@ -274,26 +274,12 @@ namespace LoopDeLoop
     public class PuzzleBatchSolveAction : IAction
     {
         private readonly Mesh mesh;
-        private readonly EdgeState[] oldStates;
-        private readonly int[] oldCellColors;
         private readonly EdgeState[] newStates;
+        private readonly List<IAction> performed = new List<IAction>();
 
         public PuzzleBatchSolveAction(Mesh mesh, Mesh solvedMesh)
         {
             this.mesh = mesh;
-
-            oldStates = new EdgeState[mesh.Edges.Count];
-            for (int i = 0; i < mesh.Edges.Count; i++)
-            {
-                oldStates[i] = mesh.Edges[i].State;
-            }
-
-            oldCellColors = new int[mesh.Cells.Count];
-            for (int i = 0; i < mesh.Cells.Count; i++)
-            {
-                oldCellColors[i] = mesh.Cells[i].Color;
-            }
-
             newStates = new EdgeState[mesh.Edges.Count];
             for (int i = 0; i < mesh.Edges.Count; i++)
             {
@@ -306,25 +292,36 @@ namespace LoopDeLoop
 
         public bool Perform()
         {
+            performed.Clear();
+            // Use the regular actions so all internal bookkeeping stays consistent.
             for (int i = 0; i < mesh.Edges.Count; i++)
             {
-                mesh.Edges[i].State = newStates[i];
+                if (mesh.Edges[i].State != EdgeState.Empty)
+                {
+                    var unset = new UnsetAction(mesh, i);
+                    unset.Perform();
+                    performed.Add(unset);
+                }
             }
-            PuzzleHelper.RecalculateCounts(mesh);
+            for (int i = 0; i < mesh.Edges.Count; i++)
+            {
+                if (newStates[i] != EdgeState.Empty)
+                {
+                    var set = new SetAction(mesh, i, newStates[i]);
+                    set.Perform();
+                    performed.Add(set);
+                }
+            }
             return true;
         }
 
         public void Unperform()
         {
-            for (int i = 0; i < mesh.Edges.Count; i++)
+            for (int i = performed.Count - 1; i >= 0; i--)
             {
-                mesh.Edges[i].State = oldStates[i];
+                performed[i].Unperform();
             }
-            for (int i = 0; i < mesh.Cells.Count; i++)
-            {
-                mesh.Cells[i].Color = oldCellColors[i];
-            }
-            PuzzleHelper.RecalculateCounts(mesh);
+            performed.Clear();
         }
 
         public bool Equals(IAction? other)

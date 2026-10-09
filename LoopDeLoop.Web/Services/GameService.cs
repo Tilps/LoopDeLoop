@@ -359,11 +359,13 @@ namespace LoopDeLoop.Web.Services
 
             if (state.EdgeStates != null && state.EdgeStates.Length == mesh.Edges.Count)
             {
+                mesh.Clear();
                 for (int i = 0; i < state.EdgeStates.Length; i++)
                 {
-                    mesh.Edges[i].State = (EdgeState)state.EdgeStates[i];
+                    var st = (EdgeState)state.EdgeStates[i];
+                    if (st != EdgeState.Empty)
+                        new SetAction(mesh, i, st).Perform();
                 }
-                PuzzleHelper.RecalculateCounts(mesh);
             }
 
             if (state.CellColors != null && state.CellColors.Length == mesh.Cells.Count)

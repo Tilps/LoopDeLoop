@@ -137,5 +137,49 @@ namespace LoopDeLoop.Tests
                 "DoHint must apply the deduction to CurrentMesh");
             Assert.IsTrue(game.CanUndo, "DoHint must be recorded in undo history");
         }
+        [TestMethod]
+        public void RestoreState_KeepsCountersConsistent_ForRestrictInvalidAndSolveDetection()
+        {
+            var game = new GameService();
+            var mesh = new Mesh(2, 2, MeshType.Square);
+            for (int i = 0; i < 4; i++) mesh.SetClue(i, 2);
+            game.LoadPuzzleText(PuzzleCodec.Encode(mesh, 2, 2));
+            Assert.IsTrue(game.SolvePuzzle());
+            var saved = game.ExportState()!;
+            game.Undo();
+
+            // Partially filled state: restore a state with one edge filled
+            var partial = game.ExportState()!;
+            partial.EdgeStates = (int[])saved.EdgeStates!.Clone();
+            bool first = true;
+            for (int i = 0; i < partial.EdgeStates.Length; i++)
+            {
+                if (partial.EdgeStates[i] == (int)EdgeState.Filled)
+                {
+                    if (first) { first = false; continue; }
+                    partial.EdgeStates[i] = (int)EdgeState.Empty;
+                }
+            }
+            partial.IsSolved = false;
+            partial.MarkedEdges = Array.Empty<int>();
+
+            var game2 = new GameService();
+            Assert.IsTrue(game2.RestoreState(partial));
+            game2.DisallowFalseMove = true;
+            foreach (var c in game2.CurrentMesh!.Cells)
+            {
+                int filled = c.Edges.Count(e => game2.CurrentMesh.Edges[e].State == EdgeState.Filled);
+                Assert.AreEqual(filled, c.FilledCount, "Cell counters must match edges after restore");
+            }
+
+            // Completing the remaining solution edges one by one must be allowed and detected as solved
+            for (int i = 0; i < saved.EdgeStates!.Length; i++)
+            {
+                if (saved.EdgeStates[i] == (int)EdgeState.Filled && game2.CurrentMesh.Edges[i].State == EdgeState.Empty)
+                    game2.SetEdgeDirect(i, EdgeState.Filled);
+            }
+            Assert.IsNull(game2.InvalidEdgeIndex, "Valid moves must not be rejected after restore");
+            Assert.IsTrue(game2.IsSolved, "Completed solution must be recognised after restore");
+        }
     }
 }
