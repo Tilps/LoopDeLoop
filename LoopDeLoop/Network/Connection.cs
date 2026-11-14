@@ -4,6 +4,7 @@ using System.Text;
 using System.Net;
 using System.Net.Sockets;
 using System.IO;
+using System.Security.Cryptography;
 using System.Threading;
 
 namespace LoopDeLoop.Network
@@ -457,7 +458,7 @@ namespace LoopDeLoop.Network
             byte[] decrypt;
             lock (serverShard.CryptoLock)
             {
-                decrypt = serverShard.RSA.Decrypt(body, false);
+                decrypt = serverShard.RSA.Decrypt(body, RSAEncryptionPadding.Pkcs1);
             }
             MemoryStream bodyStream = new MemoryStream(decrypt);
             startNonce = new byte[32];
@@ -503,14 +504,14 @@ namespace LoopDeLoop.Network
             writer.Write(mashed, 0, mashed.Length);
             if (publicKeyData == null)
                 throw new InvalidOperationException("Public key data is missing.");
-            System.Security.Cryptography.RSACryptoServiceProvider rsa = new System.Security.Cryptography.RSACryptoServiceProvider();
+            using var rsa = new RSACryptoServiceProvider();
             rsa.ImportCspBlob(publicKeyData);
             MemoryStream combiner = new MemoryStream();
             combiner.Write(startNonce, 0, startNonce.Length);
             combiner.Write(nonce, 0, nonce.Length);
             combiner.Write(passwordHash, 0, passwordHash.Length);
             combiner.Write(additionalNonce, 0, additionalNonce.Length);
-            byte[] toSend = rsa.Encrypt(combiner.ToArray(), false);
+            byte[] toSend = rsa.Encrypt(combiner.ToArray(), RSAEncryptionPadding.Pkcs1);
             writer.Write(toSend.Length);
             writer.Write(toSend, 0, toSend.Length);
             writer.Flush();

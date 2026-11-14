@@ -37,45 +37,15 @@ namespace LoopDeLoop
 
         public static void GetDefaultSize(MeshType type, out int width, out int height)
         {
-            switch (type)
+            (width, height) = type switch
             {
-                case MeshType.Octagon:
-                case MeshType.Square2:
-                case MeshType.Square3:
-                case MeshType.FloretPentagons:
-                case MeshType.CairoPentagons:
-                case MeshType.Kites:
-                    width = 5;
-                    height = 5;
-                    break;
-                case MeshType.Hexagonal:
-                    width = 5;
-                    height = 10;
-                    break;
-                case MeshType.Hexagonal2:
-                case MeshType.Triangle:
-                case MeshType.Pentagon:
-                case MeshType.Diamonds:
-                case MeshType.AsymmetricPentagons:
-                    width = 6;
-                    height = 6;
-                    break;
-                case MeshType.Hexagonal3:
-                case MeshType.Hexagonal4:
-                case MeshType.PentagonHexagon:
-                case MeshType.DiamondSquare:
-                    width = 4;
-                    height = 4;
-                    break;
-                case MeshType.PentagonHexagon2:
-                    width = 8;
-                    height = 4;
-                    break;
-                default:
-                    width = 10;
-                    height = 10;
-                    break;
-            }
+                MeshType.Octagon or MeshType.Square2 or MeshType.Square3 or MeshType.FloretPentagons or MeshType.CairoPentagons or MeshType.Kites => (5, 5),
+                MeshType.Hexagonal => (5, 10),
+                MeshType.Hexagonal2 or MeshType.Triangle or MeshType.Pentagon or MeshType.Diamonds or MeshType.AsymmetricPentagons => (6, 6),
+                MeshType.Hexagonal3 or MeshType.Hexagonal4 or MeshType.PentagonHexagon or MeshType.DiamondSquare => (4, 4),
+                MeshType.PentagonHexagon2 => (8, 4),
+                _ => (10, 10)
+            };
         }
 
         public static bool ParseSize(string val, MeshType type, out int width, out int height)
@@ -179,7 +149,7 @@ namespace LoopDeLoop
             if (startIntersection == -1)
                 return false;
 
-            var visitedEdges = new HashSet<int>();
+            HashSet<int> visitedEdges = [with(filledEdgeCount)];
             int currentIntersection = startIntersection;
             int prevEdge = -1;
 

@@ -1,4 +1,8 @@
 @page "/"
+@using System.Globalization
+@using System.Text
+@using System.Text.Json
+@using LoopDeLoop.Web.Services
 @inject GameService Game
 @inject IJSRuntime JS
 @implements IDisposable
@@ -246,7 +250,7 @@
                     @for (int c = 0; c < mesh.Cells.Count; c++)
                     {
                         var cell = mesh.Cells[c];
-                        var pointsStr = string.Join(" ", cell.Intersections.Select(i => $"{(mesh.Intersections[i].X * S):F1},{(mesh.Intersections[i].Y * S):F1}"));
+                        var pointsStr = FormatCellPolygonPoints(mesh, cell);
 
                         string cellFill = "transparent";
                         if (cell.Color == 1) cellFill = "var(--cell-yellow)";
@@ -577,6 +581,77 @@
     private int draggedEdgesCount = 0;
     private IDisposable? timer;
     private DotNetObjectReference<Home>? selfRef;
+    private CancellationTokenSource? shareToastCts;
+
+    private static string FormatCellPolygonPoints(Mesh mesh, Cell cell)
+    {
+        var sb = new StringBuilder(cell.Intersections.Count * 12);
+        for (int idx = 0; idx < cell.Intersections.Count; idx++)
+        {
+            if (idx > 0) sb.Append(' ');
+            var inters = mesh.Intersections[cell.Intersections[idx]];
+            sb.AppendFormat(CultureInfo.InvariantCulture, "{0:F1},{1:F1}", inters.X * S, inters.Y * S);
+        }
+        return sb.ToString();
+    }
+
+    private async Task SafeInvokeVoidAsync(string identifier, params object?[] args)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync(identifier, args);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException)
+        {
+            // Ignore transient/disposal JS interop errors
+        }
+    }
+
+    private async Task<bool> TryLoadSavedOrTextAsync(string puzzleText, string? alternateKey = null)
+    {
+        try
+        {
+            string? savedJson = await JS.InvokeAsync<string?>("loopHelpers.loadGameState");
+            if (!string.IsNullOrEmpty(savedJson))
+            {
+                var savedState = JsonSerializer.Deserialize(savedJson, LoopJsonContext.Default.SavedGameState);
+                if (savedState != null &&
+                    (savedState.Puzzle == puzzleText || (alternateKey != null && savedState.Puzzle == alternateKey)) &&
+                    Game.RestoreState(savedState))
+                {
+                    selectedType = Game.CurrentType.ToString();
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        if (Game.LoadPuzzleText(puzzleText))
+        {
+            selectedType = Game.CurrentType.ToString();
+            return true;
+        }
+
+        return false;
+    }
+
+    private async Task HideShareToastLaterAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(2500, token);
+            if (!token.IsCancellationRequested)
+            {
+                showShareToast = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
 
     private RenderFragment RenderCellClue(float x, float y, int clue, string color, float fontSize) => builder =>
     {
@@ -614,7 +689,7 @@
         {
             if (selfRef != null)
             {
-                await JS.InvokeVoidAsync("registerLoopShortcuts", selfRef);
+                await SafeInvokeVoidAsync("registerLoopShortcuts", selfRef);
             }
 
             try
@@ -631,37 +706,15 @@
                 string hash = await JS.InvokeAsync<string>("loopHelpers.getUrlHash");
                 if (!string.IsNullOrEmpty(hash))
                 {
-                    if (hash.StartsWith("#")) hash = hash.Substring(1);
+                    if (hash.StartsWith('#')) hash = hash[1..];
                     string code = hash;
-                    if (code.StartsWith("p=")) code = code.Substring(2);
-                    else if (code.StartsWith("puzzle=")) code = code.Substring(7);
+                    if (code.StartsWith("p=", StringComparison.Ordinal)) code = code[2..];
+                    else if (code.StartsWith("puzzle=", StringComparison.Ordinal)) code = code[7..];
 
                     // A) Check if it's the new ultra-compact format (e.g. sq/10x10/...)
                     if (PuzzleCodec.TryDecode(code, out _, out _, out _, out _))
                     {
-                        string? savedJson = await JS.InvokeAsync<string?>("loopHelpers.loadGameState");
-                        if (!string.IsNullOrEmpty(savedJson))
-                        {
-                            try
-                            {
-                                var savedState = System.Text.Json.JsonSerializer.Deserialize<SavedGameState>(savedJson);
-                                if (savedState != null && (savedState.Puzzle == code || savedState.Puzzle == hash))
-                                {
-                                    if (Game.RestoreState(savedState))
-                                    {
-                                        loaded = true;
-                                        selectedType = Game.CurrentType.ToString();
-                                    }
-                                }
-                            }
-                            catch {}
-                        }
-
-                        if (!loaded && Game.LoadPuzzleText(code))
-                        {
-                            loaded = true;
-                            selectedType = Game.CurrentType.ToString();
-                        }
+                        loaded = await TryLoadSavedOrTextAsync(code, hash);
                     }
                     // B) Fallback for legacy compressed URLs:
                     else
@@ -671,29 +724,7 @@
                             string puzzleText = PuzzleCompression.Decompress(code);
                             if (!string.IsNullOrEmpty(puzzleText))
                             {
-                                string? savedJson = await JS.InvokeAsync<string?>("loopHelpers.loadGameState");
-                                if (!string.IsNullOrEmpty(savedJson))
-                                {
-                                    try
-                                    {
-                                        var savedState = System.Text.Json.JsonSerializer.Deserialize<SavedGameState>(savedJson);
-                                        if (savedState != null && savedState.Puzzle == puzzleText)
-                                        {
-                                            if (Game.RestoreState(savedState))
-                                            {
-                                                loaded = true;
-                                                selectedType = Game.CurrentType.ToString();
-                                            }
-                                        }
-                                    }
-                                    catch {}
-                                }
-
-                                if (!loaded && Game.LoadPuzzleText(puzzleText))
-                                {
-                                    loaded = true;
-                                    selectedType = Game.CurrentType.ToString();
-                                }
+                                loaded = await TryLoadSavedOrTextAsync(puzzleText);
                             }
                         }
                         catch {}
@@ -713,7 +744,7 @@
                     string? savedJson = await JS.InvokeAsync<string?>("loopHelpers.loadGameState");
                     if (!string.IsNullOrEmpty(savedJson))
                     {
-                        var savedState = System.Text.Json.JsonSerializer.Deserialize<SavedGameState>(savedJson);
+                        var savedState = JsonSerializer.Deserialize(savedJson, LoopJsonContext.Default.SavedGameState);
                         if (savedState != null && Game.RestoreState(savedState))
                         {
                             loaded = true;
@@ -737,14 +768,14 @@
                 ResetZoom();
                 if (selfRef != null)
                 {
-                    await JS.InvokeVoidAsync("initLoopBoard", "game-board-svg", selfRef);
+                    await SafeInvokeVoidAsync("initLoopBoard", "game-board-svg", selfRef);
                 }
                 StateHasChanged();
             }
         }
         else if (Game.CurrentMesh != null && selfRef != null)
         {
-            await JS.InvokeVoidAsync("initLoopBoard", "game-board-svg", selfRef);
+            await SafeInvokeVoidAsync("initLoopBoard", "game-board-svg", selfRef);
         }
     }
 
@@ -769,8 +800,8 @@
                 var state = Game.ExportState();
                 if (state != null)
                 {
-                    string json = System.Text.Json.JsonSerializer.Serialize(state);
-                    _ = JS.InvokeVoidAsync("loopHelpers.saveGameState", json);
+                    string json = JsonSerializer.Serialize(state, LoopJsonContext.Default.SavedGameState);
+                    _ = SafeInvokeVoidAsync("loopHelpers.saveGameState", json);
                 }
             }
             catch (Exception ex)
@@ -842,27 +873,19 @@
         lastSolvedState = false;
         ResetZoom();
 
-        try
-        {
-            await JS.InvokeVoidAsync("loopHelpers.setUrlHash", "");
-        }
-        catch {}
+        await SafeInvokeVoidAsync("loopHelpers.setUrlHash", "");
 
         await Game.GenerateNewPuzzleAsync();
         if (selfRef != null)
         {
-            await JS.InvokeVoidAsync("initLoopBoard", "game-board-svg", selfRef);
+            await SafeInvokeVoidAsync("initLoopBoard", "game-board-svg", selfRef);
         }
     }
 
     private async Task ToggleTheme()
     {
         isDarkMode = !isDarkMode;
-        try
-        {
-            await JS.InvokeVoidAsync("loopHelpers.setTheme", isDarkMode ? "dark" : "light");
-        }
-        catch {}
+        await SafeInvokeVoidAsync("loopHelpers.setTheme", isDarkMode ? "dark" : "light");
     }
 
     private async Task SharePuzzle()
@@ -872,17 +895,20 @@
         {
             PuzzleHelper.ParseSize(Game.SizeText, Game.CurrentType, out int w, out int h);
             string compact = PuzzleCodec.Encode(Game.CurrentMesh, w, h);
-            await JS.InvokeVoidAsync("loopHelpers.setUrlHash", $"p={compact}");
+            await SafeInvokeVoidAsync("loopHelpers.setUrlHash", $"p={compact}");
             string baseUrl = await JS.InvokeAsync<string>("loopHelpers.getBaseUrl");
             string fullUrl = $"{baseUrl}#p={compact}";
             await JS.InvokeAsync<bool>("loopHelpers.copyToClipboard", fullUrl);
-            showShareToast = true;
-            StateHasChanged();
-            _ = Task.Delay(2500).ContinueWith(_ =>
+
+            var prevCts = shareToastCts;
+            shareToastCts = new CancellationTokenSource();
+            if (prevCts != null)
             {
-                showShareToast = false;
-                InvokeAsync(StateHasChanged);
-            });
+                prevCts.Cancel();
+                prevCts.Dispose();
+            }
+            showShareToast = true;
+            _ = HideShareToastLaterAsync(shareToastCts.Token);
         }
         catch (Exception ex)
         {
@@ -901,7 +927,6 @@
         zoomScale = 1.0f;
         panX = 0f;
         panY = 0f;
-        StateHasChanged();
     }
 
     [JSInvokable]
@@ -1137,13 +1162,15 @@
 
     private async Task ReloadFromServer()
     {
-        await JS.InvokeVoidAsync("loopHelpers.reloadFromServer");
+        await SafeInvokeVoidAsync("loopHelpers.reloadFromServer");
     }
 
     public void Dispose()
     {
         Game.OnStateChanged -= HandleStateChanged;
         timer?.Dispose();
+        shareToastCts?.Cancel();
+        shareToastCts?.Dispose();
         selfRef?.Dispose();
     }
 }

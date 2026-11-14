@@ -183,9 +183,9 @@ namespace LoopDeLoop
             writer.WriteLine(Intersections.Count);
             foreach (Intersection inters in Intersections)
             {
-                writer.Write(inters.X);
+                writer.Write(inters.X.ToString(CultureInfo.InvariantCulture));
                 writer.Write(" ");
-                writer.Write(inters.Y);
+                writer.Write(inters.Y.ToString(CultureInfo.InvariantCulture));
                 writer.WriteLine();
             }
             writer.WriteLine("Edges");

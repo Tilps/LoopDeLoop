@@ -28,7 +28,7 @@ namespace LoopDeLoop.Network.Server
             RNG = RandomNumberGenerator.Create();
         }
 
-        public object CryptoLock = new object();
+        public readonly Lock CryptoLock = new();
 
         public RandomNumberGenerator RNG;
 
@@ -36,10 +36,7 @@ namespace LoopDeLoop.Network.Server
 
         public int PortNumber
         {
-            get
-            {
-                return portNumber;
-            }
+            get => portNumber;
             set
             {
                 portNumber = value;
@@ -50,10 +47,7 @@ namespace LoopDeLoop.Network.Server
 
         public string? StorageFile
         {
-            get
-            {
-                return storageFile;
-            }
+            get => storageFile;
             set
             {
                 storageFile = value;

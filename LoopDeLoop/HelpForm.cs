@@ -311,13 +311,13 @@ namespace LoopDeLoop
                 }
             }
         }
-        private object invokeLock = new object();
+        private readonly Lock invokeLock = new();
         delegate void Printer(string output);
         private void Output(string p)
         {
             if (this.InvokeRequired)
             {
-                bool lockTaken = Monitor.TryEnter(invokeLock);
+                bool lockTaken = invokeLock.TryEnter();
                 try
                 {
                     if (lockTaken)
@@ -328,7 +328,7 @@ namespace LoopDeLoop
                 finally
                 {
                     if (lockTaken)
-                        Monitor.Exit(invokeLock);
+                        invokeLock.Exit();
                 }
                 return;
             }

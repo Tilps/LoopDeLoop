@@ -204,7 +204,7 @@ namespace LoopDeLoop
                 {
                     loopToSmall = false;
                     FullClear();
-                    Random rnd = new Random();
+                    Random rnd = Random.Shared;
                     int startX = rnd.Next(width - 1) + 1;
                     int startY = rnd.Next(height - 1) + 1;
                     List<Direction> valids = new List<Direction>();
@@ -264,15 +264,7 @@ namespace LoopDeLoop
             int[] trials = new int[width * height];
             for (int i = 0; i < trials.Length; i++)
                 trials[i] = i;
-            Random rnd = new Random();
-            for (int i = 0; i < trials.Length * 2; i++)
-            {
-                int a = rnd.Next(trials.Length);
-                int b = rnd.Next(trials.Length);
-                int tmp = trials[a];
-                trials[a] = trials[b];
-                trials[b] = tmp;
-            }
+            Random.Shared.Shuffle(trials);
             foreach (int trial in trials)
             {
                 int x = trial % width;

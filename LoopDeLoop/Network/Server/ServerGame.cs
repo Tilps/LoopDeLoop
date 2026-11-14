@@ -137,15 +137,15 @@ namespace LoopDeLoop.Network.Server
             }
         }
 
-        private object gameLock = new object();
+        private readonly Lock gameLock = new();
         private Mesh? current;
         private Mesh? target;
-        private List<double> scores = new List<double>();
+        private List<double> scores = [];
 
         private bool playingAllowed = false;
         private void StartGame()
         {
-            Random rnd = new Random();
+            Random rnd = Random.Shared;
             lock (Players)
             {
                 Generator = Players[rnd.Next(Players.Count)];

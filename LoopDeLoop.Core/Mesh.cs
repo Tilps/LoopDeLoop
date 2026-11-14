@@ -271,7 +271,8 @@ namespace LoopDeLoop
             this.edgeSets = new List<List<int>>();
             foreach (List<int> otherEdgeSet in other.edgeSets)
                 edgeSets.Add(new List<int>(otherEdgeSet));
-            this.generateLengthFraction = other.generateLengthFraction;
+            this.GenerateLengthFraction = other.GenerateLengthFraction;
+            this.GenerateBoringFraction = other.GenerateBoringFraction;
             this.satisifiedCount = other.satisifiedCount;
             this.satisifiedIntersCount = other.satisifiedIntersCount;
             this.useColoring = other.useColoring;

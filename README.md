@@ -15,17 +15,17 @@ The project features a solver and generator that work across arbitrary planar me
 
 ## Architecture
 
-The project is built on **.NET 10** and **C# 14**, organized into modular SDK-style projects:
+The project is built on **.NET 11** and **C# 15**, organized into modular SDK-style projects:
 
-- **`LoopDeLoop.Core`** (`net10.0`): Core puzzle generation and solver engine supporting arbitrary planar graphs and depth-limited deductive inference, along with an undo/redo action tree.
-- **`LoopDeLoop.Web`** (`net10.0` Blazor WebAssembly): Modern web frontend running client-side in the browser via WebAssembly (AOT-compiled in Release). Features SVG rendering, keyboard shortcuts, checkpoints, cell coloring, interactive edge dragging, and live generation progress.
-- **`LoopDeLoop`** (`net10.0-windows` Windows Forms): Classic Windows desktop application featuring single-player puzzle solving and competitive multiplayer lobby/game modes.
-- **`LoopDeLoop.Tests`** (`net10.0` MSTest): Automated test suite covering grid topology creation, loop generation, solver verification, and text serialization.
+- **`LoopDeLoop.Core`** (`net11.0`): Core puzzle generation and solver engine supporting arbitrary planar graphs and depth-limited deductive inference, along with an undo/redo action tree.
+- **`LoopDeLoop.Web`** (`net11.0` Blazor WebAssembly): Modern web frontend running client-side in the browser via WebAssembly (AOT-compiled in Release). Features SVG rendering, keyboard shortcuts, checkpoints, cell coloring, interactive edge dragging, and live generation progress.
+- **`LoopDeLoop`** (`net11.0-windows` Windows Forms): Classic Windows desktop application featuring single-player puzzle solving and competitive multiplayer lobby/game modes.
+- **`LoopDeLoop.Tests`** (`net11.0` MSTest): Automated test suite covering grid topology creation, loop generation, solver verification, and text serialization.
 
 ## Building and Running
 
 ### Prerequisites
-- [.NET 10 SDK](https://dotnet.microsoft.com/)
+- [.NET 11 SDK](https://dotnet.microsoft.com/)
 - Optional for Web AOT: `dotnet workload install wasm-tools`
 
 ### Build the Solution

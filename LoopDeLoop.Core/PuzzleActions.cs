@@ -3,6 +3,53 @@ using System.Collections.Generic;
 
 namespace LoopDeLoop
 {
+    internal static class EdgeActionHelper
+    {
+        public static bool PerformTransition(
+            Mesh mesh,
+            int edgeIndex,
+            EdgeState targetState,
+            int autoMove,
+            bool disallowFalseMove,
+            List<IAction> actionsPerformed,
+            out bool allSuccessful)
+        {
+            allSuccessful = true;
+            Edge edge = mesh.Edges[edgeIndex];
+
+            if (edge.State != EdgeState.Empty)
+            {
+                IAction unsetAction = new UnsetAction(mesh, edgeIndex);
+                bool res = unsetAction.Perform();
+                if (!res || !unsetAction.Successful)
+                {
+                    if (disallowFalseMove)
+                    {
+                        allSuccessful = false;
+                        if (res)
+                            actionsPerformed.Add(unsetAction);
+                        return false;
+                    }
+                    allSuccessful = false;
+                }
+                actionsPerformed.Add(unsetAction);
+            }
+
+            if (targetState != EdgeState.Empty)
+            {
+                bool res = mesh.Perform(edgeIndex, targetState, actionsPerformed, autoMove);
+                if (!res)
+                {
+                    allSuccessful = false;
+                    if (disallowFalseMove)
+                        return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
     public class PuzzleEdgeAction : IAction
     {
         public PuzzleEdgeAction(Mesh mesh, int edgeIndex, bool isAlternativeCycle = false, int autoMove = 0, bool disallowFalseMove = false)
@@ -27,65 +74,28 @@ namespace LoopDeLoop
 
         private static EdgeState NextState(EdgeState current, bool reverse)
         {
-            if (!reverse)
+            return (reverse, current) switch
             {
-                return current switch
-                {
-                    EdgeState.Empty => EdgeState.Filled,
-                    EdgeState.Filled => EdgeState.Excluded,
-                    EdgeState.Excluded => EdgeState.Empty,
-                    _ => EdgeState.Empty
-                };
-            }
-            else
-            {
-                return current switch
-                {
-                    EdgeState.Empty => EdgeState.Excluded,
-                    EdgeState.Excluded => EdgeState.Filled,
-                    EdgeState.Filled => EdgeState.Empty,
-                    _ => EdgeState.Empty
-                };
-            }
+                (false, EdgeState.Empty) => EdgeState.Filled,
+                (false, EdgeState.Filled) => EdgeState.Excluded,
+                (false, EdgeState.Excluded) => EdgeState.Empty,
+                (true, EdgeState.Empty) => EdgeState.Excluded,
+                (true, EdgeState.Excluded) => EdgeState.Filled,
+                (true, EdgeState.Filled) => EdgeState.Empty,
+                _ => EdgeState.Empty
+            };
         }
 
         public bool Perform()
         {
-            successful = true;
             Edge closest = mesh.Edges[edgeIndex];
             EdgeState toggled = NextState(closest.State, isAlternativeCycle);
-            actionsPerformed = new List<IAction>();
+            actionsPerformed = [];
 
-            if (closest.State != EdgeState.Empty)
+            if (!EdgeActionHelper.PerformTransition(mesh, edgeIndex, toggled, autoMove, disallowFalseMove, actionsPerformed, out successful))
             {
-                IAction unsetAction = new UnsetAction(mesh, edgeIndex);
-                bool res = unsetAction.Perform();
-                if ((!res || !unsetAction.Successful) && disallowFalseMove)
-                {
-                    if (res && !unsetAction.Successful)
-                        actionsPerformed.Add(unsetAction);
-                    Unperform();
-                    return false;
-                }
-                else if (!res || !unsetAction.Successful)
-                {
-                    successful = false;
-                }
-                actionsPerformed.Add(unsetAction);
-            }
-
-            if (toggled != EdgeState.Empty)
-            {
-                bool res = mesh.Perform(edgeIndex, toggled, actionsPerformed, autoMove);
-                if (!res && disallowFalseMove)
-                {
-                    Unperform();
-                    return false;
-                }
-                else if (!res)
-                {
-                    successful = false;
-                }
+                Unperform();
+                return false;
             }
 
             return true;
@@ -93,7 +103,7 @@ namespace LoopDeLoop
 
         public void Unperform()
         {
-            if (actionsPerformed != null && actionsPerformed.Count > 0)
+            if (actionsPerformed is { Count: > 0 })
             {
                 mesh.Unperform(actionsPerformed);
             }
@@ -101,8 +111,7 @@ namespace LoopDeLoop
 
         public bool Equals(IAction? other)
         {
-            if (other is not PuzzleEdgeAction o) return false;
-            return o.mesh == mesh && o.edgeIndex == edgeIndex && o.isAlternativeCycle == isAlternativeCycle;
+            return other is PuzzleEdgeAction o && o.mesh == mesh && o.edgeIndex == edgeIndex && o.isAlternativeCycle == isAlternativeCycle;
         }
     }
 
@@ -215,43 +224,18 @@ namespace LoopDeLoop
 
         public bool Perform()
         {
-            successful = true;
             Edge closest = mesh.Edges[edgeIndex];
-            if (closest.State == targetState) return false;
-
-            actionsPerformed = new List<IAction>();
-
-            if (closest.State != EdgeState.Empty)
+            if (closest.State == targetState)
             {
-                IAction unsetAction = new UnsetAction(mesh, edgeIndex);
-                bool res = unsetAction.Perform();
-                if ((!res || !unsetAction.Successful) && disallowFalseMove)
-                {
-                    if (res && !unsetAction.Successful)
-                        actionsPerformed.Add(unsetAction);
-                    Unperform();
-                    return false;
-                }
-                else if (!res || !unsetAction.Successful)
-                {
-                    successful = false;
-                }
-                actionsPerformed.Add(unsetAction);
+                successful = true;
+                return false;
             }
 
-            if (targetState != EdgeState.Empty)
+            actionsPerformed = [];
+            if (!EdgeActionHelper.PerformTransition(mesh, edgeIndex, targetState, autoMove: 0, disallowFalseMove, actionsPerformed, out successful))
             {
-                bool res = mesh.Perform(edgeIndex, targetState, actionsPerformed, 0);
-                if (!res && disallowFalseMove)
-                {
-                    successful = false;
-                    Unperform();
-                    return false;
-                }
-                else if (!res)
-                {
-                    successful = false;
-                }
+                Unperform();
+                return false;
             }
 
             return true;
@@ -259,7 +243,7 @@ namespace LoopDeLoop
 
         public void Unperform()
         {
-            if (actionsPerformed != null && actionsPerformed.Count > 0)
+            if (actionsPerformed is { Count: > 0 })
             {
                 mesh.Unperform(actionsPerformed);
             }

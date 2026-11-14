@@ -47,7 +47,7 @@ namespace LoopDeLoop
 
         ProgressBar? bar;
 
-        object generatorLock = new object();
+        readonly Lock generatorLock = new();
         bool generating = false;
         Thread? generatorThread = null;
         Mesh? generatingMesh = null;
@@ -303,7 +303,7 @@ namespace LoopDeLoop
 
         }
 
-        object ratingThreadLock = new object();
+        readonly Lock ratingThreadLock = new();
         Thread? ratingThread = null;
 
         private void Rate()

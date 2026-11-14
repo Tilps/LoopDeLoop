@@ -6,11 +6,11 @@ using LoopDeLoop;
 
 namespace LoopDeLoop.Web.Services
 {
-    public class GameService
+    public class GameService : IDisposable
     {
         public Mesh? CurrentMesh { get; private set; }
         public UndoTree UndoTree { get; private set; } = new();
-        public HashSet<int> MarkedEdges { get; private set; } = new();
+        public HashSet<int> MarkedEdges { get; private set; } = [];
 
         public MeshType CurrentType { get; set; } = MeshType.Square;
         public string SizeText { get; set; } = "10x10";
@@ -52,6 +52,27 @@ namespace LoopDeLoop.Web.Services
             ? (DateTime.UtcNow - GenerationStartTime.Value).TotalSeconds
             : 0;
 
+        private static CancellationToken ResetTokenSource(ref CancellationTokenSource? cts)
+        {
+            var previous = cts;
+            cts = new CancellationTokenSource();
+            if (previous != null)
+            {
+                previous.Cancel();
+                previous.Dispose();
+            }
+            return cts.Token;
+        }
+
+        private void ClearTransientBoardState()
+        {
+            preVictoryMarkedEdges = null;
+            preVictoryUndoMark = null;
+            preVictoryUndoTree = null;
+            InvalidEdgeIndex = null;
+            ClearHint();
+        }
+
         public void CancelGeneration()
         {
             if (generatingMesh != null)
@@ -67,9 +88,7 @@ namespace LoopDeLoop.Web.Services
         {
             if (IsGenerating) return;
 
-            generationCts?.Cancel();
-            generationCts = new CancellationTokenSource();
-            var token = generationCts.Token;
+            var token = ResetTokenSource(ref generationCts);
 
             IsGenerating = true;
             GenerationStartTime = DateTime.UtcNow;
@@ -81,8 +100,7 @@ namespace LoopDeLoop.Web.Services
             // Allow UI to render the loading overlay before computation begins
             await Task.Delay(20);
 
-            int width, height;
-            if (!PuzzleHelper.ParseSize(SizeText, CurrentType, out width, out height))
+            if (!PuzzleHelper.ParseSize(SizeText, CurrentType, out int width, out int height))
             {
                 PuzzleHelper.GetDefaultSize(CurrentType, out width, out height);
                 SizeText = $"{width}x{height}";
@@ -111,8 +129,7 @@ namespace LoopDeLoop.Web.Services
                     StartTime = DateTime.UtcNow;
                     IsSolved = false;
                     WasAutoSolved = false;
-                    InvalidEdgeIndex = null;
-                    ClearHint();
+                    ClearTransientBoardState();
                 }
             }
             catch (OperationCanceledException)
@@ -122,6 +139,7 @@ namespace LoopDeLoop.Web.Services
             finally
             {
                 generatingMesh = null;
+                generationCts?.Dispose();
                 generationCts = null;
                 GenerationStartTime = null;
                 IsGenerating = false;
@@ -327,18 +345,20 @@ namespace LoopDeLoop.Web.Services
             };
         }
 
+        private static readonly char[] LineSeparators = ['\r', '\n'];
+
         public bool RestoreState(SavedGameState state)
         {
             if (string.IsNullOrEmpty(state.Puzzle)) return false;
 
-            Mesh? mesh = null;
-            if (PuzzleCodec.TryDecode(state.Puzzle, out var decodedMesh, out int w, out int h, out var decodedType))
+            Mesh? mesh;
+            if (PuzzleCodec.TryDecode(state.Puzzle, out var decodedMesh, out int _, out int _, out var _))
             {
                 mesh = decodedMesh;
             }
             else
             {
-                var lines = state.Puzzle.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                var lines = state.Puzzle.Split(LineSeparators, StringSplitOptions.RemoveEmptyEntries);
                 mesh = new Mesh(0, 0, MeshType.Square);
                 if (!mesh.LoadFromText(lines)) return false;
             }
@@ -385,19 +405,13 @@ namespace LoopDeLoop.Web.Services
                 }
             }
 
-            if (state.ElapsedSeconds > 0)
-            {
-                StartTime = DateTime.UtcNow.AddSeconds(-state.ElapsedSeconds);
-            }
-            else
-            {
-                StartTime = DateTime.UtcNow;
-            }
+            StartTime = state.ElapsedSeconds > 0
+                ? DateTime.UtcNow.AddSeconds(-state.ElapsedSeconds)
+                : DateTime.UtcNow;
 
             IsSolved = state.IsSolved;
             WasAutoSolved = state.IsSolved && state.WasAutoSolved;
-            InvalidEdgeIndex = null;
-            ClearHint();
+            ClearTransientBoardState();
             CheckSolution();
             NotifyChanged();
             return true;
@@ -407,15 +421,15 @@ namespace LoopDeLoop.Web.Services
         {
             if (string.IsNullOrEmpty(puzzleText)) return false;
 
-            Mesh? mesh = null;
-            if (PuzzleCodec.TryDecode(puzzleText, out var decodedMesh, out int w, out int h, out var decodedType))
+            Mesh? mesh;
+            if (PuzzleCodec.TryDecode(puzzleText, out var decodedMesh, out int w, out int h, out var _))
             {
                 mesh = decodedMesh;
                 SizeText = $"{w}x{h}";
             }
             else
             {
-                var lines = puzzleText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                var lines = puzzleText.Split(LineSeparators, StringSplitOptions.RemoveEmptyEntries);
                 mesh = new Mesh(0, 0, MeshType.Square);
                 if (!mesh.LoadFromText(lines)) return false;
             }
@@ -432,8 +446,7 @@ namespace LoopDeLoop.Web.Services
             StartTime = DateTime.UtcNow;
             IsSolved = false;
             WasAutoSolved = false;
-            InvalidEdgeIndex = null;
-            ClearHint();
+            ClearTransientBoardState();
 
             CheckSolution();
             NotifyChanged();
@@ -444,23 +457,37 @@ namespace LoopDeLoop.Web.Services
         private CancellationTokenSource? hintFlashCts;
         private CancellationTokenSource? hintMessageCts;
 
+        private async Task ClearAfterDelayAsync(int delayMs, CancellationToken token, Action clearAction)
+        {
+            try
+            {
+                await Task.Delay(delayMs, token);
+                if (!token.IsCancellationRequested)
+                {
+                    clearAction();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when superseded or cleared early
+            }
+        }
+
         public void FlashInvalidEdge(int edgeIndex)
         {
-            invalidFlashCts?.Cancel();
-            invalidFlashCts = new CancellationTokenSource();
-            var token = invalidFlashCts.Token;
+            var token = ResetTokenSource(ref invalidFlashCts);
 
             InvalidEdgeIndex = edgeIndex;
             NotifyChanged();
 
-            _ = Task.Delay(600, token).ContinueWith(t =>
+            _ = ClearAfterDelayAsync(600, token, () =>
             {
-                if (!token.IsCancellationRequested && InvalidEdgeIndex == edgeIndex)
+                if (InvalidEdgeIndex == edgeIndex)
                 {
                     InvalidEdgeIndex = null;
                     NotifyChanged();
                 }
-            }, TaskScheduler.Default);
+            });
         }
 
         public void ClearHint()
@@ -482,30 +509,35 @@ namespace LoopDeLoop.Web.Services
             StartTime = DateTime.UtcNow;
             IsSolved = false;
             WasAutoSolved = false;
-            InvalidEdgeIndex = null;
-            ClearHint();
+            ClearTransientBoardState();
             NotifyChanged();
+        }
+
+        private static Mesh CreateFullSolverMesh(Mesh source)
+        {
+            Mesh solver = new Mesh(source);
+            solver.ConsiderMultipleLoops = true;
+            solver.UseIntersectCellInteractsInSolver = false;
+            solver.UseColoring = true;
+            solver.UseEdgeRestricts = true;
+            solver.UseCellColoring = true;
+            solver.SolverMethod = SolverMethod.Recursive;
+            solver.ContaminateFullSolver = true;
+            solver.ColoringCheats = true;
+            solver.UseDerivedColoring = true;
+            solver.UseMerging = true;
+            solver.UseCellPairsTopLevel = true;
+            solver.UseCellPairs = false;
+            solver.IterativeRecMaxDepth = 1;
+            return solver;
         }
 
         public bool SolvePuzzle()
         {
             if (CurrentMesh == null || IsGenerating) return false;
 
-            Mesh original = new Mesh(CurrentMesh);
+            Mesh original = CreateFullSolverMesh(CurrentMesh);
             original.Clear();
-            original.ConsiderMultipleLoops = true;
-            original.UseIntersectCellInteractsInSolver = false;
-            original.UseColoring = true;
-            original.UseEdgeRestricts = true;
-            original.UseCellColoring = true;
-            original.SolverMethod = SolverMethod.Recursive;
-            original.ContaminateFullSolver = true;
-            original.ColoringCheats = true;
-            original.UseDerivedColoring = true;
-            original.UseMerging = true;
-            original.UseCellPairsTopLevel = true;
-            original.UseCellPairs = false;
-            original.IterativeRecMaxDepth = 1;
 
             SolveState res = original.TrySolve();
             if ((res == SolveState.Solved || res == SolveState.MultipleSolutions) && original.SolutionFound != null)
@@ -546,31 +578,25 @@ namespace LoopDeLoop.Web.Services
                     HintMessage = "The highlighted edge can be determined from what's around it.";
                 }
 
-                hintFlashCts?.Cancel();
-                hintFlashCts = new CancellationTokenSource();
-                var flashToken = hintFlashCts.Token;
+                var flashToken = ResetTokenSource(ref hintFlashCts);
                 int delayMs = applyMove ? 1500 : 3500;
-                _ = Task.Delay(delayMs, flashToken).ContinueWith(t =>
+                int capturedEdge = edgeIdx.Value;
+                _ = ClearAfterDelayAsync(delayMs, flashToken, () =>
                 {
-                    if (!flashToken.IsCancellationRequested && HintEdgeIndex == edgeIdx.Value)
+                    if (HintEdgeIndex == capturedEdge)
                     {
                         HintEdgeIndex = null;
                         NotifyChanged();
                     }
-                }, TaskScheduler.Default);
+                });
             }
 
-            hintMessageCts?.Cancel();
-            hintMessageCts = new CancellationTokenSource();
-            var msgToken = hintMessageCts.Token;
-            _ = Task.Delay(5000, msgToken).ContinueWith(t =>
+            var msgToken = ResetTokenSource(ref hintMessageCts);
+            _ = ClearAfterDelayAsync(5000, msgToken, () =>
             {
-                if (!msgToken.IsCancellationRequested)
-                {
-                    HintMessage = null;
-                    NotifyChanged();
-                }
-            }, TaskScheduler.Default);
+                HintMessage = null;
+                NotifyChanged();
+            });
 
             NotifyChanged();
             return edgeIdx.HasValue;
@@ -649,20 +675,7 @@ namespace LoopDeLoop.Web.Services
             }
 
             // 3. Fallback: full solver search on current state
-            Mesh fullSolverMesh = new Mesh(CurrentMesh);
-            fullSolverMesh.ConsiderMultipleLoops = true;
-            fullSolverMesh.UseIntersectCellInteractsInSolver = false;
-            fullSolverMesh.UseColoring = true;
-            fullSolverMesh.UseEdgeRestricts = true;
-            fullSolverMesh.UseCellColoring = true;
-            fullSolverMesh.SolverMethod = SolverMethod.Recursive;
-            fullSolverMesh.ContaminateFullSolver = true;
-            fullSolverMesh.ColoringCheats = true;
-            fullSolverMesh.UseDerivedColoring = true;
-            fullSolverMesh.UseMerging = true;
-            fullSolverMesh.UseCellPairsTopLevel = true;
-            fullSolverMesh.UseCellPairs = false;
-            fullSolverMesh.IterativeRecMaxDepth = 1;
+            Mesh fullSolverMesh = CreateFullSolverMesh(CurrentMesh);
 
             SolveState solveRes = fullSolverMesh.TrySolve();
             if ((solveRes == SolveState.Solved || solveRes == SolveState.MultipleSolutions) && fullSolverMesh.SolutionFound != null)
@@ -736,6 +749,18 @@ namespace LoopDeLoop.Web.Services
             return targetState == EdgeState.Filled
                 ? "Logical deduction: This edge must be part of the loop."
                 : "Logical deduction: This edge cannot be part of the loop.";
+        }
+
+        public void Dispose()
+        {
+            generationCts?.Cancel();
+            generationCts?.Dispose();
+            invalidFlashCts?.Cancel();
+            invalidFlashCts?.Dispose();
+            hintFlashCts?.Cancel();
+            hintFlashCts?.Dispose();
+            hintMessageCts?.Cancel();
+            hintMessageCts?.Dispose();
         }
     }
 
