@@ -111,6 +111,25 @@
             setWheelMode: (mode) => {
                 window._loopWheelMode = mode || 'zoom';
             },
+            downloadTextFile: (filename, content) => {
+                try {
+                    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    return true;
+                } catch (_) {
+                    return false;
+                }
+            },
+            triggerPrint: () => {
+                window.print();
+            },
             reloadFromServer: async () => {
                 try {
                     if ('serviceWorker' in navigator) {
@@ -237,7 +256,7 @@
                     }
 
                     if (svg._dotNetRef) {
-                        svg._dotNetRef.invokeMethodAsync('OnSvgPointerDown', coords.x, coords.y, e.button, e.shiftKey);
+                        svg._dotNetRef.invokeMethodAsync('OnSvgPointerDown', coords.x, coords.y, e.button, e.shiftKey, e.ctrlKey || e.metaKey, e.altKey);
                     }
                 } else if (activePointers.size === 2) {
                     const elapsed = performance.now() - firstTouchTime;

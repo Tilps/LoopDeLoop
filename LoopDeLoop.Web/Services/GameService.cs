@@ -18,6 +18,15 @@ namespace LoopDeLoop.Web.Services
 
         public bool DisallowFalseMove { get; set; } = false;
         public bool ShowCellColors { get; set; } = false;
+        public bool ShowEdgeColors
+        {
+            get => field;
+            set
+            {
+                field = value;
+                if (!value) PendingGroupEdgeIndex = null;
+            }
+        } = false;
 
         // Phase 2 Settings (persisted via UserPreferences, hidden in Settings modal)
         public int AutoMoveLevel
@@ -56,6 +65,8 @@ namespace LoopDeLoop.Web.Services
         public bool WasAutoSolved { get; private set; }
 
         public int? InvalidEdgeIndex { get; private set; }
+        public int? PendingGroupEdgeIndex { get; private set; }
+        public PuzzleAnalysisResult? CurrentAnalysis { get; private set; }
         public int? HintEdgeIndex { get; private set; }
         public EdgeState HintTargetState { get; private set; } = EdgeState.Filled;
         public bool HintIsApplied { get; private set; }
@@ -97,6 +108,9 @@ namespace LoopDeLoop.Web.Services
             preVictoryUndoMark = null;
             preVictoryUndoTree = null;
             InvalidEdgeIndex = null;
+            PendingGroupEdgeIndex = null;
+            CurrentAnalysis = null;
+            DismissVisualSolveInternal();
             ClearHint();
         }
 
@@ -117,6 +131,7 @@ namespace LoopDeLoop.Web.Services
 
             var token = ResetTokenSource(ref generationCts);
 
+            DismissVisualSolveInternal();
             IsGenerating = true;
             GenerationStartTime = DateTime.UtcNow;
             IsSolved = false;
@@ -224,6 +239,7 @@ namespace LoopDeLoop.Web.Services
         {
             DisallowFalseMove = DisallowFalseMove,
             ShowCellColors = ShowCellColors,
+            ShowEdgeColors = ShowEdgeColors,
             AutoMoveLevel = AutoMoveLevel,
             AutoMoveConsiderMultipleLoops = AutoMoveConsiderMultipleLoops,
             AutoMoveUseIC = AutoMoveUseIC,
@@ -239,6 +255,7 @@ namespace LoopDeLoop.Web.Services
         {
             DisallowFalseMove = prefs.DisallowFalseMove;
             ShowCellColors = prefs.ShowCellColors;
+            ShowEdgeColors = prefs.ShowEdgeColors;
             AutoMoveLevel = prefs.AutoMoveLevel;
             AutoMoveConsiderMultipleLoops = prefs.AutoMoveConsiderMultipleLoops;
             AutoMoveUseIC = prefs.AutoMoveUseIC;
@@ -256,13 +273,186 @@ namespace LoopDeLoop.Web.Services
             ApplyPreferences(new UserPreferences());
         }
 
+        public bool HandleEdgeGroupingClick(int edgeIndex, bool sameLoop)
+        {
+            if (CurrentMesh == null || IsGenerating || edgeIndex < 0 || edgeIndex >= CurrentMesh.Edges.Count)
+                return false;
+
+            bool dismissedVisual = DismissVisualSolveInternal();
+            if (!ShowEdgeColors || MarkedEdges.Contains(edgeIndex))
+            {
+                if (dismissedVisual) NotifyChanged();
+                return false;
+            }
+
+            if (PendingGroupEdgeIndex is not int firstEdge)
+            {
+                PendingGroupEdgeIndex = edgeIndex;
+                NotifyChanged();
+                return true;
+            }
+
+            PendingGroupEdgeIndex = null;
+            if (firstEdge == edgeIndex)
+            {
+                NotifyChanged();
+                return true;
+            }
+
+            var action = new ColorJoinAction(CurrentMesh, firstEdge, edgeIndex, sameLoop);
+            if (UndoTree.Do(action))
+            {
+                InvalidEdgeIndex = null;
+                NotifyChanged();
+                return true;
+            }
+
+            FlashInvalidEdge(edgeIndex);
+            NotifyChanged();
+            return false;
+        }
+
+        public void ClearPendingEdgeGroup()
+        {
+            if (PendingGroupEdgeIndex.HasValue)
+            {
+                PendingGroupEdgeIndex = null;
+                NotifyChanged();
+            }
+        }
+
+        public bool CanExportSquareFormats => PuzzleFormatHelper.CanExportSquareFormats(CurrentMesh);
+
+        public string ExportLoopText() => CurrentMesh != null ? PuzzleFormatHelper.ExportLoopText(CurrentMesh) : string.Empty;
+
+        public string? ExportLoopyDescriptor() => CurrentMesh != null ? PuzzleFormatHelper.ExportLoopyDescriptor(CurrentMesh) : null;
+
+        public string? ExportLoopySave() => CurrentMesh != null ? PuzzleFormatHelper.ExportLoopySave(CurrentMesh) : null;
+
+        public string? ExportSquareAscii() => CurrentMesh != null ? PuzzleFormatHelper.ExportSquareAscii(CurrentMesh) : null;
+
+        public bool ImportPuzzle(string rawInput, out string detectedFormat)
+        {
+            detectedFormat = string.Empty;
+            if (IsGenerating || !PuzzleFormatHelper.TryParsePuzzle(rawInput, out Mesh? mesh, out detectedFormat, out int w, out int h) || mesh == null)
+                return false;
+
+            CurrentMesh = mesh;
+            CurrentType = mesh.MeshType;
+            if (w > 0 && h > 0)
+            {
+                SizeText = $"{w}x{h}";
+            }
+            TotalCells = mesh.Cells.Count;
+            PrunedProgress = 0;
+            IsGenerating = false;
+            UndoTree = new UndoTree();
+            MarkedEdges.Clear();
+            StartTime = DateTime.UtcNow;
+            IsSolved = false;
+            WasAutoSolved = false;
+            ClearTransientBoardState();
+
+            CheckSolution();
+            NotifyChanged();
+            return true;
+        }
+
+        public PuzzleAnalysisResult? AnalyzeCurrentPuzzle()
+        {
+            if (CurrentMesh == null || IsGenerating) return null;
+
+            int clueCount = 0;
+            foreach (var cell in CurrentMesh.Cells)
+            {
+                if (cell.TargetCount >= 0) clueCount++;
+            }
+            int totalCells = CurrentMesh.Cells.Count;
+            int edgeCount = CurrentMesh.Edges.Count;
+
+            Mesh solver = CreateFullSolverMesh(CurrentMesh);
+            solver.Clear();
+
+            SolveState fullResult = solver.TrySolve();
+            if (fullResult == SolveState.MultipleSolutions)
+            {
+                CurrentAnalysis = new PuzzleAnalysisResult("Multiple Solutions", "Non-unique", 0, clueCount, totalCells, edgeCount);
+                NotifyChanged();
+                return CurrentAnalysis;
+            }
+            if (fullResult != SolveState.Solved)
+            {
+                CurrentAnalysis = new PuzzleAnalysisResult("No Solution", "Unsolvable", 0, clueCount, totalCells, edgeCount);
+                NotifyChanged();
+                return CurrentAnalysis;
+            }
+
+            // RecursiveTrySolve pushes a base frame before checking trials, so branch count is Length - 1.
+            int branchDepth = Math.Max(0, (solver.DepthPatern?.Length ?? 0) - 1);
+            string tier = $"Recursive Search (F, Depth {branchDepth})";
+            int? lookaheadDepth = null;
+
+            // Check lightest deductive tiers on demand, matching WinForms RatingThreadProc
+            solver.SetRatingCodeOptions("I");
+            if (solver.TrySolve() == SolveState.Solved)
+            {
+                int min = -1;
+                int max = solver.Edges.Count;
+                while (min < max - 1)
+                {
+                    int mid = (min + max) / 2;
+                    solver.IterativeSolverDepth = mid;
+                    if (solver.TrySolve() == SolveState.Solved)
+                        max = mid;
+                    else
+                        min = mid;
+                }
+                lookaheadDepth = max;
+                tier = max == 0 ? "Direct Deductions (I0)" : $"Iterative Lookahead (I{max})";
+            }
+            else
+            {
+                solver.SetRatingCodeOptions("IC");
+                if (solver.TrySolve() == SolveState.Solved)
+                {
+                    tier = "Cell-Edge Interactions (IC)";
+                }
+                else
+                {
+                    solver.SetRatingCodeOptions("ID");
+                    if (solver.TrySolve() == SolveState.Solved)
+                    {
+                        tier = "Edge Coloring (ID)";
+                    }
+                    else
+                    {
+                        solver.SetRatingCodeOptions("ICR");
+                        if (solver.TrySolve() == SolveState.Solved)
+                        {
+                            tier = "Edge Restrictions (ICR)";
+                        }
+                    }
+                }
+            }
+
+            CurrentAnalysis = new PuzzleAnalysisResult("Unique Solution", tier, branchDepth, clueCount, totalCells, edgeCount, lookaheadDepth);
+            NotifyChanged();
+            return CurrentAnalysis;
+        }
+
         public void ToggleEdge(int edgeIndex, bool isAlternative)
         {
             if (CurrentMesh == null || edgeIndex < 0 || edgeIndex >= CurrentMesh.Edges.Count)
                 return;
 
+            PendingGroupEdgeIndex = null;
+            bool dismissedVisual = DismissVisualSolveInternal();
+
             if (MarkedEdges.Contains(edgeIndex))
+            {
+                if (dismissedVisual) NotifyChanged();
                 return;
+            }
 
             var current = CurrentMesh.Edges[edgeIndex].State;
             var next = !isAlternative
@@ -281,9 +471,13 @@ namespace LoopDeLoop.Web.Services
                 CheckSolution();
                 NotifyChanged();
             }
-            else if (DisallowFalseMove)
+            else
             {
-                FlashInvalidEdge(edgeIndex);
+                if (dismissedVisual) NotifyChanged();
+                if (DisallowFalseMove)
+                {
+                    FlashInvalidEdge(edgeIndex);
+                }
             }
         }
 
@@ -292,11 +486,13 @@ namespace LoopDeLoop.Web.Services
             if (CurrentMesh == null || edgeIndex < 0 || edgeIndex >= CurrentMesh.Edges.Count)
                 return;
 
-            if (MarkedEdges.Contains(edgeIndex))
-                return;
+            bool dismissedVisual = DismissVisualSolveInternal();
 
-            if (CurrentMesh.Edges[edgeIndex].State == targetState)
+            if (MarkedEdges.Contains(edgeIndex) || CurrentMesh.Edges[edgeIndex].State == targetState)
+            {
+                if (dismissedVisual) NotifyChanged();
                 return;
+            }
 
             int autoMove = GetEffectiveAutoMoveDepth(CurrentMesh);
             if (autoMove > 0)
@@ -310,9 +506,13 @@ namespace LoopDeLoop.Web.Services
                 CheckSolution();
                 NotifyChanged();
             }
-            else if (DisallowFalseMove)
+            else
             {
-                FlashInvalidEdge(edgeIndex);
+                if (dismissedVisual) NotifyChanged();
+                if (DisallowFalseMove)
+                {
+                    FlashInvalidEdge(edgeIndex);
+                }
             }
         }
 
@@ -321,8 +521,13 @@ namespace LoopDeLoop.Web.Services
             if (CurrentMesh == null || cellIndex < 0 || cellIndex >= CurrentMesh.Cells.Count)
                 return;
 
+            bool dismissedVisual = DismissVisualSolveInternal();
             var action = new PuzzleCellColorAction(CurrentMesh, cellIndex, isAlternative);
             if (UndoTree.Do(action))
+            {
+                NotifyChanged();
+            }
+            else if (dismissedVisual)
             {
                 NotifyChanged();
             }
@@ -330,6 +535,7 @@ namespace LoopDeLoop.Web.Services
 
         public void Undo()
         {
+            bool dismissedVisual = DismissVisualSolveInternal();
             if (UndoTree.CanUndo)
             {
                 UndoTree.Undo();
@@ -337,10 +543,15 @@ namespace LoopDeLoop.Web.Services
                 CheckSolution();
                 NotifyChanged();
             }
+            else if (dismissedVisual)
+            {
+                NotifyChanged();
+            }
         }
 
         public bool UndoAndForget()
         {
+            bool dismissedVisual = DismissVisualSolveInternal();
             if (UndoTree.CanUndo && UndoTree.UndoAndForget())
             {
                 WasAutoSolved = false;
@@ -348,11 +559,13 @@ namespace LoopDeLoop.Web.Services
                 NotifyChanged();
                 return true;
             }
+            if (dismissedVisual) NotifyChanged();
             return false;
         }
 
         public void Redo()
         {
+            bool dismissedVisual = DismissVisualSolveInternal();
             if (UndoTree.CanRedo)
             {
                 UndoTree.Redo();
@@ -360,11 +573,16 @@ namespace LoopDeLoop.Web.Services
                 CheckSolution();
                 NotifyChanged();
             }
+            else if (dismissedVisual)
+            {
+                NotifyChanged();
+            }
         }
 
         public void Fix()
         {
             if (CurrentMesh == null) return;
+            DismissVisualSolveInternal();
             MarkedEdges.Clear();
             for (int i = 0; i < CurrentMesh.Edges.Count; i++)
             {
@@ -377,6 +595,7 @@ namespace LoopDeLoop.Web.Services
 
         public void Unfix()
         {
+            DismissVisualSolveInternal();
             MarkedEdges.Clear();
             UndoTree.ClearMark();
             CheckSolution();
@@ -385,6 +604,7 @@ namespace LoopDeLoop.Web.Services
 
         public void RevertToFix()
         {
+            DismissVisualSolveInternal();
             UndoTree.RevertToMark();
             CheckSolution();
             NotifyChanged();
@@ -651,10 +871,192 @@ namespace LoopDeLoop.Web.Services
             return solver;
         }
 
+        private const int MaxVisualSolveFrames = 1500;
+        private readonly List<VisualSolveStep> visualSolveSteps = [];
+        private Mesh? visualSolveSolutionMesh;
+
+        public IReadOnlyList<VisualSolveStep> VisualSolveSteps => visualSolveSteps;
+        public bool IsVisualSolving => visualSolveSteps.Count > 0;
+        public int VisualSolveStepIndex { get; private set; }
+        public int VisualSolveTotalSteps => visualSolveSteps.Count;
+        public VisualSolveStep? CurrentVisualSolveStep => IsVisualSolving && VisualSolveStepIndex >= 0 && VisualSolveStepIndex < visualSolveSteps.Count
+            ? visualSolveSteps[VisualSolveStepIndex]
+            : null;
+
+        public EdgeState GetVisualSolveEdgeState(int edgeIndex)
+        {
+            if (CurrentVisualSolveStep is { } step && edgeIndex >= 0 && edgeIndex < step.EdgeStates.Length)
+                return step.EdgeStates[edgeIndex];
+            if (CurrentMesh != null && edgeIndex >= 0 && edgeIndex < CurrentMesh.Edges.Count)
+                return CurrentMesh.Edges[edgeIndex].State;
+            return EdgeState.Empty;
+        }
+
+        private static EdgeState[] CaptureEdgeStates(Mesh mesh)
+        {
+            var states = new EdgeState[mesh.Edges.Count];
+            for (int i = 0; i < states.Length; i++)
+            {
+                states[i] = mesh.Edges[i].State;
+            }
+            return states;
+        }
+
+        private bool DismissVisualSolveInternal()
+        {
+            if (visualSolveSteps.Count == 0 && visualSolveSolutionMesh == null)
+                return false;
+
+            visualSolveSteps.Clear();
+            visualSolveSolutionMesh = null;
+            VisualSolveStepIndex = 0;
+            return true;
+        }
+
+        public void DismissVisualSolve()
+        {
+            if (DismissVisualSolveInternal())
+                NotifyChanged();
+        }
+
+        public bool StartVisualSolve()
+        {
+            if (CurrentMesh == null || IsGenerating) return false;
+
+            DismissVisualSolveInternal();
+            ClearHint();
+
+            Mesh solver = CreateFullSolverMesh(CurrentMesh);
+            solver.Clear();
+            solver.SuperSlowMo = true;
+
+            visualSolveSteps.Add(new VisualSolveStep(CaptureEdgeStates(solver), "Starting solver..."));
+
+            void OnUpdate(object sender, MeshChangeUpdateEventArgs args)
+            {
+                if (visualSolveSteps.Count >= MaxVisualSolveFrames - 1)
+                    return;
+
+                EdgeState[] snapshot = CaptureEdgeStates(args.CurrentMesh);
+                if (snapshot.AsSpan().SequenceEqual(visualSolveSteps[^1].EdgeStates))
+                    return;
+
+                string status;
+                bool isBacktrack = false;
+                bool isBranching = false;
+
+                if (args.Starting)
+                {
+                    status = "Testing branch...";
+                    isBranching = true;
+                }
+                else if (!args.SuccessfulAttempt && args.JustDone != null)
+                {
+                    status = "Contradiction found — backtracking";
+                    isBacktrack = true;
+                }
+                else if (args.JustDone != null)
+                {
+                    status = "Branch consistent — evaluating opposite";
+                    isBranching = true;
+                }
+                else if (!args.SuccessfulAttempt)
+                {
+                    status = "Propagating deduction wave...";
+                }
+                else
+                {
+                    status = "Applying deduced moves";
+                }
+
+                visualSolveSteps.Add(new VisualSolveStep(snapshot, status, isBacktrack, isBranching));
+            }
+
+            solver.MeshChangeUpdate += OnUpdate;
+            SolveState res;
+            try
+            {
+                res = solver.TrySolve();
+            }
+            finally
+            {
+                solver.MeshChangeUpdate -= OnUpdate;
+            }
+
+            if ((res == SolveState.Solved || res == SolveState.MultipleSolutions) && solver.SolutionFound != null)
+            {
+                EdgeState[] finalStates = CaptureEdgeStates(solver.SolutionFound);
+                visualSolveSolutionMesh = solver.SolutionFound;
+
+                if (!finalStates.AsSpan().SequenceEqual(visualSolveSteps[^1].EdgeStates))
+                {
+                    visualSolveSteps.Add(new VisualSolveStep(finalStates, "Solution complete!"));
+                }
+                else
+                {
+                    visualSolveSteps[^1] = visualSolveSteps[^1] with { Status = "Solution complete!", IsBacktrack = false, IsBranching = false };
+                }
+
+                VisualSolveStepIndex = 0;
+                NotifyChanged();
+                return true;
+            }
+
+            DismissVisualSolveInternal();
+            NotifyChanged();
+            return false;
+        }
+
+        public void SetVisualSolveStep(int index)
+        {
+            if (!IsVisualSolving) return;
+            int clamped = Math.Clamp(index, 0, visualSolveSteps.Count - 1);
+            if (clamped == VisualSolveStepIndex) return;
+            VisualSolveStepIndex = clamped;
+            NotifyChanged();
+        }
+
+        public bool StepVisualSolveForward()
+        {
+            if (!IsVisualSolving || VisualSolveStepIndex >= visualSolveSteps.Count - 1)
+                return false;
+            VisualSolveStepIndex++;
+            NotifyChanged();
+            return true;
+        }
+
+        public bool StepVisualSolveBackward()
+        {
+            if (!IsVisualSolving || VisualSolveStepIndex <= 0)
+                return false;
+            VisualSolveStepIndex--;
+            NotifyChanged();
+            return true;
+        }
+
+        public bool ApplyVisualSolveSolution()
+        {
+            if (!IsVisualSolving || CurrentMesh == null || visualSolveSolutionMesh == null)
+                return false;
+
+            var action = new PuzzleBatchSolveAction(CurrentMesh, visualSolveSolutionMesh);
+            if (UndoTree.Do(action))
+            {
+                WasAutoSolved = true;
+                DismissVisualSolveInternal();
+                CheckSolution();
+                NotifyChanged();
+                return true;
+            }
+
+            return false;
+        }
+
         public bool SolvePuzzle()
         {
             if (CurrentMesh == null || IsGenerating) return false;
 
+            DismissVisualSolveInternal();
             Mesh original = CreateFullSolverMesh(CurrentMesh);
             original.Clear();
 
@@ -676,6 +1078,7 @@ namespace LoopDeLoop.Web.Services
         public bool RequestHint(bool applyMove)
         {
             if (CurrentMesh == null || IsGenerating) return false;
+            DismissVisualSolveInternal();
 
             var (edgeIdx, targetState, message) = ComputeHint();
             HintMessage = message;
@@ -896,10 +1299,26 @@ namespace LoopDeLoop.Web.Services
         Recursive = 2
     }
 
+    public sealed record VisualSolveStep(
+        EdgeState[] EdgeStates,
+        string Status,
+        bool IsBacktrack = false,
+        bool IsBranching = false);
+
+    public sealed record PuzzleAnalysisResult(
+        string SolveStatus,
+        string TechniqueTier,
+        int BranchDepth,
+        int ClueCount,
+        int TotalCells,
+        int EdgeCount,
+        int? LookaheadDepth = null);
+
     public class UserPreferences
     {
         public bool DisallowFalseMove { get; set; } = false;
         public bool ShowCellColors { get; set; } = false;
+        public bool ShowEdgeColors { get; set; } = false;
         public int AutoMoveLevel { get; set; } = 0;
         public bool AutoMoveConsiderMultipleLoops { get; set; } = true;
         public bool AutoMoveUseIC { get; set; } = false;

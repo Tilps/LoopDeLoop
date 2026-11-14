@@ -49,10 +49,13 @@
                     </div>
                 }
 
-                <!-- Desktop Utilities (Share, Theme, Settings, Help, Reload) -->
+                <!-- Desktop Utilities (Share, Files/Print, Theme, Settings, Help, Reload) -->
                 <div class="desktop-utility-group">
                     <button class="btn btn-secondary" @onclick="SharePuzzle" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Copy shareable link to this puzzle">
                         🔗 Share
+                    </button>
+                    <button class="btn btn-secondary" @onclick="OpenFilesModal" disabled="@(Game.IsGenerating)" title="Import, Export (.loop / .txt / .loopy) &amp; Print">
+                        📁 Files
                     </button>
                     <button class="btn btn-secondary" @onclick="ToggleTheme" title="Toggle Dark/Light Mode">
                         @(isDarkMode ? "☀️" : "🌙")
@@ -168,6 +171,9 @@
                 <button class="btn btn-secondary" @onclick="SharePuzzle" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Copy shareable link to this puzzle">
                     🔗 Share
                 </button>
+                <button class="btn btn-secondary" @onclick="OpenFilesModal" disabled="@(Game.IsGenerating)" title="Import, Export &amp; Print">
+                    📁 Files / Print
+                </button>
                 <button class="btn btn-secondary" @onclick="ToggleTheme" title="Toggle Dark/Light Mode">
                     @(isDarkMode ? "☀️ Light" : "🌙 Dark")
                 </button>
@@ -262,8 +268,11 @@
                         var pointsStr = FormatCellPolygonPoints(mesh, cell);
 
                         string cellFill = "transparent";
-                        if (cell.Color == 1) cellFill = "var(--cell-yellow)";
-                        else if (cell.Color == -1) cellFill = "var(--cell-gray)";
+                        if (!Game.IsVisualSolving)
+                        {
+                            if (cell.Color == 1) cellFill = "var(--cell-yellow)";
+                            else if (cell.Color == -1) cellFill = "var(--cell-gray)";
+                        }
 
                         <polygon points="@pointsStr"
                                  fill="@cellFill"
@@ -272,18 +281,31 @@
                     }
                 </g>
 
-                <!-- Layer 2: Empty Grid Edges (faint background guidelines) -->
+                <!-- Layer 2: Empty Grid Edges (faint background guidelines or loop grouping colors) -->
                 <g class="empty-edges-layer" style="pointer-events: none;">
                     @for (int e = 0; e < mesh.Edges.Count; e++)
                     {
                         var edge = mesh.Edges[e];
-                        if (edge.State == EdgeState.Empty)
+                        if (GetDisplayEdgeState(mesh, e) == EdgeState.Empty)
                         {
                             mesh.GetEdgeExtent(edge, out float rawX1, out float rawY1, out float rawX2, out float rawY2);
                             float x1 = rawX1 * S, y1 = rawY1 * S, x2 = rawX2 * S, y2 = rawY2 * S;
-                            <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
-                                  class="edge-empty"
-                                  style="pointer-events: none;" />
+                            if (Game.ShowEdgeColors && !Game.IsVisualSolving && edge.Color != 0)
+                            {
+                                string groupStroke = GetEdgeGroupColor(edge.Color);
+                                string? dashArray = edge.Color < 0 ? "5 4" : null;
+                                <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
+                                      stroke="@groupStroke"
+                                      stroke-dasharray="@dashArray"
+                                      class="edge-grouped"
+                                      style="pointer-events: none;" />
+                            }
+                            else
+                            {
+                                <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
+                                      class="edge-empty"
+                                      style="pointer-events: none;" />
+                            }
                         }
                     }
                 </g>
@@ -305,8 +327,11 @@
                             float midY = sumY / cell.Intersections.Count;
 
                             float minEdgeDistSq = float.MaxValue;
+                            int filledCount = Game.IsVisualSolving ? 0 : cell.FilledCount;
                             foreach (var edgeIdx in cell.Edges)
                             {
+                                if (Game.IsVisualSolving && GetDisplayEdgeState(mesh, edgeIdx) == EdgeState.Filled)
+                                    filledCount++;
                                 mesh.GetEdgeExtent(mesh.Edges[edgeIdx], out float rawX1, out float rawY1, out float rawX2, out float rawY2);
                                 float dSq = DistanceToSegmentSq(midX, midY, rawX1 * S, rawY1 * S, rawX2 * S, rawY2 * S);
                                 if (dSq < minEdgeDistSq) minEdgeDistSq = dSq;
@@ -315,8 +340,8 @@
                             float fontSize = Math.Clamp(inradius * 0.95f, 13.0f, 22.0f);
 
                             string numColor = "var(--clue-default)";
-                            if (cell.FilledCount == cell.TargetCount) numColor = "var(--clue-satisfied)";
-                            else if (cell.FilledCount > cell.TargetCount) numColor = "var(--danger)";
+                            if (filledCount == cell.TargetCount) numColor = "var(--clue-satisfied)";
+                            else if (filledCount > cell.TargetCount) numColor = "var(--danger)";
 
                             @RenderCellClue(midX, midY, cell.TargetCount, numColor, fontSize)
                         }
@@ -329,19 +354,20 @@
                     {
                         int edgeIdx = e;
                         var edge = mesh.Edges[edgeIdx];
-                        if (edge.State != EdgeState.Empty)
+                        EdgeState edgeState = GetDisplayEdgeState(mesh, edgeIdx);
+                        if (edgeState != EdgeState.Empty)
                         {
                             mesh.GetEdgeExtent(edge, out float rawX1, out float rawY1, out float rawX2, out float rawY2);
                             float x1 = rawX1 * S, y1 = rawY1 * S, x2 = rawX2 * S, y2 = rawY2 * S;
-                            bool isMarked = Game.MarkedEdges.Contains(edgeIdx);
+                            bool isMarked = !Game.IsVisualSolving && Game.MarkedEdges.Contains(edgeIdx);
 
-                            if (edge.State == EdgeState.Filled)
+                            if (edgeState == EdgeState.Filled)
                             {
                                 <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
                                       class="@(isMarked ? "edge-filled-marked" : "edge-filled")"
                                       style="pointer-events: none;" />
                             }
-                            else if (edge.State == EdgeState.Excluded)
+                            else if (edgeState == EdgeState.Excluded)
                             {
                                 float mx = (x1 + x2) / 2.0f;
                                 float my = (y1 + y2) / 2.0f;
@@ -380,8 +406,16 @@
                     }
                 </g>
 
-                <!-- Layer 6: Dynamic Edge Highlights (Invalid move red flash & Hint glow) -->
+                <!-- Layer 6: Dynamic Edge Highlights (Invalid move red flash, grouping anchor, & Hint glow) -->
                 <g class="highlights-layer" style="pointer-events: none;">
+                    @if (Game.PendingGroupEdgeIndex.HasValue && Game.PendingGroupEdgeIndex.Value >= 0 && Game.PendingGroupEdgeIndex.Value < mesh.Edges.Count)
+                    {
+                        var grpEdge = mesh.Edges[Game.PendingGroupEdgeIndex.Value];
+                        mesh.GetEdgeExtent(grpEdge, out float gx1, out float gy1, out float gx2, out float gy2);
+                        <line x1="@(gx1 * S)" y1="@(gy1 * S)" x2="@(gx2 * S)" y2="@(gy2 * S)"
+                              class="edge-group-pending"
+                              style="pointer-events: none;" />
+                    }
                     @if (Game.InvalidEdgeIndex.HasValue && Game.InvalidEdgeIndex.Value >= 0 && Game.InvalidEdgeIndex.Value < mesh.Edges.Count)
                     {
                         var invEdge = mesh.Edges[Game.InvalidEdgeIndex.Value];
@@ -426,6 +460,45 @@
                     }
                 </g>
             </svg>
+
+            <!-- Conditional Visual Step-by-Step Solver Playback Bar -->
+            @if (Game.IsVisualSolving && Game.CurrentVisualSolveStep is { } vsStep)
+            {
+                string badgeClass = vsStep.IsBacktrack ? "visual-solver-status backtrack" : (vsStep.IsBranching ? "visual-solver-status branch" : "visual-solver-status");
+                <div class="visual-solver-bar" role="region" aria-label="Visual Solver Playback">
+                    <div class="visual-solver-header">
+                        <span class="visual-solver-step">Step @(Game.VisualSolveStepIndex + 1) / @Game.VisualSolveTotalSteps</span>
+                        <span class="@badgeClass">@vsStep.Status</span>
+                    </div>
+                    <div class="visual-solver-controls">
+                        <button class="btn btn-secondary visual-solver-btn" @onclick="VisualSolveStart" disabled="@(Game.VisualSolveStepIndex <= 0)" title="Jump to start">⏮</button>
+                        <button class="btn btn-secondary visual-solver-btn" @onclick="VisualSolvePrev" disabled="@(Game.VisualSolveStepIndex <= 0)" title="Previous step">◀</button>
+                        <button class="btn btn-primary visual-solver-btn" @onclick="ToggleVisualSolvePlay" title="@(isVisualSolvePlaying ? "Pause" : "Play")">
+                            @(isVisualSolvePlaying ? "⏸ Pause" : "▶ Play")
+                        </button>
+                        <button class="btn btn-secondary visual-solver-btn" @onclick="VisualSolveNext" disabled="@(Game.VisualSolveStepIndex >= Game.VisualSolveTotalSteps - 1)" title="Next step">▶</button>
+
+                        <input type="range"
+                               class="visual-solver-slider"
+                               min="0"
+                               max="@(Math.Max(0, Game.VisualSolveTotalSteps - 1))"
+                               value="@Game.VisualSolveStepIndex"
+                               @oninput="OnVisualSolveStepInput"
+                               aria-label="Solver playback step" />
+
+                        <select class="select-input visual-solver-speed" @bind="visualSolveSpeedMs" aria-label="Playback speed" title="Playback Speed">
+                            <option value="450">0.5x</option>
+                            <option value="220">1x</option>
+                            <option value="110">2x</option>
+                            <option value="45">5x</option>
+                            <option value="15">Max</option>
+                        </select>
+
+                        <button class="btn btn-success visual-solver-btn" @onclick="ApplyVisualSolve" title="Apply complete solution to the board">✓ Apply</button>
+                        <button class="btn btn-secondary visual-solver-btn" @onclick="DismissVisualSolve" title="Exit visual solver and return to your board">✕</button>
+                    </div>
+                </div>
+            }
 
             <!-- Floating Pan & Zoom Controls -->
             <div class="zoom-hud">
@@ -542,6 +615,7 @@
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" @onclick="() => showSolveModal = false">Cancel</button>
+                <button class="btn btn-secondary" @onclick="ConfirmWatchSolver" title="Watch the solver deduce and backtrack step-by-step">🎬 Watch Solver</button>
                 <button class="btn btn-danger" @onclick="ConfirmSolve">Reveal Solution</button>
             </div>
         </div>
@@ -633,6 +707,34 @@
                         <input type="checkbox" @bind="Game.ShowClock" @bind:after="OnSettingsChangedAsync" />
                         <span>Show elapsed timer</span>
                     </label>
+
+                    <label class="settings-check-row desktop-only-setting" title="Desktop shortcut: Alt+Click two edges to link same loop color, Ctrl+Click to link opposite parity">
+                        <input type="checkbox" @bind="Game.ShowEdgeColors" @bind:after="OnSettingsChangedAsync" />
+                        <span>Desktop loop grouping (Alt+Click same, Ctrl+Click opposite)</span>
+                    </label>
+                </div>
+
+                <div class="settings-section">
+                    <div class="settings-row">
+                        <div class="settings-label">
+                            <span>Puzzle Inspector (On-Demand)</span>
+                            <small class="settings-hint">Checks solvability tier &amp; clue density without background CPU overhead</small>
+                        </div>
+                        <button class="btn btn-secondary" @onclick="AnalyzePuzzle" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)">
+                            🔍 Analyze Puzzle
+                        </button>
+                    </div>
+
+                    @if (Game.CurrentAnalysis is { } analysis)
+                    {
+                        double density = analysis.TotalCells > 0 ? (double)analysis.ClueCount / analysis.TotalCells : 0;
+                        <div class="analysis-card">
+                            <div><strong>Status:</strong> @analysis.SolveStatus</div>
+                            <div><strong>Rating:</strong> @analysis.TechniqueTier</div>
+                            <div><strong>Branch Depth:</strong> @analysis.BranchDepth</div>
+                            <div><strong>Clue Density:</strong> @analysis.ClueCount / @analysis.TotalCells (@($"{density:P0}")) &bull; @analysis.EdgeCount edges</div>
+                        </div>
+                    }
                 </div>
 
                 <details class="settings-advanced">
@@ -677,6 +779,64 @@
     </div>
 }
 
+<!-- Import / Export & Print Modal -->
+@if (showFilesModal)
+{
+    <div class="modal-backdrop" @onclick="() => showFilesModal = false">
+        <div class="modal-card settings-modal-card" @onclick:stopPropagation="true">
+            <h2 class="modal-title">Import, Export &amp; Print</h2>
+            <div class="modal-body settings-modal-body">
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Export &amp; Print</h3>
+                    <div class="files-btn-grid">
+                        <button class="btn btn-secondary" @onclick='() => DownloadExportAsync("loop")' disabled="@(Game.CurrentMesh == null)">💾 Download .loop</button>
+                        <button class="btn btn-secondary" @onclick='() => CopyExportAsync("loop")' disabled="@(Game.CurrentMesh == null)">📋 Copy .loop</button>
+                        @if (Game.CanExportSquareFormats)
+                        {
+                            <button class="btn btn-secondary" @onclick='() => DownloadExportAsync("ascii")'>📝 Download .txt (ASCII)</button>
+                            <button class="btn btn-secondary" @onclick='() => CopyExportAsync("ascii")'>📋 Copy ASCII</button>
+                            <button class="btn btn-secondary" @onclick='() => DownloadExportAsync("loopy")'>💾 Download .loopy</button>
+                            <button class="btn btn-secondary" @onclick='() => CopyExportAsync("loopy-desc")'>📋 Copy Loopy Code</button>
+                        }
+                        <button class="btn btn-primary" @onclick="PrintBoardAsync" disabled="@(Game.CurrentMesh == null)">🖨️ Print Board</button>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Import Puzzle</h3>
+                    <p class="settings-hint">Supports `.loop`, ASCII grids (`+ - +`), Simon Tatham Loopy descriptors (`10x10:...`), `.loopy` save files, or share links.</p>
+
+                    <label class="files-file-row">
+                        <span>Load from file:</span>
+                        <InputFile OnChange="OnImportFileSelected" accept=".loop,.txt,.loopy" />
+                    </label>
+
+                    <textarea class="files-textarea"
+                              rows="5"
+                              @bind="importText"
+                              placeholder="Paste puzzle file contents, Loopy code (e.g. 7x7:a3...), ASCII grid, or share link here..."></textarea>
+
+                    <div class="files-import-actions">
+                        <button class="btn btn-primary" @onclick="ImportPuzzleFromText" disabled="@string.IsNullOrWhiteSpace(importText)">
+                            Import Puzzle
+                        </button>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(filesStatusMessage))
+                {
+                    <div class="files-feedback @(filesStatusIsError ? "error" : "success")">
+                        @filesStatusMessage
+                    </div>
+                }
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" @onclick="() => showFilesModal = false">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private const float S = 50.0f; // Scale factor: 50 pixels per grid unit
 
@@ -686,13 +846,25 @@
     private bool showSolveModal = false;
     private bool showResetModal = false;
     private bool showSettingsModal = false;
+    private bool showFilesModal = false;
     private bool isDarkMode = false;
     private bool showShareToast = false;
     private bool isMenuOpen = false;
     private bool hasPwaUpdate = false;
 
+    private string importText = string.Empty;
+    private string? filesStatusMessage;
+    private bool filesStatusIsError = false;
+
     private double wheelDeltaAccumulator = 0;
     private const double WheelUndoRedoStepThreshold = 100.0;
+
+    private bool isVisualSolvePlaying = false;
+    private int visualSolveSpeedMs = 220;
+    private CancellationTokenSource? visualSolvePlayCts;
+
+    private EdgeState GetDisplayEdgeState(Mesh mesh, int edgeIdx)
+        => Game.IsVisualSolving ? Game.GetVisualSolveEdgeState(edgeIdx) : mesh.Edges[edgeIdx].State;
 
     private float zoomScale = 1.0f;
     private float panX = 0f;
@@ -928,6 +1100,11 @@
 
     private void HandleStateChanged()
     {
+        if (!Game.IsVisualSolving && isVisualSolvePlaying)
+        {
+            StopVisualSolvePlayback();
+        }
+
         if (Game.IsSolved && !lastSolvedState)
         {
             if (!Game.WasAutoSolved)
@@ -997,6 +1174,116 @@
         showSolveModal = false;
         isMenuOpen = false;
         Game.SolvePuzzle();
+    }
+
+    private void ConfirmWatchSolver()
+    {
+        showSolveModal = false;
+        isMenuOpen = false;
+        StopVisualSolvePlayback();
+        if (Game.StartVisualSolve())
+        {
+            StartVisualSolvePlayback();
+        }
+    }
+
+    private void ToggleVisualSolvePlay()
+    {
+        if (!Game.IsVisualSolving) return;
+        if (isVisualSolvePlaying)
+        {
+            StopVisualSolvePlayback();
+        }
+        else
+        {
+            if (Game.VisualSolveStepIndex >= Game.VisualSolveTotalSteps - 1)
+                Game.SetVisualSolveStep(0);
+            StartVisualSolvePlayback();
+        }
+    }
+
+    private void StartVisualSolvePlayback()
+    {
+        StopVisualSolvePlayback();
+        if (!Game.IsVisualSolving) return;
+
+        isVisualSolvePlaying = true;
+        visualSolvePlayCts = new CancellationTokenSource();
+        _ = RunVisualSolvePlaybackAsync(visualSolvePlayCts.Token);
+    }
+
+    private void StopVisualSolvePlayback()
+    {
+        isVisualSolvePlaying = false;
+        var prev = visualSolvePlayCts;
+        visualSolvePlayCts = null;
+        if (prev != null)
+        {
+            prev.Cancel();
+            prev.Dispose();
+        }
+    }
+
+    private async Task RunVisualSolvePlaybackAsync(CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested && isVisualSolvePlaying && Game.IsVisualSolving)
+            {
+                await Task.Delay(Math.Clamp(visualSolveSpeedMs, 15, 1000), token);
+                if (token.IsCancellationRequested || !Game.IsVisualSolving) break;
+
+                bool advanced = Game.StepVisualSolveForward();
+                if (!advanced)
+                {
+                    StopVisualSolvePlayback();
+                    await InvokeAsync(StateHasChanged);
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void VisualSolveStart()
+    {
+        StopVisualSolvePlayback();
+        Game.SetVisualSolveStep(0);
+    }
+
+    private void VisualSolvePrev()
+    {
+        StopVisualSolvePlayback();
+        Game.StepVisualSolveBackward();
+    }
+
+    private void VisualSolveNext()
+    {
+        StopVisualSolvePlayback();
+        Game.StepVisualSolveForward();
+    }
+
+    private void OnVisualSolveStepInput(ChangeEventArgs e)
+    {
+        StopVisualSolvePlayback();
+        if (int.TryParse(e.Value?.ToString(), CultureInfo.InvariantCulture, out int stepIdx))
+        {
+            Game.SetVisualSolveStep(stepIdx);
+        }
+    }
+
+    private void ApplyVisualSolve()
+    {
+        StopVisualSolvePlayback();
+        Game.ApplyVisualSolveSolution();
+    }
+
+    private void DismissVisualSolve()
+    {
+        StopVisualSolvePlayback();
+        Game.DismissVisualSolve();
     }
 
     private void RequestHint()
@@ -1262,10 +1549,155 @@
         }
     }
 
+    private static readonly string[] EdgeGroupPalette =
+    [
+        "#2563eb",
+        "#d97706",
+        "#9333ea",
+        "#0d9488",
+        "#db2777",
+        "#65a30d",
+        "#ea580c",
+        "#4f46e5"
+    ];
+
+    private static string GetEdgeGroupColor(int colorValue)
+    {
+        int idx = Math.Abs(colorValue) - 1;
+        if (idx < 0) idx = 0;
+        return EdgeGroupPalette[idx % EdgeGroupPalette.Length];
+    }
+
+    private void OpenFilesModal()
+    {
+        isMenuOpen = false;
+        filesStatusMessage = null;
+        filesStatusIsError = false;
+        showFilesModal = true;
+    }
+
+    private void AnalyzePuzzle()
+    {
+        Game.AnalyzeCurrentPuzzle();
+    }
+
+    private string? BuildExportPayload(string kind, out string fileName, out string label)
+    {
+        fileName = "puzzle.loop";
+        label = ".loop";
+        switch (kind)
+        {
+            case "loop":
+                return Game.ExportLoopText();
+            case "ascii":
+                fileName = "puzzle.txt";
+                label = "ASCII grid";
+                return Game.ExportSquareAscii();
+            case "loopy":
+                fileName = "puzzle.loopy";
+                label = "Loopy save";
+                return Game.ExportLoopySave();
+            case "loopy-desc":
+                fileName = "puzzle-loopy.txt";
+                label = "Loopy code";
+                return Game.ExportLoopyDescriptor();
+            default:
+                return null;
+        }
+    }
+
+    private async Task DownloadExportAsync(string kind)
+    {
+        string? content = BuildExportPayload(kind, out string fileName, out string label);
+        if (string.IsNullOrEmpty(content))
+        {
+            filesStatusMessage = $"Export ({label}) is not supported for this grid.";
+            filesStatusIsError = true;
+            return;
+        }
+
+        bool ok = false;
+        try
+        {
+            ok = await JS.InvokeAsync<bool>("loopHelpers.downloadTextFile", fileName, content);
+        }
+        catch {}
+
+        filesStatusMessage = ok ? $"Downloaded {fileName}." : "Could not trigger file download.";
+        filesStatusIsError = !ok;
+    }
+
+    private async Task CopyExportAsync(string kind)
+    {
+        string? content = BuildExportPayload(kind, out _, out string label);
+        if (string.IsNullOrEmpty(content))
+        {
+            filesStatusMessage = $"Copy ({label}) is not supported for this grid.";
+            filesStatusIsError = true;
+            return;
+        }
+
+        bool ok = false;
+        try
+        {
+            ok = await JS.InvokeAsync<bool>("loopHelpers.copyToClipboard", content);
+        }
+        catch {}
+
+        filesStatusMessage = ok ? $"Copied {label} to clipboard." : "Could not access clipboard.";
+        filesStatusIsError = !ok;
+    }
+
+    private async Task PrintBoardAsync()
+    {
+        showFilesModal = false;
+        isMenuOpen = false;
+        await SafeInvokeVoidAsync("loopHelpers.triggerPrint");
+    }
+
+    private async Task OnImportFileSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            using var stream = e.File.OpenReadStream(maxAllowedSize: 2 * 1024 * 1024);
+            using var reader = new System.IO.StreamReader(stream);
+            importText = await reader.ReadToEndAsync();
+            ImportPuzzleFromText();
+        }
+        catch (Exception ex)
+        {
+            filesStatusMessage = $"Could not read file: {ex.Message}";
+            filesStatusIsError = true;
+        }
+    }
+
+    private void ImportPuzzleFromText()
+    {
+        if (Game.ImportPuzzle(importText, out string format))
+        {
+            selectedType = Game.CurrentType.ToString();
+            lastSolvedState = Game.IsSolved;
+            ResetZoom();
+            filesStatusMessage = $"Imported {format} puzzle.";
+            filesStatusIsError = false;
+            showFilesModal = false;
+        }
+        else
+        {
+            filesStatusMessage = "Unrecognized puzzle format. Supported: .loop, ASCII grid (+ - +), Loopy descriptor/save, or Share link.";
+            filesStatusIsError = true;
+        }
+    }
+
     [JSInvokable]
-    public void OnSvgPointerDown(double x, double y, int button, bool shiftKey)
+    public void OnSvgPointerDown(double x, double y, int button, bool shiftKey, bool ctrlKey = false, bool altKey = false)
     {
         if (Game.CurrentMesh == null || Game.IsGenerating) return;
+        if (Game.IsVisualSolving)
+        {
+            DismissVisualSolve();
+            return;
+        }
 
         float fx = (float)x;
         float fy = (float)y;
@@ -1277,7 +1709,14 @@
         draggedEdgesCount = 0;
 
         bool isRight = button == 2; // Right click
-        bool isAlt = shiftKey ? !isRight : isRight; // Shift reverses cycle direction
+        bool isAltCycle = shiftKey ? !isRight : isRight; // Shift reverses cycle direction
+
+        if (closestEdge != -1 && Game.ShowEdgeColors && (altKey || ctrlKey) && !isRight)
+        {
+            bool sameLoop = altKey && !ctrlKey;
+            Game.HandleEdgeGroupingClick(closestEdge, sameLoop);
+            return;
+        }
 
         if (closestEdge != -1)
         {
@@ -1285,14 +1724,14 @@
                 return; // Fixed edges cannot be clicked or changed
 
             isPointerDown = true;
-            Game.ToggleEdge(closestEdge, isAlt);
+            Game.ToggleEdge(closestEdge, isAltCycle);
             dragTargetState = Game.CurrentMesh.Edges[closestEdge].State;
             speculativeFirstTouchToggled = true;
         }
         else if (closestCell != -1 && Game.ShowCellColors)
         {
             isPointerDown = true;
-            Game.ToggleCellColor(closestCell, isAlt);
+            Game.ToggleCellColor(closestCell, isAltCycle);
             speculativeFirstTouchToggled = true;
         }
     }
@@ -1374,6 +1813,7 @@
 
     public void Dispose()
     {
+        StopVisualSolvePlayback();
         Game.OnStateChanged -= HandleStateChanged;
         timer?.Dispose();
         shareToastCts?.Cancel();

@@ -1183,3 +1183,232 @@ body, html {
 .settings-modal-actions {
     justify-content: space-between;
 }
+
+/* Conditional Visual Step-by-Step Solver Playback Bar */
+.visual-solver-bar {
+    position: absolute;
+    top: 0.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    width: min(94vw, 640px);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    padding: 0.55rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    animation: menu-slide-down 0.18s ease-out;
+}
+
+.visual-solver-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    flex-wrap: wrap;
+}
+
+.visual-solver-step {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.visual-solver-status {
+    font-weight: 600;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    background: var(--btn-secondary-bg);
+    color: var(--btn-secondary-text);
+}
+
+.visual-solver-status.branch {
+    color: var(--primary);
+}
+
+.visual-solver-status.backtrack {
+    color: var(--danger);
+}
+
+.visual-solver-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.visual-solver-btn {
+    min-height: 32px;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.82rem;
+}
+
+.visual-solver-slider {
+    flex: 1 1 110px;
+    min-width: 80px;
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
+.visual-solver-speed {
+    min-height: 32px;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.8rem;
+}
+
+/* Desktop-only settings hidden on touch devices */
+@media (pointer: coarse) {
+    .desktop-only-setting {
+        display: none;
+    }
+}
+
+/* Puzzle Inspector Card */
+.analysis-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 0.6rem 0.75rem;
+    font-size: 0.86rem;
+    color: var(--text-primary);
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+}
+
+/* Import / Export & Print Modal */
+.files-btn-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.5rem;
+}
+
+.files-file-row {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    font-size: 0.88rem;
+    color: var(--text-primary);
+}
+
+.files-textarea {
+    width: 100%;
+    padding: 0.55rem 0.65rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    resize: vertical;
+}
+
+.files-import-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.files-feedback {
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.files-feedback.success {
+    background: rgba(16, 185, 129, 0.12);
+    color: var(--success);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.files-feedback.error {
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--danger);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+/* Edge Grouping Highlights */
+.edge-grouped {
+    stroke-width: 3.5px;
+    stroke-linecap: round;
+    opacity: 0.9;
+}
+
+.edge-group-pending {
+    stroke: #06b6d4;
+    stroke-width: 7px;
+    stroke-linecap: round;
+    opacity: 0.85;
+    animation: hint-pulse 0.85s ease-in-out infinite;
+}
+
+/* Monochrome Vector Print Stylesheet */
+@media print {
+    @page {
+        margin: 12mm;
+    }
+
+    body, html, .game-container {
+        background: #ffffff !important;
+        color: #000000 !important;
+        height: auto !important;
+        width: 100% !important;
+        overflow: visible !important;
+    }
+
+    .game-header,
+    .game-footer,
+    .zoom-hud,
+    .visual-solver-bar,
+    .toast-notification,
+    .hint-toast-notification,
+    .modal-backdrop,
+    .update-banner,
+    .overlay-spinner {
+        display: none !important;
+    }
+
+    .board-container {
+        position: static !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        background: #ffffff !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+    }
+
+    .svg-board {
+        width: 100% !important;
+        max-height: 92vh !important;
+        height: auto !important;
+        box-shadow: none !important;
+        border: none !important;
+        background: #ffffff !important;
+    }
+
+    .edge-empty {
+        stroke: #cbd5e1 !important;
+        stroke-width: 1px !important;
+    }
+
+    .edge-filled,
+    .edge-filled-marked,
+    .edge-cross,
+    .edge-cross-marked {
+        stroke: #000000 !important;
+    }
+
+    .vertex-dot {
+        fill: #000000 !important;
+    }
+
+    .cell-svg-text {
+        fill: #000000 !important;
+    }
+}
