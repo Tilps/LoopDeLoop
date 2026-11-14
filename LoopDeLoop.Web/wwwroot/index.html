@@ -102,6 +102,15 @@
             clearGameState: () => {
                 try { localStorage.removeItem('loopdeloop_gamestate'); } catch (_) {}
             },
+            loadSettings: () => {
+                try { return localStorage.getItem('loopdeloop_settings'); } catch (_) { return null; }
+            },
+            saveSettings: (json) => {
+                try { localStorage.setItem('loopdeloop_settings', json); } catch (_) {}
+            },
+            setWheelMode: (mode) => {
+                window._loopWheelMode = mode || 'zoom';
+            },
             reloadFromServer: async () => {
                 try {
                     if ('serviceWorker' in navigator) {
@@ -348,6 +357,10 @@
 
             svg.onwheel = (e) => {
                 e.preventDefault();
+                if (window._loopWheelMode === 'undoredo' && !e.ctrlKey) {
+                    if (svg._dotNetRef) svg._dotNetRef.invokeMethodAsync('OnWheelUndoRedo', e.deltaY);
+                    return;
+                }
                 let factor = e.deltaY < 0 ? 1.15 : 0.87;
                 if (svg._dotNetRef) svg._dotNetRef.invokeMethodAsync('OnWheelZoom', factor);
             };

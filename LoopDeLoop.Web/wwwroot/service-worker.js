@@ -1,5 +1,5 @@
 // LoopDeLoop Service Worker
-const CACHE_NAME = 'loopdeloop-v8';
+const CACHE_NAME = 'loopdeloop-v9';
 
 // Install event: prepare cache
 self.addEventListener('install', event => {

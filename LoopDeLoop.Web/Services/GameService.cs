@@ -19,6 +19,33 @@ namespace LoopDeLoop.Web.Services
         public bool DisallowFalseMove { get; set; } = false;
         public bool ShowCellColors { get; set; } = false;
 
+        // Phase 2 Settings (persisted via UserPreferences, hidden in Settings modal)
+        public int AutoMoveLevel
+        {
+            get => field;
+            set => field = Math.Clamp(value, 0, 4);
+        } = 0; // 0 = Off, 1..3 = Depth 1..3, 4 = Full Cascade
+
+        public bool AutoMoveConsiderMultipleLoops { get; set; } = true;
+        public bool AutoMoveUseIC { get; set; } = false;
+        public bool AutoStart { get; set; } = false;
+        public MouseWheelMode WheelMode { get; set; } = MouseWheelMode.Zoom;
+        public bool ShowClock { get; set; } = true;
+
+        public double GenerateLengthFraction
+        {
+            get => field;
+            set => field = double.IsNaN(value) ? 0.5 : Math.Clamp(value, 0.25, 0.75);
+        } = 0.5;
+
+        public double GenerateBoringFraction
+        {
+            get => field;
+            set => field = double.IsNaN(value) ? 0.01 : Math.Clamp(value, 0.0, 0.20);
+        } = 0.01;
+
+        public GeneratorSolverMode SolverModeOverride { get; set; } = GeneratorSolverMode.Auto;
+
         public bool IsGenerating { get; private set; }
         public int PrunedProgress { get; private set; }
         public int TotalCells { get; private set; }
@@ -109,6 +136,7 @@ namespace LoopDeLoop.Web.Services
             try
             {
                 Mesh mesh = PuzzleHelper.MakeMesh(width, height, CurrentType, Difficulty);
+                ApplyGeneratorOverrides(mesh);
                 generatingMesh = mesh;
                 TotalCells = mesh.Cells.Count;
                 NotifyChanged();
@@ -126,10 +154,12 @@ namespace LoopDeLoop.Web.Services
                     CurrentMesh = mesh;
                     MarkedEdges.Clear();
                     UndoTree = new UndoTree();
+                    ApplyAutoStartIfEnabled(mesh);
                     StartTime = DateTime.UtcNow;
                     IsSolved = false;
                     WasAutoSolved = false;
                     ClearTransientBoardState();
+                    CheckSolution();
                 }
             }
             catch (OperationCanceledException)
@@ -147,6 +177,85 @@ namespace LoopDeLoop.Web.Services
             }
         }
 
+        private int GetEffectiveAutoMoveDepth(Mesh mesh)
+        {
+            return AutoMoveLevel switch
+            {
+                1 => 1,
+                2 => 2,
+                3 => 3,
+                >= 4 => mesh.Edges.Count + 1,
+                _ => 0
+            };
+        }
+
+        public void ConfigureMeshForInteractiveMove(Mesh mesh)
+        {
+            mesh.ConsiderMultipleLoops = AutoMoveConsiderMultipleLoops;
+            mesh.ConsiderIntersectCellInteractsAsSimple = AutoMoveUseIC;
+            mesh.UseColoring = false;
+            mesh.UseCellPairs = false;
+            mesh.UseCellPairsTopLevel = false;
+            mesh.UseEdgeRestricts = false;
+            mesh.UseCellColoring = false;
+            mesh.UseDerivedColoring = false;
+            mesh.UseMerging = false;
+            mesh.ColoringCheats = false;
+        }
+
+        public void ApplyGeneratorOverrides(Mesh mesh)
+        {
+            mesh.GenerateLengthFraction = GenerateLengthFraction;
+            mesh.GenerateBoringFraction = GenerateBoringFraction;
+            if (SolverModeOverride == GeneratorSolverMode.Iterative)
+                mesh.SolverMethod = SolverMethod.Iterative;
+            else if (SolverModeOverride == GeneratorSolverMode.Recursive)
+                mesh.SolverMethod = SolverMethod.Recursive;
+        }
+
+        public void ApplyAutoStartIfEnabled(Mesh mesh)
+        {
+            if (!AutoStart) return;
+            ConfigureMeshForInteractiveMove(mesh);
+            mesh.PerformStart([]);
+        }
+
+        public UserPreferences ExportPreferences() => new()
+        {
+            DisallowFalseMove = DisallowFalseMove,
+            ShowCellColors = ShowCellColors,
+            AutoMoveLevel = AutoMoveLevel,
+            AutoMoveConsiderMultipleLoops = AutoMoveConsiderMultipleLoops,
+            AutoMoveUseIC = AutoMoveUseIC,
+            AutoStart = AutoStart,
+            WheelMode = WheelMode,
+            ShowClock = ShowClock,
+            GenerateLengthFraction = GenerateLengthFraction,
+            GenerateBoringFraction = GenerateBoringFraction,
+            SolverModeOverride = SolverModeOverride
+        };
+
+        public void ApplyPreferences(UserPreferences prefs)
+        {
+            DisallowFalseMove = prefs.DisallowFalseMove;
+            ShowCellColors = prefs.ShowCellColors;
+            AutoMoveLevel = prefs.AutoMoveLevel;
+            AutoMoveConsiderMultipleLoops = prefs.AutoMoveConsiderMultipleLoops;
+            AutoMoveUseIC = prefs.AutoMoveUseIC;
+            AutoStart = prefs.AutoStart;
+            WheelMode = Enum.IsDefined(prefs.WheelMode) ? prefs.WheelMode : MouseWheelMode.Zoom;
+            ShowClock = prefs.ShowClock;
+            GenerateLengthFraction = prefs.GenerateLengthFraction;
+            GenerateBoringFraction = prefs.GenerateBoringFraction;
+            SolverModeOverride = Enum.IsDefined(prefs.SolverModeOverride) ? prefs.SolverModeOverride : GeneratorSolverMode.Auto;
+            NotifyChanged();
+        }
+
+        public void ResetPreferencesToDefaults()
+        {
+            ApplyPreferences(new UserPreferences());
+        }
+
         public void ToggleEdge(int edgeIndex, bool isAlternative)
         {
             if (CurrentMesh == null || edgeIndex < 0 || edgeIndex >= CurrentMesh.Edges.Count)
@@ -160,7 +269,11 @@ namespace LoopDeLoop.Web.Services
                 ? (current == EdgeState.Empty ? EdgeState.Filled : (current == EdgeState.Filled ? EdgeState.Excluded : EdgeState.Empty))
                 : (current == EdgeState.Empty ? EdgeState.Excluded : (current == EdgeState.Excluded ? EdgeState.Filled : EdgeState.Empty));
 
-            var action = new PuzzleSetEdgeStateAction(CurrentMesh, edgeIndex, next, DisallowFalseMove);
+            int autoMove = GetEffectiveAutoMoveDepth(CurrentMesh);
+            if (autoMove > 0)
+                ConfigureMeshForInteractiveMove(CurrentMesh);
+
+            var action = new PuzzleSetEdgeStateAction(CurrentMesh, edgeIndex, next, DisallowFalseMove, autoMove);
             if (UndoTree.Do(action))
             {
                 InvalidEdgeIndex = null;
@@ -185,7 +298,11 @@ namespace LoopDeLoop.Web.Services
             if (CurrentMesh.Edges[edgeIndex].State == targetState)
                 return;
 
-            var action = new PuzzleSetEdgeStateAction(CurrentMesh, edgeIndex, targetState, DisallowFalseMove);
+            int autoMove = GetEffectiveAutoMoveDepth(CurrentMesh);
+            if (autoMove > 0)
+                ConfigureMeshForInteractiveMove(CurrentMesh);
+
+            var action = new PuzzleSetEdgeStateAction(CurrentMesh, edgeIndex, targetState, DisallowFalseMove, autoMove);
             if (UndoTree.Do(action))
             {
                 InvalidEdgeIndex = null;
@@ -506,10 +623,12 @@ namespace LoopDeLoop.Web.Services
             CurrentMesh.Clear();
             MarkedEdges.Clear();
             UndoTree = new UndoTree();
+            ApplyAutoStartIfEnabled(CurrentMesh);
             StartTime = DateTime.UtcNow;
             IsSolved = false;
             WasAutoSolved = false;
             ClearTransientBoardState();
+            CheckSolution();
             NotifyChanged();
         }
 
@@ -762,6 +881,34 @@ namespace LoopDeLoop.Web.Services
             hintMessageCts?.Cancel();
             hintMessageCts?.Dispose();
         }
+    }
+
+    public enum MouseWheelMode
+    {
+        Zoom = 0,
+        UndoRedo = 1
+    }
+
+    public enum GeneratorSolverMode
+    {
+        Auto = 0,
+        Iterative = 1,
+        Recursive = 2
+    }
+
+    public class UserPreferences
+    {
+        public bool DisallowFalseMove { get; set; } = false;
+        public bool ShowCellColors { get; set; } = false;
+        public int AutoMoveLevel { get; set; } = 0;
+        public bool AutoMoveConsiderMultipleLoops { get; set; } = true;
+        public bool AutoMoveUseIC { get; set; } = false;
+        public bool AutoStart { get; set; } = false;
+        public MouseWheelMode WheelMode { get; set; } = MouseWheelMode.Zoom;
+        public bool ShowClock { get; set; } = true;
+        public double GenerateLengthFraction { get; set; } = 0.5;
+        public double GenerateBoringFraction { get; set; } = 0.01;
+        public GeneratorSolverMode SolverModeOverride { get; set; } = GeneratorSolverMode.Auto;
     }
 
     public class SavedGameState

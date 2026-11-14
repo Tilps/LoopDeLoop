@@ -204,18 +204,20 @@ namespace LoopDeLoop
 
     public class PuzzleSetEdgeStateAction : IAction
     {
-        public PuzzleSetEdgeStateAction(Mesh mesh, int edgeIndex, EdgeState targetState, bool disallowFalseMove = false)
+        public PuzzleSetEdgeStateAction(Mesh mesh, int edgeIndex, EdgeState targetState, bool disallowFalseMove = false, int autoMove = 0)
         {
             this.mesh = mesh;
             this.edgeIndex = edgeIndex;
             this.targetState = targetState;
             this.disallowFalseMove = disallowFalseMove;
+            this.autoMove = autoMove;
         }
 
         private readonly Mesh mesh;
         private readonly int edgeIndex;
         private readonly EdgeState targetState;
         private readonly bool disallowFalseMove;
+        private readonly int autoMove;
         private List<IAction>? actionsPerformed;
         private bool successful;
 
@@ -232,7 +234,7 @@ namespace LoopDeLoop
             }
 
             actionsPerformed = [];
-            if (!EdgeActionHelper.PerformTransition(mesh, edgeIndex, targetState, autoMove: 0, disallowFalseMove, actionsPerformed, out successful))
+            if (!EdgeActionHelper.PerformTransition(mesh, edgeIndex, targetState, autoMove, disallowFalseMove, actionsPerformed, out successful))
             {
                 Unperform();
                 return false;
@@ -251,7 +253,7 @@ namespace LoopDeLoop
 
         public bool Equals(IAction? other)
         {
-            return other is PuzzleSetEdgeStateAction o && o.mesh == mesh && o.edgeIndex == edgeIndex && o.targetState == targetState && o.disallowFalseMove == disallowFalseMove;
+            return other is PuzzleSetEdgeStateAction o && o.mesh == mesh && o.edgeIndex == edgeIndex && o.targetState == targetState && o.disallowFalseMove == disallowFalseMove && o.autoMove == autoMove;
         }
     }
 

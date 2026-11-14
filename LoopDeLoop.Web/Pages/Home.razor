@@ -42,11 +42,14 @@
             </div>
 
             <div class="action-meta-group">
-                <div class="timer-box" title="Elapsed Time">
-                    @(Game.ElapsedTime.ToString(@"mm\:ss"))
-                </div>
+                @if (Game.ShowClock)
+                {
+                    <div class="timer-box" title="Elapsed Time">
+                        @(Game.ElapsedTime.ToString(@"mm\:ss"))
+                    </div>
+                }
 
-                <!-- Desktop Utilities (Share, Theme, Help, Reload) -->
+                <!-- Desktop Utilities (Share, Theme, Settings, Help, Reload) -->
                 <div class="desktop-utility-group">
                     <button class="btn btn-secondary" @onclick="SharePuzzle" disabled="@(Game.CurrentMesh == null || Game.IsGenerating)" title="Copy shareable link to this puzzle">
                         🔗 Share
@@ -54,7 +57,10 @@
                     <button class="btn btn-secondary" @onclick="ToggleTheme" title="Toggle Dark/Light Mode">
                         @(isDarkMode ? "☀️" : "🌙")
                     </button>
-                    <button class="btn btn-secondary" @onclick="() => showHelpModal = true" title="Instructions & Rules">
+                    <button class="btn btn-secondary" @onclick="OpenSettings" title="Preferences &amp; Solver Settings">
+                        🎛️ Settings
+                    </button>
+                    <button class="btn btn-secondary" @onclick="() => showHelpModal = true" title="Instructions &amp; Rules">
                         Help
                     </button>
                     <button class="btn btn-secondary" @onclick="ReloadFromServer" title="Reload newest version from server">
@@ -148,11 +154,11 @@
 
             <div class="controls-group">
                 <label class="checkbox-label" title="Disallow moves that cause obvious rule violations (exceeding clue counts or vertex degree > 2)">
-                    <input type="checkbox" @bind="Game.DisallowFalseMove" />
+                    <input type="checkbox" @bind="Game.DisallowFalseMove" @bind:after="OnSettingsChangedAsync" />
                     <span>Restrict invalid</span>
                 </label>
                 <label class="checkbox-label" title="Enable cell coloring for inside/outside marking (when off, clicking inside routes to nearest edge)">
-                    <input type="checkbox" @bind="Game.ShowCellColors" />
+                    <input type="checkbox" @bind="Game.ShowCellColors" @bind:after="OnSettingsChangedAsync" />
                     <span>Cell shading</span>
                 </label>
             </div>
@@ -165,7 +171,10 @@
                 <button class="btn btn-secondary" @onclick="ToggleTheme" title="Toggle Dark/Light Mode">
                     @(isDarkMode ? "☀️ Light" : "🌙 Dark")
                 </button>
-                <button class="btn btn-secondary" @onclick="() => showHelpModal = true" title="Instructions & Rules">
+                <button class="btn btn-secondary" @onclick="OpenSettings" title="Preferences &amp; Solver Settings">
+                    🎛️ Settings
+                </button>
+                <button class="btn btn-secondary" @onclick="() => showHelpModal = true" title="Instructions &amp; Rules">
                     Help
                 </button>
                 <button class="btn btn-secondary" @onclick="ReloadFromServer" title="Reload newest version from server">
@@ -556,6 +565,118 @@
     </div>
 }
 
+<!-- Settings Modal -->
+@if (showSettingsModal)
+{
+    <div class="modal-backdrop" @onclick="() => showSettingsModal = false">
+        <div class="modal-card settings-modal-card" @onclick:stopPropagation="true">
+            <h2 class="modal-title">Settings</h2>
+            <div class="modal-body settings-modal-body">
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Gameplay &amp; Auto-Move</h3>
+
+                    <div class="settings-row">
+                        <label class="settings-label" for="setting-automove">
+                            <span>Auto-move deductions</span>
+                            <small class="settings-hint">Automatically fill forced neighbor deductions after each move</small>
+                        </label>
+                        <select id="setting-automove" class="select-input" @bind="Game.AutoMoveLevel" @bind:after="OnSettingsChangedAsync">
+                            <option value="0">Off (Default)</option>
+                            <option value="1">Level 1 (Immediate)</option>
+                            <option value="2">Level 2 (2-Step Cascade)</option>
+                            <option value="3">Level 3 (Deep Cascade)</option>
+                            <option value="4">Full Cascade</option>
+                        </select>
+                    </div>
+
+                    <label class="settings-check-row">
+                        <input type="checkbox" @bind="Game.AutoMoveConsiderMultipleLoops" @bind:after="OnSettingsChangedAsync" />
+                        <span>Avoid closing a partial loop prematurely in auto-move</span>
+                    </label>
+
+                    <label class="settings-check-row">
+                        <input type="checkbox" @bind="Game.AutoMoveUseIC" @bind:after="OnSettingsChangedAsync" />
+                        <span>Use intersection-cell deductions in auto-move</span>
+                    </label>
+
+                    <label class="settings-check-row">
+                        <input type="checkbox" @bind="Game.AutoStart" @bind:after="OnSettingsChangedAsync" />
+                        <span>Auto-start opening deductions on new &amp; reset puzzles</span>
+                    </label>
+
+                    <label class="settings-check-row">
+                        <input type="checkbox" @bind="Game.DisallowFalseMove" @bind:after="OnSettingsChangedAsync" />
+                        <span>Restrict invalid moves</span>
+                    </label>
+
+                    <label class="settings-check-row">
+                        <input type="checkbox" @bind="Game.ShowCellColors" @bind:after="OnSettingsChangedAsync" />
+                        <span>Enable cell shading</span>
+                    </label>
+                </div>
+
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Controls &amp; Display</h3>
+
+                    <div class="settings-row">
+                        <label class="settings-label" for="setting-wheel">
+                            <span>Mouse wheel</span>
+                            <small class="settings-hint">Ctrl + Wheel always zooms in Undo / Redo mode</small>
+                        </label>
+                        <select id="setting-wheel" class="select-input" @bind="Game.WheelMode" @bind:after="OnSettingsChangedAsync">
+                            <option value="@MouseWheelMode.Zoom">Zoom In / Out (Default)</option>
+                            <option value="@MouseWheelMode.UndoRedo">Undo / Redo</option>
+                        </select>
+                    </div>
+
+                    <label class="settings-check-row">
+                        <input type="checkbox" @bind="Game.ShowClock" @bind:after="OnSettingsChangedAsync" />
+                        <span>Show elapsed timer</span>
+                    </label>
+                </div>
+
+                <details class="settings-advanced">
+                    <summary class="settings-advanced-summary">Generator Tuning (Advanced)</summary>
+                    <div class="settings-advanced-content">
+                        <p class="settings-hint">Changes take effect when generating a new puzzle.</p>
+
+                        <div class="settings-range-row">
+                            <div class="settings-range-header">
+                                <label for="setting-length">Target loop length</label>
+                                <span class="settings-value-badge">@($"{Game.GenerateLengthFraction:P0}")</span>
+                            </div>
+                            <input id="setting-length" type="range" min="0.25" max="0.75" step="0.05"
+                                   @bind="Game.GenerateLengthFraction" @bind:event="oninput" @bind:after="OnSettingsChangedAsync" />
+                        </div>
+
+                        <div class="settings-range-row">
+                            <div class="settings-range-header">
+                                <label for="setting-boring">Trivial clue cap (boring fraction)</label>
+                                <span class="settings-value-badge">@($"{Game.GenerateBoringFraction:P0}")</span>
+                            </div>
+                            <input id="setting-boring" type="range" min="0.00" max="0.20" step="0.01"
+                                   @bind="Game.GenerateBoringFraction" @bind:event="oninput" @bind:after="OnSettingsChangedAsync" />
+                        </div>
+
+                        <div class="settings-row">
+                            <label class="settings-label" for="setting-solver">Generator solver mode</label>
+                            <select id="setting-solver" class="select-input" @bind="Game.SolverModeOverride" @bind:after="OnSettingsChangedAsync">
+                                <option value="@GeneratorSolverMode.Auto">Auto (By Difficulty)</option>
+                                <option value="@GeneratorSolverMode.Iterative">Iterative</option>
+                                <option value="@GeneratorSolverMode.Recursive">Recursive</option>
+                            </select>
+                        </div>
+                    </div>
+                </details>
+            </div>
+            <div class="modal-actions settings-modal-actions">
+                <button class="btn btn-secondary" @onclick="ResetSettingsToDefaultsAsync">Reset Defaults</button>
+                <button class="btn btn-primary" @onclick="() => showSettingsModal = false">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private const float S = 50.0f; // Scale factor: 50 pixels per grid unit
 
@@ -564,10 +685,14 @@
     private bool showHelpModal = false;
     private bool showSolveModal = false;
     private bool showResetModal = false;
+    private bool showSettingsModal = false;
     private bool isDarkMode = false;
     private bool showShareToast = false;
     private bool isMenuOpen = false;
     private bool hasPwaUpdate = false;
+
+    private double wheelDeltaAccumulator = 0;
+    private const double WheelUndoRedoStepThreshold = 100.0;
 
     private float zoomScale = 1.0f;
     private float panX = 0f;
@@ -698,6 +823,26 @@
                 isDarkMode = (theme == "dark");
             }
             catch {}
+
+            UserPreferences? savedPrefs = null;
+            try
+            {
+                string? prefsJson = await JS.InvokeAsync<string?>("loopHelpers.loadSettings");
+                if (!string.IsNullOrEmpty(prefsJson))
+                {
+                    savedPrefs = JsonSerializer.Deserialize(prefsJson, LoopJsonContext.Default.UserPreferences);
+                    if (savedPrefs != null)
+                    {
+                        Game.ApplyPreferences(savedPrefs);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to load settings: {ex.Message}");
+            }
+
+            await SyncWheelModeAsync();
 
             bool loaded = false;
             // 1. Check URL hash for shared puzzle (#p=... or #puzzle=...)
@@ -954,6 +1099,68 @@
     {
         zoomScale = Math.Clamp(zoomScale * (float)factor, 0.4f, 8.0f);
         StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnWheelUndoRedo(double deltaY)
+    {
+        if (Game.IsGenerating || Game.CurrentMesh == null || deltaY == 0)
+            return;
+
+        if ((wheelDeltaAccumulator > 0 && deltaY < 0) || (wheelDeltaAccumulator < 0 && deltaY > 0))
+            wheelDeltaAccumulator = 0;
+
+        wheelDeltaAccumulator += deltaY;
+
+        while (wheelDeltaAccumulator >= WheelUndoRedoStepThreshold)
+        {
+            wheelDeltaAccumulator -= WheelUndoRedoStepThreshold;
+            Game.Undo();
+        }
+
+        while (wheelDeltaAccumulator <= -WheelUndoRedoStepThreshold)
+        {
+            wheelDeltaAccumulator += WheelUndoRedoStepThreshold;
+            Game.Redo();
+        }
+    }
+
+    private void OpenSettings()
+    {
+        isMenuOpen = false;
+        showSettingsModal = true;
+    }
+
+    private async Task SyncWheelModeAsync()
+    {
+        wheelDeltaAccumulator = 0;
+        string mode = Game.WheelMode == MouseWheelMode.UndoRedo ? "undoredo" : "zoom";
+        await SafeInvokeVoidAsync("loopHelpers.setWheelMode", mode);
+    }
+
+    private async Task OnSettingsChangedAsync()
+    {
+        await SyncWheelModeAsync();
+        await SavePreferencesAsync();
+    }
+
+    private async Task ResetSettingsToDefaultsAsync()
+    {
+        Game.ResetPreferencesToDefaults();
+        await OnSettingsChangedAsync();
+    }
+
+    private async Task SavePreferencesAsync()
+    {
+        try
+        {
+            string json = JsonSerializer.Serialize(Game.ExportPreferences(), LoopJsonContext.Default.UserPreferences);
+            await SafeInvokeVoidAsync("loopHelpers.saveSettings", json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving settings: {ex.Message}");
+        }
     }
 
     private void OnTypeChanged(ChangeEventArgs e)
