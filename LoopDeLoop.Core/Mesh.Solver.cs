@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 
 namespace LoopDeLoop
 {
@@ -10,23 +11,31 @@ namespace LoopDeLoop
         {
             if (string.IsNullOrEmpty(numAccumulator))
                 return numAccumulator;
-            int value = int.Parse(numAccumulator);
-            if (state == 2)
+            if (int.TryParse(numAccumulator, out int value) && state == 2)
                 iterativeSolverDepth = value;
             return string.Empty;
         }
 
+        private CancellationToken activeSolveToken;
+
         public SolveState TrySolve()
         {
-            return TrySolve(false);
+            return TrySolve(false, CancellationToken.None);
         }
 
         public SolveState TrySolve(bool noRollback)
+        {
+            return TrySolve(noRollback, CancellationToken.None);
+        }
+
+        public SolveState TrySolve(bool noRollback, CancellationToken cancellationToken)
         {
             solutionsFound.Clear();
             solutionDepthPatern.Clear();
             List<IAction> edgeChanges = new List<IAction>();
             bool oldInteracts = considerIntersectCellInteractsAsSimple;
+            CancellationToken prevToken = activeSolveToken;
+            activeSolveToken = cancellationToken;
             try
             {
                 considerIntersectCellInteractsAsSimple = useIntersectCellInteractsInSolver;
@@ -43,12 +52,11 @@ namespace LoopDeLoop
             }
             catch (OperationCanceledException)
             {
-                // Cancelled, no point trying to rollback changes.
-                edgeChanges.Clear();
                 return SolveState.NoSolutions;
             }
             finally
             {
+                activeSolveToken = prevToken;
                 considerIntersectCellInteractsAsSimple = oldInteracts;
                 if (!noRollback)
                     Unperform(edgeChanges);
@@ -136,8 +144,6 @@ namespace LoopDeLoop
             }
             catch (OperationCanceledException)
             {
-                // Cancelled, no point trying to rollback changes.
-                realChanges.Clear();
                 return SolveState.NoSolutions;
             }
             finally
@@ -151,8 +157,8 @@ namespace LoopDeLoop
 
         private SolveState RecursiveTrySolveInternal(List<IAction> trials, int index)
         {
-            if (AbortPrune)
-                throw new OperationCanceledException();
+            if (AbortPrune || activeSolveToken.IsCancellationRequested)
+                throw new OperationCanceledException(activeSolveToken);
 
             if (pruning && earlyFail)
             {
@@ -165,54 +171,67 @@ namespace LoopDeLoop
             while (index < trials.Count && IsPointlessTrial(trials[index]))
                 index++;
             curDepthPatern.Add(index);
-            if (index < trials.Count)
+            try
             {
-                bool success1 = Perform(trials[index], edgeChanges1);
-                if (MeshChangeUpdate != null)
-                    MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true, true));
-                if (success1)
+                if (index < trials.Count)
                 {
-                    SolveState result = RecursiveTrySolveInternal(trials, index + 1);
-                    if (result == SolveState.MultipleSolutions)
+                    bool success1 = Perform(trials[index], edgeChanges1);
+                    try
+                    {
+                        if (MeshChangeUpdate != null)
+                            MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true, true));
+                        if (success1)
+                        {
+                            SolveState result = RecursiveTrySolveInternal(trials, index + 1);
+                            if (result == SolveState.MultipleSolutions)
+                            {
+                                return SolveState.MultipleSolutions;
+                            }
+                            else if (result == SolveState.NoSolutions)
+                                success1 = false;
+                        }
+                    }
+                    finally
                     {
                         Unperform(edgeChanges1);
-                        curDepthPatern.RemoveAt(curDepthPatern.Count - 1);
-                        return SolveState.MultipleSolutions;
                     }
-                    else if (result == SolveState.NoSolutions)
-                        success1 = false;
-                }
-                Unperform(edgeChanges1);
-                bool success2 = Perform(GetOppositeAction(trials[index]), edgeChanges2);
-                if (MeshChangeUpdate != null)
-                    MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true, true));
-                if (success2)
-                {
-                    SolveState result = RecursiveTrySolveInternal(trials, index + 1);
-                    if (result == SolveState.MultipleSolutions)
+                    bool success2 = Perform(GetOppositeAction(trials[index]), edgeChanges2);
+                    try
+                    {
+                        if (MeshChangeUpdate != null)
+                            MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true, true));
+                        if (success2)
+                        {
+                            SolveState result = RecursiveTrySolveInternal(trials, index + 1);
+                            if (result == SolveState.MultipleSolutions)
+                            {
+                                return SolveState.MultipleSolutions;
+                            }
+                            else if (result == SolveState.NoSolutions)
+                                success2 = false;
+                        }
+                    }
+                    finally
                     {
                         Unperform(edgeChanges2);
-                        curDepthPatern.RemoveAt(curDepthPatern.Count - 1);
-                        return SolveState.MultipleSolutions;
                     }
-                    else if (result == SolveState.NoSolutions)
-                        success2 = false;
+                    if (!success1 && !success2)
+                        return SolveState.NoSolutions;
+                    else if (success1 && success2)
+                        return SolveState.MultipleSolutions;
+                    else
+                        return SolveState.Solved;
                 }
-                Unperform(edgeChanges2);
-                curDepthPatern.RemoveAt(curDepthPatern.Count - 1);
-                if (!success1 && !success2)
-                    return SolveState.NoSolutions;
-                else if (success1 && success2)
+                solutionsFound.Add(this.Clone());
+                solutionDepthPatern.Add(curDepthPatern.ToArray());
+                if (solutionsFound.Count > 1)
                     return SolveState.MultipleSolutions;
-                else
-                    return SolveState.Solved;
+                return SolveState.Solved;
             }
-            solutionsFound.Add(this.Clone());
-            solutionDepthPatern.Add(curDepthPatern.ToArray());
-            curDepthPatern.RemoveAt(curDepthPatern.Count - 1);
-            if (solutionsFound.Count > 1)
-                return SolveState.MultipleSolutions;
-            return SolveState.Solved;
+            finally
+            {
+                curDepthPatern.RemoveAt(curDepthPatern.Count - 1);
+            }
         }
 
         public double PercentSolved
@@ -231,20 +250,18 @@ namespace LoopDeLoop
             try
             {
                 SolveState res = IterativeTrySolveWithoutRollback(realChanges);
-                int count = 0;
+                int emptyCount = 0;
                 for (var index = 0; index < edges.Count; index++)
                 {
                     Edge edge = edges[index];
                     if (edge.State == EdgeState.Empty)
-                        count++;
+                        emptyCount++;
                 }
-                percentSolved = (double)count / (double)edges.Count;
+                percentSolved = edges.Count == 0 ? 0.0 : 1.0 - (double)emptyCount / (double)edges.Count;
                 return res;
             }
             catch (OperationCanceledException)
             {
-                // Cancelled, no point trying to undo the changes.
-                realChanges.Clear();
                 return SolveState.NoSolutions;
             }
             finally
@@ -259,10 +276,6 @@ namespace LoopDeLoop
             int count = 0;
             bool changed = true;
             iterativeRecDepth = 1;
-            if (pruning)
-            {
-                oldFirstOrder = null;
-            }
             while (changed)
             {
                 count = 0;
@@ -290,176 +303,12 @@ namespace LoopDeLoop
                         changed = true;
                     }
                 }
-                if (changed && !Partition())
-                    return SolveState.MultipleSolutions;
             }
             if (count > 0)
                 return SolveState.MultipleSolutions;
             solutionsFound.Add(this.Clone());
             solutionDepthPatern.Add(curDepthPatern.ToArray());
             return SolveState.Solved;
-        }
-
-        private bool Partition()
-        {/* Failed to provide noticible performance improvement, not worth doing until we use it to decompose the puzzle and actually help solve things rather than just to detect non-progress faster.
-            if (pruning)
-            {
-                // Retrieve existing partition sizes.
-                // Calculate new partitions.
-                // If any first order partition has not changed size, return false.
-                // We can't do any second order partitions unless the solver understands the implicit edgeset link from the first order partitions.
-                DisjointTracker tracker = new DisjointTracker(edges.Count);
-                for (int i = 0; i < edges.Count; i++)
-                {
-                    if (edges[i].State == EdgeState.Empty)
-                    {
-                        tracker.Add(i);
-                    }
-                }
-                for (int i = 0; i < edges.Count; i++)
-                {
-                    if (edges[i].State == EdgeState.Empty)
-                    {
-                        List<int> affecting = GetAffectingEdges(i);
-                        foreach (int a in affecting)
-                        {
-                            if (edges[a].State == EdgeState.Empty)
-                            {
-                                tracker.Union(i, a);
-                            }
-                        }
-                    }
-                }
-                Dictionary<int, List<int>> meetPoints = new Dictionary<int, List<int>>();
-                List<int> representatives = new List<int>();
-                for (int i = 0; i < intersections.Count; i++)
-                {
-                    // at each intersection check edges to see if they come from differing sets, if so then it is a meet point.
-                    // If a set has more than 2 meetPoints it is not first order.  If it has 0 meet points we additionally do not care.
-                    // Need to follow edge sets as well.
-                    List<int> realIs = new List<int>();
-                    realIs.Add(i);
-                    Intersection inters = intersections[i];
-                    if (inters.EdgeSet >= 0)
-                    {
-                        if (inters.FilledCount == 1)
-                        {
-                            // Follow filled lines to get other end.
-                            int lastEdge = GetNextEdge(i, -1);
-                            int nextI = GetOtherInters(lastEdge, i);
-                            while (intersections[nextI].FilledCount > 1)
-                            {
-                                int nextEdge = GetNextEdge(nextI, lastEdge);
-                                nextI = GetOtherInters(nextEdge, nextI);
-                                lastEdge = nextEdge;
-                            }
-                            if (nextI < i)
-                                continue;
-                            realIs.Add(nextI);
-                        }
-
-                    }
-                    representatives.Clear();
-                    foreach (int realI in realIs)
-                    {
-                        foreach (int e1 in intersections[realI].Edges)
-                        {
-                            if (edges[e1].State == EdgeState.Empty)
-                            {
-                                int rep = tracker.GetRepresentative(e1);
-                                if (!representatives.Contains(rep))
-                                    representatives.Add(rep);
-                            }
-                        }
-                    }
-                    if (representatives.Count > 1)
-                    {
-                        for (int j = 0; j < representatives.Count; j++)
-                        {
-                            List<int> points;
-                            if (!meetPoints.TryGetValue(representatives[j], out points))
-                            {
-                                points = new List<int>();
-                                meetPoints.Add(representatives[j], points);
-                            }
-                            points.Add(i);
-                        }
-                    }
-                }
-                Dictionary<int, int> firstOrder = new Dictionary<int, int>();
-                foreach (KeyValuePair<int, List<int>> kvp in meetPoints)
-                {
-                    if (kvp.Value.Count == 2)
-                        firstOrder[kvp.Key] = 0;
-                }
-                for (int i = 0; i < edges.Count; i++)
-                {
-                    if (edges[i].State == EdgeState.Empty)
-                    {
-                        int rep = tracker.GetRepresentative(i);
-                        int value;
-                        if (firstOrder.TryGetValue(rep, out value))
-                        {
-                            firstOrder[rep] = value + 1;
-                        }
-                    }
-                }
-                if (oldFirstOrder != null)
-                {
-                    foreach (KeyValuePair<int, int> kvp in oldFirstOrder)
-                    {
-                        if (edges[kvp.Key].State == EdgeState.Empty)
-                        {
-                            int rep = tracker.GetRepresentative(kvp.Key);
-                            int value;
-                            if (firstOrder.TryGetValue(rep, out value))
-                            {
-                                if (value == kvp.Value)
-                                    return false;
-                            }
-                        }
-                    }
-                }
-                oldFirstOrder = firstOrder;
-            }
-          */
-            return true;
-        }
-        private Dictionary<int, int>? oldFirstOrder;
-
-        private List<int> GetAffectingEdges(int i)
-        {
-            // TODO: this approach fails to recognize potential second order effects such as 'the airlock'
-            // consider an area which touches outside areas at multiple locations, with locked pairs.  It can be trivially seen that if there are numbers 
-            // outside of the area, the entire area must be empty.  Thus the outside areas may be independent, but will seem connected via the airlock.
-            // We may need a seperate pass to detect and fill those so as to allow this to be effective.
-            List<int> result = new List<int>();
-            for (var index = 0; index < edges[i].Cells.Count; index++)
-            {
-                int cellIndex = edges[i].Cells[index];
-                if (cells[cellIndex].TargetCount >= 0)
-                {
-                    // TODO: optimize based on antilock edges causing seperation.
-                    for (var index1 = 0; index1 < cells[cellIndex].Edges.Count; index1++)
-                    {
-                        int e1 = cells[cellIndex].Edges[index1];
-                        if (e1 != i && !result.Contains(e1))
-                            result.Add(e1);
-                    }
-                }
-            }
-            for (var index = 0; index < edges[i].Intersections.Length; index++)
-            {
-                int intersIndex = edges[i].Intersections[index];
-// TODO: optimize based on antilock edges causing some edges to be irrelivent.
-                for (var index1 = 0; index1 < intersections[intersIndex].Edges.Count; index1++)
-                {
-                    int e1 = intersections[intersIndex].Edges[index1];
-                    if (e1 != i && !result.Contains(e1))
-                        result.Add(e1);
-                }
-            }
-            return result;
         }
 
 #if DEBUG
@@ -524,8 +373,8 @@ namespace LoopDeLoop
             IAction? lastTrial = null;
             for (int i = 0; i < trials.Count; i++)
             {
-                if (AbortPrune)
-                    throw new OperationCanceledException();
+                if (AbortPrune || activeSolveToken.IsCancellationRequested)
+                    throw new OperationCanceledException(activeSolveToken);
 
                 if (pruning && earlyFail)
                 {
@@ -544,47 +393,53 @@ namespace LoopDeLoop
                 edgeChanges1.Clear();
                 edgeChanges2.Clear();
                 bool success1 = Perform(trials[i], edgeChanges1, iterativeSolverDepth);
-                bool connectCheck = false;
-                if (success1)
+                try
                 {
-                    // if testconnect 
-                    if (!CheckConnectable())
+                    if (success1)
                     {
-                        success1 = false;
-                        connectCheck = true;
+                        if (!CheckConnectable())
+                        {
+                            success1 = false;
+                        }
+                    }
+                    if (success1 && iterativeRecDepth > 1)
+                    {
+                        bool ignored = false;
+                        success1 = IterativeTrySolveInternal(edgeChanges1, ref ignored, iterativeRecDepth - 1, trials[i]);
+                    }
+                    if (MeshChangeUpdate != null)
+                    {
+                        MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, edgeChanges1, success1));
                     }
                 }
-                if (success1 && iterativeRecDepth > 1)
+                finally
                 {
-                    bool ignored = false;
-                    success1 = IterativeTrySolveInternal(edgeChanges1, ref ignored, iterativeRecDepth - 1, trials[i]);
+                    Unperform(edgeChanges1);
                 }
-                if (MeshChangeUpdate != null)
-                {
-                    MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, edgeChanges1, success1));
-                }
-                Unperform(edgeChanges1);
                 bool success2 = Perform(GetOppositeAction(trials[i]), edgeChanges2, iterativeSolverDepth);
-                connectCheck = false;
-                if (success2)
+                try
                 {
-                    // if testconnect 
-                    if (!CheckConnectable())
+                    if (success2)
                     {
-                        success2 = false;
-                        connectCheck = true;
+                        if (!CheckConnectable())
+                        {
+                            success2 = false;
+                        }
+                    }
+                    if (success2 && iterativeRecDepth > 1)
+                    {
+                        bool ignored = false;
+                        success2 = IterativeTrySolveInternal(edgeChanges2, ref ignored, iterativeRecDepth - 1, trials[i]);
+                    }
+                    if (MeshChangeUpdate != null)
+                    {
+                        MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, edgeChanges2, success2));
                     }
                 }
-                if (success2 && iterativeRecDepth > 1)
+                finally
                 {
-                    bool ignored = false;
-                    success2 = IterativeTrySolveInternal(edgeChanges2, ref ignored, iterativeRecDepth - 1, trials[i]);
+                    Unperform(edgeChanges2);
                 }
-                if (MeshChangeUpdate != null)
-                {
-                    MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, edgeChanges2, success2));
-                }
-                Unperform(edgeChanges2);
                 if (!success1 && !success2)
                     return false;
                 else if (success1 && success2)
@@ -819,7 +674,8 @@ namespace LoopDeLoop
                 }
                 else if (inters.ExcludedCount < edgeCount - 1)
                 {
-                    // TODO: consider handling intersections with more than 9 edges?!?
+                    if (edgeCount >= smallTrackerPool.Length)
+                        Array.Resize(ref smallTrackerPool, edgeCount + 1);
                     if (smallTrackerPool[edgeCount] == null)
                         smallTrackerPool[edgeCount] = new DisjointTracker(edgeCount, true);
                     else
@@ -991,30 +847,28 @@ namespace LoopDeLoop
             for (var index = 0; index < realChanges.Count; index++)
             {
                 IAction action = realChanges[index];
-                if (action is SetAction)
+                if (action is SetAction setAction)
                 {
-                    SetAction setAction = (SetAction) action;
-                    for (var i = 0; i < setAction.GetAffectedEdges().Count; i++)
+                    List<int> affectedEdges = setAction.GetAffectedEdges();
+                    for (var i = 0; i < affectedEdges.Count; i++)
                     {
-                        int edge = setAction.GetAffectedEdges()[i];
-                        GatherNearEdge(trials, edge, locusAction, true);
+                        GatherNearEdge(trials, affectedEdges[i], locusAction, true);
                     }
                 }
-                else if (action is ColorJoinAction)
+                else if (action is ColorJoinAction cjAction)
                 {
-                    ColorJoinAction cjAction = (ColorJoinAction) action;
-                    for (var i = 0; i < cjAction.GetAffectedEdges().Count; i++)
+                    List<int> affectedEdges = cjAction.GetAffectedEdges();
+                    for (var i = 0; i < affectedEdges.Count; i++)
                     {
-                        int edge = cjAction.GetAffectedEdges()[i];
-                        GatherNearEdge(trials, edge, locusAction, true);
+                        GatherNearEdge(trials, affectedEdges[i], locusAction, true);
                     }
                 }
-                else if (action is CellColorJoinAction)
+                else if (action is CellColorJoinAction ccjAction)
                 {
-                    CellColorJoinAction ccjAction = (CellColorJoinAction) action;
-                    for (var i = 0; i < ccjAction.GetAffectedCells().Count; i++)
+                    List<int> affectedCells = ccjAction.GetAffectedCells();
+                    for (var i = 0; i < affectedCells.Count; i++)
                     {
-                        int cell = ccjAction.GetAffectedCells()[i];
+                        int cell = affectedCells[i];
                         for (var index1 = 0; index1 < cells[cell].Edges.Count; index1++)
                         {
                             int edge = cells[cell].Edges[index1];
@@ -1196,7 +1050,7 @@ namespace LoopDeLoop
                             return false;
                     }
                     else if (edge.State != act.EdgeState)
-                        throw new InvalidOperationException("doh");
+                        return false;
                 }
                 else if (action is ColorJoinAction)
                 {
@@ -1565,41 +1419,37 @@ namespace LoopDeLoop
                 for (var index = 0; index < curMoves.Count; index++)
                 {
                     IAction move = curMoves[index];
-                    if (move is SetAction)
+                    if (move is SetAction setAction)
                     {
-                        SetAction setAction = (SetAction) move;
                         AddEdgetToConsider(action, toConsiderEdges, curDepth, setAction.EdgeIndex);
-                        for (var i = 0; i < setAction.GetAffectedEdges().Count; i++)
+                        List<int> affectedEdges = setAction.GetAffectedEdges();
+                        for (var i = 0; i < affectedEdges.Count; i++)
                         {
-                            int edge = setAction.GetAffectedEdges()[i];
-                            AddEdgetToConsider(action, toConsiderEdgeSets, curDepth, edge);
+                            AddEdgetToConsider(action, toConsiderEdgeSets, curDepth, affectedEdges[i]);
                         }
                     }
-                    else if (move is ColorJoinAction)
+                    else if (move is ColorJoinAction cjAction)
                     {
-                        ColorJoinAction cjAction = (ColorJoinAction) move;
-                        for (var i = 0; i < cjAction.GetAffectedEdges().Count; i++)
+                        List<int> affectedEdges = cjAction.GetAffectedEdges();
+                        for (var i = 0; i < affectedEdges.Count; i++)
                         {
-                            int edge = cjAction.GetAffectedEdges()[i];
-                            AddEdgetToConsider(action, toConsiderEdgeColors, curDepth, edge);
+                            AddEdgetToConsider(action, toConsiderEdgeColors, curDepth, affectedEdges[i]);
                         }
                     }
-                    else if (move is CellColorJoinAction)
+                    else if (move is CellColorJoinAction ccjAction)
                     {
-                        CellColorJoinAction ccjAction = (CellColorJoinAction) move;
-                        for (var i = 0; i < ccjAction.GetAffectedCells().Count; i++)
+                        List<int> affectedCells = ccjAction.GetAffectedCells();
+                        for (var i = 0; i < affectedCells.Count; i++)
                         {
-                            int cell = ccjAction.GetAffectedCells()[i];
-                            AddCellToConsider(action, toConsiderCellColors, curDepth, cell);
+                            AddCellToConsider(action, toConsiderCellColors, curDepth, affectedCells[i]);
                         }
                     }
-                    else if (move is EdgeRestrictionAction)
+                    else if (move is EdgeRestrictionAction erAction)
                     {
-                        EdgeRestrictionAction erAction = (EdgeRestrictionAction) move;
-                        for (var i = 0; i < erAction.GetAffectedEdges().Count; i++)
+                        List<int> affectedEdges = erAction.GetAffectedEdges();
+                        for (var i = 0; i < affectedEdges.Count; i++)
                         {
-                            int edge = erAction.GetAffectedEdges()[i];
-                            AddEdgetToConsider(action, toConsiderEdgeColors, curDepth, edge);
+                            AddEdgetToConsider(action, toConsiderEdgeColors, curDepth, affectedEdges[i]);
                         }
                     }
                 }
@@ -1724,8 +1574,8 @@ namespace LoopDeLoop
                     Edge edge = edges[edgeAffectedIndex];
                     if (UseColoring && edge.Color != 0)
                     {
-                        // TODO: do not activate this unless the edge color has changed.
-                        GatherCellColoringEdgeColoringMovesForEdgeColorChange(edge, moves, curDepth, edgeAffectedIndex);
+                        if (!GatherCellColoringEdgeColoringMovesForEdgeColorChange(edge, moves, curDepth, edgeAffectedIndex))
+                            return false;
                     }
                     for (var i = 0; i < edge.Cells.Count; i++)
                     {
@@ -2535,148 +2385,6 @@ namespace LoopDeLoop
             return true;
         }
 
-#if OLDCODE
-        private bool GatherCellColoringEdgeColoringMoves(Cell cell, List<IAction>[] moves, int curDepth, int cellIndex)
-        {
-            if (useCellColoring && useColoring)
-            {
-                for (int i2 = 0; i2 < cell.Edges.Count; i2++)
-                {
-                    int edge = cell.Edges[i2];
-                    Edge e = edges[edge];
-                    for (int j = 0; j < e.Cells.Count; j++)
-                    {
-                        int otherC = e.Cells[j];
-                        Cell otherCell = cells[otherC];
-                        if (otherCell == cell)
-                            continue;
-                        for (int k = 0; k < e.Intersections.Length; k++)
-                        {
-                            int inters = e.Intersections[k];
-                            Intersection i = intersections[inters];
-                            for (int l = 0; l < i.Edges.Count; l++)
-                            {
-                                int otherE = i.Edges[l];
-                                if (otherE == edge)
-                                    continue;
-                                Edge e2 = edges[otherE];
-                                bool found = false;
-                                int thirdCell = -1;
-                                for (int m = 0; m < e2.Cells.Count; m++)
-                                {
-                                    int c3 = e2.Cells[m];
-                                    if (c3 == otherC)
-                                    {
-                                        found = true;
-                                    }
-                                    else
-                                    {
-                                        thirdCell = c3;
-                                    }
-                                }
-                                if (found)
-                                {
-                                    if (thirdCell != -1)
-                                    {
-                                        // cell and cell 3 are touching by a corner which has no edges between it in one direction (by virtue of common cell touching both).
-                                        // but in the case of a 3 point intersection the 3rd cell might still be touching the first directly, we could rule that out but
-                                        // it doesn't gain us anything other then delaying the discovery of some color.
-                                        Cell cell3 = cells[thirdCell];
-                                        if (e.Color == 0 || Math.Abs(e.Color) != Math.Abs(e2.Color))
-                                        {
-                                            if (cell.Color != 0)
-                                            {
-                                                if (cell3.Color == cell.Color)
-                                                {
-                                                    if (!AddColorJoinAction(edge, otherE, true, moves, curDepth + 1, edgePairsSeen))
-                                                        return false;
-                                                }
-                                                else if (cell3.Color == -cell.Color)
-                                                {
-                                                    if (!AddColorJoinAction(edge, otherE, false, moves, curDepth + 1, edgePairsSeen))
-                                                        return true;
-                                                }
-                                            }
-                                        }
-                                        else
-                                        {
-                                            if (cell.Color != 0)
-                                            {
-                                                if (cell3.Color == cell.Color)
-                                                {
-                                                    if (e.Color != e2.Color)
-                                                        return false;
-                                                }
-                                                else if (cell3.Color == -cell.Color)
-                                                {
-                                                    if (e.Color == e2.Color)
-                                                        return false;
-                                                }
-                                                else
-                                                {
-                                                    if (!AddCellColorJoinAction(cellIndex, thirdCell, e.Color == e2.Color, moves, curDepth + 1, cellPairsSeen))
-                                                        return false;
-                                                }
-                                            }
-                                            else
-                                            {
-                                                if (!AddCellColorJoinAction(cellIndex, thirdCell, e.Color == e2.Color, moves, curDepth + 1, cellPairsSeen))
-                                                    return false;
-                                            }
-                                        }
-                                    }
-                                    else
-                                    {
-                                        if (e.Color == 0 || Math.Abs(e.Color) != Math.Abs(e2.Color))
-                                        {
-                                            if (cell.Color == 1)
-                                            {
-                                                if (!AddColorJoinAction(edge, otherE, true, moves, curDepth + 1, edgePairsSeen))
-                                                    return false;
-                                            }
-                                            else if (cell.Color == -1)
-                                            {
-                                                if (!AddColorJoinAction(edge, otherE, false, moves, curDepth + 1, edgePairsSeen))
-                                                    return true;
-                                            }
-                                        }
-                                        else
-                                        {
-                                            if (cell.Color != 0)
-                                            {
-                                                if (cell.Color == 1)
-                                                {
-                                                    if (e.Color != e2.Color)
-                                                        return false;
-                                                }
-                                                else if (cell.Color == -1)
-                                                {
-                                                    if (e.Color == e2.Color)
-                                                        return false;
-                                                }
-                                                else
-                                                {
-                                                    if (!AddCellColorJoinAction(cellIndex, -1, e.Color == e2.Color, moves, curDepth + 1, cellPairsSeen))
-                                                        return false;
-                                                }
-                                            }
-                                            else
-                                            {
-                                                if (!AddCellColorJoinAction(cellIndex, -1, e.Color == e2.Color, moves, curDepth + 1, cellPairsSeen))
-                                                    return false;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            return true;
-        }
-#endif
-
         private int GetAdjacentCell(int cell, int byEdge)
         {
             List<int> candidates = edges[byEdge].Cells;
@@ -3083,7 +2791,6 @@ namespace LoopDeLoop
                             }
 
                         }
-                        break;
                     }
                 }
             }
@@ -3106,7 +2813,7 @@ namespace LoopDeLoop
                 }
                 else
                 {
-                    if (color != 1 && -color != -1)
+                    if (color != 1 && color != -1)
                     {
                         if (!AddCellColorJoinAction(cSpec, c2, pos, moves, curDepth + 1, cellPairsSeen))
                             return false;
@@ -3359,6 +3066,8 @@ namespace LoopDeLoop
         {
             if (UseCellPairs || (topLevel && UseCellPairsTopLevel))
             {
+                if (edge.Cells.Count == 0)
+                    return true;
                 Cell cell1 = cells[edge.Cells[0]];
                 Cell? cell2 = null;
                 if (edge.Cells.Count > 1)
@@ -3378,6 +3087,8 @@ namespace LoopDeLoop
                     edgeCount += inters1.Edges.Count - 2;
                     edgeCount += inters2.Edges.Count - 2;
                 }
+                if (edgeCount <= 0 || edgeCount >= 24)
+                    return true;
                 if (edgeCount >= smallEdgeNumberArrays.Count)
                 {
                     for (int i = smallEdgeNumberArrays.Count; i <= edgeCount; i++)
@@ -3395,6 +3106,7 @@ namespace LoopDeLoop
                 uint inters1Indexes = 0;
                 for (var index = 0; index < inters1.Edges.Count; index++)
                 {
+                    if (counter >= edgeCount) return true;
                     int edgeIndex = inters1.Edges[index];
                     edgeNumber[counter] = edgeIndex;
                     if (UseColoring)
@@ -3417,9 +3129,12 @@ namespace LoopDeLoop
                     Edge e2 = edges[edgeIndex];
                     if (e2 == edge)
                     {
-                        inters2Indexes |= 1u << IntArrayIndexOf(edgeNumber, edgeIndex, 0, counter);
+                        int existingIdx = IntArrayIndexOf(edgeNumber, edgeIndex, 0, counter);
+                        if (existingIdx < 0) return true;
+                        inters2Indexes |= 1u << existingIdx;
                         continue;
                     }
+                    if (counter >= edgeCount) return true;
                     edgeNumber[counter] = edgeIndex;
                     if (UseColoring)
                     {
@@ -3443,9 +3158,12 @@ namespace LoopDeLoop
                         e2.Intersections[1] == edge.Intersections[0] ||
                         e2.Intersections[1] == edge.Intersections[1])
                     {
-                        cell1Indexes |= 1u << IntArrayIndexOf(edgeNumber, edgeIndex, 0, counter);
+                        int existingIdx = IntArrayIndexOf(edgeNumber, edgeIndex, 0, counter);
+                        if (existingIdx < 0) return true;
+                        cell1Indexes |= 1u << existingIdx;
                         continue;
                     }
+                    if (counter >= edgeCount) return true;
                     edgeNumber[counter] = edgeIndex;
                     if (UseColoring)
                     {
@@ -3481,9 +3199,12 @@ namespace LoopDeLoop
                             e2.Intersections[1] == edge.Intersections[0] ||
                             e2.Intersections[1] == edge.Intersections[1])
                         {
-                            cell2Indexes |= 1u << IntArrayIndexOf(edgeNumber, edgeIndex, 0, counter);
+                            int existingIdx = IntArrayIndexOf(edgeNumber, edgeIndex, 0, counter);
+                            if (existingIdx < 0) return true;
+                            cell2Indexes |= 1u << existingIdx;
                             continue;
                         }
+                        if (counter >= edgeCount) return true;
                         edgeNumber[counter] = edgeIndex;
                         if (UseColoring)
                         {
@@ -3524,12 +3245,14 @@ namespace LoopDeLoop
 
         private bool GatherFromColoringOptions(List<IAction>[] moves, int curDepth, EdgeState[] edgesSeen, int[] numberingFull, int[] edgeNumber, List<int> targets_in, TriState[,] edgePairsSeen, EdgePairRestriction[,] edgeRestrictsSeen)
         {
+            if (numberingFull.Length == 0 || numberingFull.Length >= 32)
+                return true;
             List<KeyValuePair<uint, List<int>>> targets = new List<KeyValuePair<uint, List<int>>> { new KeyValuePair<uint, List<int>>((1u << numberingFull.Length) - 1, targets_in) };
             return GatherFromAdvancedOptions(moves, curDepth, edgesSeen, numberingFull, edgeNumber, targets, edgePairsSeen, edgeRestrictsSeen);
         }
 
 
-        private struct SuccessLookup
+        private struct SuccessLookup : IEquatable<SuccessLookup>
         {
             public uint[] success;
             public int curNumber;
@@ -3545,10 +3268,8 @@ namespace LoopDeLoop
                 return hashcode;
             }
 
-            public override bool Equals(object? obj)
+            public bool Equals(SuccessLookup other)
             {
-                if (obj is not SuccessLookup other)
-                    return false;
                 if (other.curNumber != curNumber)
                     return false;
                 if (other.success.Length != success.Length)
@@ -3559,7 +3280,11 @@ namespace LoopDeLoop
                         return false;
                 }
                 return true;
-              
+            }
+
+            public override bool Equals(object? obj)
+            {
+                return obj is SuccessLookup other && Equals(other);
             }
         }
 
@@ -3702,7 +3427,7 @@ namespace LoopDeLoop
             return true;
         }
 
-        private struct PatternLookup
+        private struct PatternLookup : IEquatable<PatternLookup>
         {
             public List<KeyValuePair<uint, List<int>>> targets; 
             public int[] baseLine; 
@@ -3710,13 +3435,16 @@ namespace LoopDeLoop
             public int[] numbering;
             public List<uint> edgePatterns;
             public List<uint> edgeMasks;
+            public bool useColoring;
+            public bool useEdgeRestricts;
+
             public override int GetHashCode()
             {
-                int hashcode = 0;
+                int hashcode = (useColoring ? 1 : 0) | (useEdgeRestricts ? 2 : 0);
                 for (int i = 0; i < targets.Count; i++)
                 {
                     hashcode += hashcode << 5;
-                    hashcode ^=  (int)targets[i].Key;
+                    hashcode ^= (int)targets[i].Key;
                     for (int j = 0; j < targets[i].Value.Count; j++)
                     {
                         hashcode += hashcode << 5;
@@ -3747,13 +3475,20 @@ namespace LoopDeLoop
                 hashcode ^= curNumber;
                 return hashcode;
             }
-            public override bool Equals(object? obj)
+
+            public bool Equals(PatternLookup other)
             {
-                if (obj is not PatternLookup other)
-                    return false;
-                if (other.curNumber != curNumber)
+                if (other.curNumber != curNumber || other.useColoring != useColoring || other.useEdgeRestricts != useEdgeRestricts)
                     return false;
                 if (other.targets.Count != targets.Count)
+                    return false;
+                if (other.baseLine.Length != baseLine.Length)
+                    return false;
+                if (other.numbering.Length != numbering.Length)
+                    return false;
+                if (edgePatterns.Count != other.edgePatterns.Count)
+                    return false;
+                if (edgeMasks.Count != other.edgeMasks.Count)
                     return false;
                 for (int i = 0; i < targets.Count; i++)
                 {
@@ -3772,7 +3507,7 @@ namespace LoopDeLoop
                 }
                 for (int i = 0; i < baseLine.Length; i++)
                 {
-                    if(baseLine[i] != other.baseLine[i])
+                    if (baseLine[i] != other.baseLine[i])
                         return false;
                 }
                 for (int i = 0; i < numbering.Length; i++)
@@ -3780,8 +3515,6 @@ namespace LoopDeLoop
                     if (numbering[i] != other.numbering[i])
                         return false;
                 }
-                if (edgePatterns.Count != other.edgePatterns.Count)
-                    return false;
                 for (int i = 0; i < edgePatterns.Count; i++)
                 {
                     if (edgePatterns[i] != other.edgePatterns[i])
@@ -3794,6 +3527,11 @@ namespace LoopDeLoop
                 }
                 return true;
             }
+
+            public override bool Equals(object? obj)
+            {
+                return obj is PatternLookup other && Equals(other);
+            }
         }
 
         Dictionary<PatternLookup, List<int[]>?> patternLookup = new Dictionary<PatternLookup, List<int[]>?>();
@@ -3801,15 +3539,17 @@ namespace LoopDeLoop
 
         private List<int[]>? RetrieveActions(List<KeyValuePair<uint, List<int>>> targets, int[] baseLine, int curNumber, int[] numbering)
         {
+            if (curNumber < 0 || curNumber > 20)
+                return new List<int[]>();
             List<int[]>? result;
             PatternLookup key;
             if (useEdgeRestricts)
             {
-                key = new PatternLookup() { targets = targets, baseLine = baseLine, curNumber = curNumber, numbering = numbering, edgePatterns = edgeRestrictPattern, edgeMasks = edgeRestrictMask };
+                key = new PatternLookup() { targets = targets, baseLine = baseLine, curNumber = curNumber, numbering = numbering, edgePatterns = edgeRestrictPattern, edgeMasks = edgeRestrictMask, useColoring = UseColoring, useEdgeRestricts = UseEdgeRestricts };
             }
             else
             {
-                key = new PatternLookup() { targets = targets, baseLine = baseLine, curNumber = curNumber, numbering = numbering, edgePatterns = emptyList, edgeMasks = emptyList };
+                key = new PatternLookup() { targets = targets, baseLine = baseLine, curNumber = curNumber, numbering = numbering, edgePatterns = emptyList, edgeMasks = emptyList, useColoring = UseColoring, useEdgeRestricts = UseEdgeRestricts };
             }
             if (!patternLookup.TryGetValue(key, out result))
             {

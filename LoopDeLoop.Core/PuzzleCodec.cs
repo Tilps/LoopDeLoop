@@ -1,4 +1,3 @@
-#nullable enable
 using System;
 using System.Text;
 
@@ -30,29 +29,86 @@ namespace LoopDeLoop
             _ => "sq"
         };
 
-        public static MeshType FromTypeCode(string code) => code.ToLowerInvariant() switch
+        public static bool TryFromTypeCode(string code, out MeshType type)
         {
-            "sq" or "square" => MeshType.Square,
-            "sqs" or "squaresymmetrical" => MeshType.SquareSymmetrical,
-            "tri" or "triangle" => MeshType.Triangle,
-            "hex" or "hexagonal" => MeshType.Hexagonal,
-            "hex2" or "hexagonal2" => MeshType.Hexagonal2,
-            "hex3" or "hexagonal3" => MeshType.Hexagonal3,
-            "oct" or "octagon" => MeshType.Octagon,
-            "sq2" or "square2" => MeshType.Square2,
-            "pen" or "pentagon" => MeshType.Pentagon,
-            "kt" or "kites" => MeshType.Kites,
-            "asypen" or "asymmetricpentagons" => MeshType.AsymmetricPentagons,
-            "dia" or "diamonds" => MeshType.Diamonds,
-            "diasq" or "diamondsquare" => MeshType.DiamondSquare,
-            "penhex" or "pentagonhexagon" => MeshType.PentagonHexagon,
-            "floret" or "floretpentagons" or "hexpen" or "hexpentagons" => MeshType.FloretPentagons,
-            "cairo" or "cairopentagons" => MeshType.CairoPentagons,
-            "hex4" or "hexagonal4" => MeshType.Hexagonal4,
-            "sq3" or "square3" or "snub" or "snubsq" => MeshType.Square3,
-            "penhex2" or "pentagonhexagon2" or "prism" or "prismatic" => MeshType.PentagonHexagon2,
-            _ => MeshType.Square
-        };
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                type = MeshType.Square;
+                return false;
+            }
+
+            switch (code.Trim().ToLowerInvariant())
+            {
+                case "sq":
+                case "square":
+                    type = MeshType.Square; return true;
+                case "sqs":
+                case "squaresymmetrical":
+                    type = MeshType.SquareSymmetrical; return true;
+                case "tri":
+                case "triangle":
+                    type = MeshType.Triangle; return true;
+                case "hex":
+                case "hexagonal":
+                    type = MeshType.Hexagonal; return true;
+                case "hex2":
+                case "hexagonal2":
+                    type = MeshType.Hexagonal2; return true;
+                case "hex3":
+                case "hexagonal3":
+                    type = MeshType.Hexagonal3; return true;
+                case "oct":
+                case "octagon":
+                    type = MeshType.Octagon; return true;
+                case "sq2":
+                case "square2":
+                    type = MeshType.Square2; return true;
+                case "pen":
+                case "pentagon":
+                    type = MeshType.Pentagon; return true;
+                case "kt":
+                case "kites":
+                    type = MeshType.Kites; return true;
+                case "asypen":
+                case "asymmetricpentagons":
+                    type = MeshType.AsymmetricPentagons; return true;
+                case "dia":
+                case "diamonds":
+                    type = MeshType.Diamonds; return true;
+                case "diasq":
+                case "diamondsquare":
+                    type = MeshType.DiamondSquare; return true;
+                case "penhex":
+                case "pentagonhexagon":
+                    type = MeshType.PentagonHexagon; return true;
+                case "floret":
+                case "floretpentagons":
+                case "hexpen":
+                case "hexpentagons":
+                    type = MeshType.FloretPentagons; return true;
+                case "cairo":
+                case "cairopentagons":
+                    type = MeshType.CairoPentagons; return true;
+                case "hex4":
+                case "hexagonal4":
+                    type = MeshType.Hexagonal4; return true;
+                case "sq3":
+                case "square3":
+                case "snub":
+                case "snubsq":
+                    type = MeshType.Square3; return true;
+                case "penhex2":
+                case "pentagonhexagon2":
+                case "prism":
+                case "prismatic":
+                    type = MeshType.PentagonHexagon2; return true;
+                default:
+                    type = MeshType.Square;
+                    return false;
+            }
+        }
+
+        public static MeshType FromTypeCode(string code) => TryFromTypeCode(code, out MeshType type) ? type : MeshType.Square;
 
         public static string Encode(Mesh mesh, int width, int height)
         {
@@ -109,43 +165,54 @@ namespace LoopDeLoop
             else if (code.StartsWith("puzzle=", StringComparison.Ordinal)) code = code[7..];
 
             string[] parts = code.Split('/', StringSplitOptions.None);
-            if (parts.Length < 2) return false;
+            if (parts.Length is < 2 or > 3) return false;
 
-            type = FromTypeCode(parts[0]);
+            if (!TryFromTypeCode(parts[0], out type)) return false;
 
             string sizeStr = parts[1];
+            if (string.IsNullOrWhiteSpace(sizeStr)) return false;
             if (!PuzzleHelper.ParseSize(sizeStr, type, out width, out height))
             {
                 return false;
             }
 
-            try
+            string clues = parts.Length == 3 ? parts[2] : string.Empty;
+            for (int i = 0; i < clues.Length; i++)
             {
-                mesh = new Mesh(width, height, type);
-                string clues = parts.Length >= 3 ? parts[2] : string.Empty;
+                char ch = clues[i];
+                if (ch is not ((>= '0' and <= '9') or (>= 'a' and <= 'z')))
+                    return false;
+            }
 
-                int cellIndex = 0;
-                for (int i = 0; i < clues.Length && cellIndex < mesh.Cells.Count; i++)
-                {
-                    char ch = clues[i];
-                    if (ch >= '0' && ch <= '9')
-                    {
-                        mesh.SetClue(cellIndex, ch - '0');
-                        cellIndex++;
-                    }
-                    else if (ch >= 'a' && ch <= 'z')
-                    {
-                        int run = ch - 'a' + 1;
-                        cellIndex += run;
-                    }
-                }
-                return true;
-            }
-            catch
-            {
-                mesh = null;
+            var candidate = new Mesh(width, height, type);
+            if (candidate.Cells.Count == 0)
                 return false;
+
+            int cellIndex = 0;
+            for (int i = 0; i < clues.Length; i++)
+            {
+                char ch = clues[i];
+                if (ch is >= '0' and <= '9')
+                {
+                    if (cellIndex >= candidate.Cells.Count)
+                        return false;
+                    int clue = ch - '0';
+                    if (clue > candidate.Cells[cellIndex].Edges.Count)
+                        return false;
+                    candidate.SetClue(cellIndex, clue);
+                    cellIndex++;
+                }
+                else
+                {
+                    int run = ch - 'a' + 1;
+                    cellIndex += run;
+                    if (cellIndex > candidate.Cells.Count)
+                        return false;
+                }
             }
+
+            mesh = candidate;
+            return true;
         }
     }
 }

@@ -8,6 +8,9 @@ namespace LoopDeLoop
 {
     public partial class Mesh
     {
+        private const int MaxSerializedIntersections = 50_000;
+        private const int MaxSerializedEdges = 50_000;
+
         public bool LoadFromText(ReadOnlySpan<char> text)
         {
             List<string> lines = new List<string>();
@@ -18,91 +21,154 @@ namespace LoopDeLoop
             return LoadFromText(lines.ToArray());
         }
 
+        private static bool TryReadLine(string[] lines, ref int curLine, out ReadOnlySpan<char> line)
+        {
+            if (curLine < 0 || curLine >= lines.Length)
+            {
+                line = default;
+                return false;
+            }
+            line = lines[curLine++].AsSpan().Trim();
+            return true;
+        }
+
+        private static bool TryReadInt(string[] lines, ref int curLine, out int value)
+        {
+            value = 0;
+            return TryReadLine(lines, ref curLine, out var span) && int.TryParse(span, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
         public bool LoadFromText(string[] lines)
         {
-            if (lines == null || lines.Length < 2)
+            if (lines == null || lines.Length < 4)
                 return false;
 
+            ReadOnlySpan<char> header = lines[0].AsSpan().Trim();
+            if (!Enum.TryParse<MeshType>(header, ignoreCase: true, out MeshType parsedType) || !Enum.IsDefined(parsedType))
+                return false;
+
+            int curLine = 1;
+            if (!TryReadLine(lines, ref curLine, out var section) || !section.SequenceEqual("Intersections"))
+                return false;
+            if (!TryReadInt(lines, ref curLine, out int intersectionCount) || intersectionCount < 0 || intersectionCount > MaxSerializedIntersections)
+                return false;
+
+            var parsedIntersections = new List<Intersection>(intersectionCount);
+            for (int i = 0; i < intersectionCount; i++)
+            {
+                if (!TryReadLine(lines, ref curLine, out var span))
+                    return false;
+                int sp = span.IndexOf(' ');
+                if (sp <= 0)
+                    return false;
+                if (!float.TryParse(span[..sp], NumberStyles.Float, CultureInfo.InvariantCulture, out float x) || !float.IsFinite(x))
+                    return false;
+                if (!float.TryParse(span[(sp + 1)..].TrimStart(), NumberStyles.Float, CultureInfo.InvariantCulture, out float y) || !float.IsFinite(y))
+                    return false;
+                parsedIntersections.Add(new Intersection { X = x, Y = y });
+            }
+
+            if (!TryReadLine(lines, ref curLine, out section) || !section.SequenceEqual("Edges"))
+                return false;
+            if (!TryReadInt(lines, ref curLine, out int edgeCount) || edgeCount < 0 || edgeCount > MaxSerializedEdges)
+                return false;
+
+            var parsedEdges = new List<(int V1, int V2, EdgeState State)>(edgeCount);
+            var seenEdgePairs = new HashSet<(int, int)>(edgeCount);
+            for (int i = 0; i < edgeCount; i++)
+            {
+                if (!TryReadLine(lines, ref curLine, out var span))
+                    return false;
+                int sp1 = span.IndexOf(' ');
+                if (sp1 <= 0) return false;
+                ReadOnlySpan<char> rest = span[(sp1 + 1)..].TrimStart();
+                int sp2 = rest.IndexOf(' ');
+                if (sp2 <= 0) return false;
+
+                if (!int.TryParse(span[..sp1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int v1))
+                    return false;
+                if (!int.TryParse(rest[..sp2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int v2))
+                    return false;
+                if (v1 < 0 || v1 >= intersectionCount || v2 < 0 || v2 >= intersectionCount || v1 == v2)
+                    return false;
+
+                ReadOnlySpan<char> stateSpan = rest[(sp2 + 1)..].Trim();
+                if (!Enum.TryParse<EdgeState>(stateSpan, ignoreCase: true, out EdgeState state) || !Enum.IsDefined(state))
+                    return false;
+
+                var pair = v1 < v2 ? (v1, v2) : (v2, v1);
+                if (!seenEdgePairs.Add(pair))
+                    return false;
+
+                parsedEdges.Add((v1, v2, state));
+            }
+
+            if (!TryReadLine(lines, ref curLine, out section) || !section.SequenceEqual("Cells"))
+                return false;
+            if (!TryReadInt(lines, ref curLine, out int cellCount) || cellCount < 0 || cellCount > MaxSerializedEdges)
+                return false;
+
+            var parsedCellTargets = new int[cellCount];
+            for (int i = 0; i < cellCount; i++)
+            {
+                if (!TryReadInt(lines, ref curLine, out int target) || target < -1)
+                    return false;
+                parsedCellTargets[i] = target;
+            }
+
+            // Build topology on this instance now that header & geometry are validated.
+            meshType = parsedType;
             Intersections.Clear();
             Edges.Clear();
             Cells.Clear();
-            int curLine = 1;
-            if (lines[curLine] != "Intersections")
-                return false;
-            curLine++;
-            if (!int.TryParse(lines[curLine].AsSpan().Trim(), out int intersectionCount))
-                return false;
-            curLine++;
-            for (int i = 0; i < intersectionCount; i++)
-            {
-                ReadOnlySpan<char> span = lines[curLine].AsSpan().Trim();
-                int sp = span.IndexOf(' ');
-                if (sp < 0) return false;
-                Intersection inters = new Intersection();
-                inters.X = float.Parse(span[..sp], CultureInfo.InvariantCulture);
-                inters.Y = float.Parse(span[(sp + 1)..].TrimStart(), CultureInfo.InvariantCulture);
-                Intersections.Add(inters);
-                curLine++;
-            }
-            if (lines[curLine] != "Edges")
-                return false;
-            curLine++;
-            if (!int.TryParse(lines[curLine].AsSpan().Trim(), out int edgeCount))
-                return false;
-            curLine++;
+            Intersections.AddRange(parsedIntersections);
+
             List<IAction> settings = new List<IAction>();
-            for (int i = 0; i < edgeCount; i++)
+            for (int i = 0; i < parsedEdges.Count; i++)
             {
-                ReadOnlySpan<char> span = lines[curLine].AsSpan().Trim();
-                int sp1 = span.IndexOf(' ');
-                if (sp1 < 0) return false;
-                int sp2 = span[(sp1 + 1)..].IndexOf(' ');
-                if (sp2 < 0) return false;
-                sp2 += sp1 + 1;
-
-                int v1 = int.Parse(span[..sp1]);
-                int v2 = int.Parse(span[(sp1 + 1)..sp2]);
-                ReadOnlySpan<char> stateSpan = span[(sp2 + 1)..].Trim();
-                EdgeState state = Enum.Parse<EdgeState>(stateSpan, true);
-
+                var (v1, v2, state) = parsedEdges[i];
                 AddEdge(v1, v2);
-                if (state != EdgeState.Empty)
+                if (state != EdgeState.Empty && TryGetEdgeJoining(v1, v2, out int edgeIdx))
                 {
-                    settings.Add(new SetAction(this, GetEdgeJoining(v1, v2), state));
+                    settings.Add(new SetAction(this, edgeIdx, state));
                 }
-                curLine++;
             }
+
             CreateCells();
             FullClear();
-            if (lines[curLine] != "Cells")
+            if (cellCount != Cells.Count)
                 return false;
-            curLine++;
-            if (!int.TryParse(lines[curLine].AsSpan().Trim(), out int cellCount))
-                return false;
-            curLine++;
+
             for (int i = 0; i < cellCount; i++)
             {
-                AddTarget(Cells[i], int.Parse(lines[curLine].AsSpan().Trim()));
-                curLine++;
+                if (parsedCellTargets[i] > Cells[i].Edges.Count)
+                    return false;
+                AddTarget(Cells[i], parsedCellTargets[i]);
             }
-            if (curLine < lines.Length && lines[curLine] == "EdgeColorSets")
+
+            if (curLine < lines.Length && lines[curLine].AsSpan().Trim().SequenceEqual("EdgeColorSets"))
             {
                 curLine++;
-                int edgeColorSetsCount = int.Parse(lines[curLine].AsSpan().Trim());
-                curLine++;
+                if (!TryReadInt(lines, ref curLine, out int edgeColorSetsCount) || edgeColorSetsCount < 0 || edgeColorSetsCount > Edges.Count)
+                    return false;
                 for (int i = 0; i < edgeColorSetsCount; i++)
                 {
-                    curLine++;
-                    int edgeColorSetCount = int.Parse(lines[curLine].AsSpan().Trim());
-                    curLine++;
+                    if (!TryReadLine(lines, ref curLine, out _))
+                        return false;
+                    if (!TryReadInt(lines, ref curLine, out int edgeColorSetCount) || edgeColorSetCount < 0 || edgeColorSetCount > Edges.Count)
+                        return false;
                     int first = -1;
                     int firstColor = 0;
                     for (int j = 0; j < edgeColorSetCount; j++)
                     {
-                        ReadOnlySpan<char> span = lines[curLine].AsSpan().Trim();
+                        if (!TryReadLine(lines, ref curLine, out var span))
+                            return false;
                         int sp = span.IndexOf(' ');
-                        int edge = int.Parse(span[..sp]);
-                        int color = int.Parse(span[(sp + 1)..].TrimStart());
+                        if (sp <= 0) return false;
+                        if (!int.TryParse(span[..sp], NumberStyles.Integer, CultureInfo.InvariantCulture, out int edge) || edge < 0 || edge >= Edges.Count)
+                            return false;
+                        if (!int.TryParse(span[(sp + 1)..].TrimStart(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int color))
+                            return false;
                         if (first == -1)
                         {
                             first = edge;
@@ -112,28 +178,33 @@ namespace LoopDeLoop
                         {
                             settings.Add(new ColorJoinAction(this, first, edge, color == firstColor));
                         }
-                        curLine++;
                     }
                 }
             }
-            if (curLine < lines.Length && lines[curLine] == "CellColorSets")
+
+            if (curLine < lines.Length && lines[curLine].AsSpan().Trim().SequenceEqual("CellColorSets"))
             {
                 curLine++;
-                int cellColorSetsCount = int.Parse(lines[curLine].AsSpan().Trim());
-                curLine++;
+                if (!TryReadInt(lines, ref curLine, out int cellColorSetsCount) || cellColorSetsCount < 0 || cellColorSetsCount > Cells.Count)
+                    return false;
                 for (int i = 0; i < cellColorSetsCount; i++)
                 {
-                    curLine++;
-                    int cellColorSetCount = int.Parse(lines[curLine].AsSpan().Trim());
-                    curLine++;
+                    if (!TryReadLine(lines, ref curLine, out _))
+                        return false;
+                    if (!TryReadInt(lines, ref curLine, out int cellColorSetCount) || cellColorSetCount < 0 || cellColorSetCount > Cells.Count)
+                        return false;
                     int first = -1;
                     int firstColor = 0;
                     for (int j = 0; j < cellColorSetCount; j++)
                     {
-                        ReadOnlySpan<char> span = lines[curLine].AsSpan().Trim();
+                        if (!TryReadLine(lines, ref curLine, out var span))
+                            return false;
                         int sp = span.IndexOf(' ');
-                        int cell = int.Parse(span[..sp]);
-                        int color = int.Parse(span[(sp + 1)..].TrimStart());
+                        if (sp <= 0) return false;
+                        if (!int.TryParse(span[..sp], NumberStyles.Integer, CultureInfo.InvariantCulture, out int cell) || cell < 0 || cell >= Cells.Count)
+                            return false;
+                        if (!int.TryParse(span[(sp + 1)..].TrimStart(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int color))
+                            return false;
                         if (Math.Abs(color) != 1)
                         {
                             if (first == -1)
@@ -150,28 +221,34 @@ namespace LoopDeLoop
                         {
                             settings.Add(new CellColorJoinAction(this, cell, -1, color == 1));
                         }
-                        curLine++;
                     }
                 }
             }
-            if (curLine < lines.Length && lines[curLine] == "EdgePairRestrictions")
+
+            if (curLine < lines.Length && lines[curLine].AsSpan().Trim().SequenceEqual("EdgePairRestrictions"))
             {
                 curLine++;
-                int edgePairRestrictionCount = int.Parse(lines[curLine].AsSpan().Trim());
-                curLine++;
+                if (!TryReadInt(lines, ref curLine, out int edgePairRestrictionCount) || edgePairRestrictionCount < 0 || edgePairRestrictionCount > MaxSerializedEdges * 4)
+                    return false;
                 for (int j = 0; j < edgePairRestrictionCount; j++)
                 {
-                    ReadOnlySpan<char> span = lines[curLine].AsSpan().Trim();
+                    if (!TryReadLine(lines, ref curLine, out var span))
+                        return false;
                     int sp1 = span.IndexOf(' ');
-                    int sp2 = span[(sp1 + 1)..].IndexOf(' ');
-                    sp2 += sp1 + 1;
-                    int edge1 = int.Parse(span[..sp1]);
-                    int edge2 = int.Parse(span[(sp1 + 1)..sp2]);
-                    EdgePairRestriction restriction = Enum.Parse<EdgePairRestriction>(span[(sp2 + 1)..].Trim(), true);
+                    if (sp1 <= 0) return false;
+                    ReadOnlySpan<char> rest = span[(sp1 + 1)..].TrimStart();
+                    int sp2 = rest.IndexOf(' ');
+                    if (sp2 <= 0) return false;
+                    if (!int.TryParse(span[..sp1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int edge1) || edge1 < 0 || edge1 >= Edges.Count)
+                        return false;
+                    if (!int.TryParse(rest[..sp2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int edge2) || edge2 < 0 || edge2 >= Edges.Count)
+                        return false;
+                    if (!Enum.TryParse<EdgePairRestriction>(rest[(sp2 + 1)..].Trim(), ignoreCase: true, out EdgePairRestriction restriction) || !Enum.IsDefined(restriction))
+                        return false;
                     settings.Add(new EdgeRestrictionAction(this, edge1, edge2, restriction));
-                    curLine++;
                 }
             }
+
             PerformListRegardless(settings);
             return true;
         }

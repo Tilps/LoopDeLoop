@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -8,28 +9,43 @@ namespace LoopDeLoop
 {
     public partial class Mesh
     {
+        private const int MaxGenerateAttempts = 25;
+
         public double GenerateLengthFraction { get; set; } = 0.5;
 
         public double GenerateBoringFraction { get; set; } = 0.01;
 
-        private void GenerateInitialLoop(Random rnd, List<IAction> backup)
+        private bool GenerateInitialLoop(Random rnd, List<IAction> backup)
         {
+            if (intersections.Count == 0 || edges.Count == 0)
+                return false;
+
             int targetCount = (int)Math.Floor(intersections.Count * GenerateLengthFraction);
             long countSum = 0;
             int tries = 0;
             int loopTries = 0;
-            bool loopToSmall = true;
-            while (loopToSmall)
+            bool loopTooSmall = true;
+            while (loopTooSmall)
             {
-                loopToSmall = false;
+                loopTooSmall = false;
                 FullClear();
                 backup.Clear();
                 int start = rnd.Next(intersections.Count);
                 Intersection inters = intersections[start];
+                if (inters.Edges.Count == 0)
+                    return false;
                 int edgeIntersIndex = rnd.Next(inters.Edges.Count);
                 int edgeIndex = inters.Edges[edgeIntersIndex];
                 Perform(edgeIndex, EdgeState.Filled, backup, 0);
                 bool success = CreateLoop(rnd, start, start, edgeIntersIndex);
+                if (!success)
+                {
+                    loopTooSmall = true;
+                    loopTries++;
+                    if (loopTries > 1000)
+                        return false;
+                    continue;
+                }
                 int count = 0;
                 for (var index = 0; index < edges.Count; index++)
                 {
@@ -44,47 +60,61 @@ namespace LoopDeLoop
                     if (loopTries > 100 && count >= countSum / tries)
                     {
                         if (TryExpandLoop(rnd, targetCount - count))
-                            break;
+                            return true;
                     }
-                    loopToSmall = true;
+                    loopTooSmall = true;
                     loopTries++;
                     if (loopTries > 1000)
-                        break;
+                        return true;
                 }
             }
+            return true;
         }
 
-        private async Task GenerateInitialLoopAsync(Random rnd, List<IAction> backup, CancellationToken cancellationToken = default)
+        private async Task<bool> GenerateInitialLoopAsync(Random rnd, List<IAction> backup, CancellationToken cancellationToken = default)
         {
+            if (intersections.Count == 0 || edges.Count == 0)
+                return false;
+
             int targetCount = (int)Math.Floor(intersections.Count * GenerateLengthFraction);
             long countSum = 0;
             int tries = 0;
             int loopTries = 0;
-            bool loopToSmall = true;
+            bool loopTooSmall = true;
             long lastYieldTicks = Stopwatch.GetTimestamp();
 
-            while (loopToSmall)
+            while (loopTooSmall)
             {
                 if (AbortPrune || cancellationToken.IsCancellationRequested)
-                    return;
+                    return false;
 
                 if (Stopwatch.GetElapsedTime(lastYieldTicks).TotalMilliseconds >= 16.0)
                 {
                     lastYieldTicks = Stopwatch.GetTimestamp();
                     await Task.Delay(1, cancellationToken);
                     if (AbortPrune || cancellationToken.IsCancellationRequested)
-                        return;
+                        return false;
                 }
 
-                loopToSmall = false;
+                loopTooSmall = false;
                 FullClear();
                 backup.Clear();
                 int start = rnd.Next(intersections.Count);
                 Intersection inters = intersections[start];
+                if (inters.Edges.Count == 0)
+                    return false;
                 int edgeIntersIndex = rnd.Next(inters.Edges.Count);
                 int edgeIndex = inters.Edges[edgeIntersIndex];
                 Perform(edgeIndex, EdgeState.Filled, backup, 0);
                 bool success = CreateLoop(rnd, start, start, edgeIntersIndex);
+                if (!success)
+                {
+                    loopTooSmall = true;
+                    loopTries++;
+                    if (loopTries > 1000)
+                        return false;
+                    continue;
+                }
                 int count = 0;
                 for (var index = 0; index < edges.Count; index++)
                 {
@@ -99,53 +129,50 @@ namespace LoopDeLoop
                     if (loopTries > 100 && count >= countSum / tries)
                     {
                         if (TryExpandLoop(rnd, targetCount - count))
-                            break;
+                            return true;
                     }
-                    loopToSmall = true;
+                    loopTooSmall = true;
                     loopTries++;
                     if (loopTries > 1000)
-                        break;
+                        return true;
                 }
             }
+            return true;
         }
 
-        public void Generate()
+        public void Generate() => Generate(null);
+
+        public void Generate(Random? rng)
         {
+            Random rnd = rng ?? Random.Shared;
             AbortPrune = false;
-            bool done = false;
             List<IAction> backup = [];
-            while (!done)
+            for (int attempt = 0; attempt < MaxGenerateAttempts && !AbortPrune; attempt++)
             {
-                done = true;
-                GenerateInitialLoop(Random.Shared, backup);
+                if (!GenerateInitialLoop(rnd, backup))
+                    continue;
                 UpdateCounts();
                 List<int> cellsOfVariance = new List<int>();
                 List<int> cellsOfDoubleVariance = new List<int>();
                 CalculateCellsOfVariance(cellsOfVariance, cellsOfDoubleVariance);
                 Clear();
-                try
-                {
-                    PruneCounts(cellsOfVariance, cellsOfDoubleVariance);
-                }
-                catch (Exception e)
-                {
-                    if (e.Message == "Can't solve it anyway")
-                        done = false;
-                    else
-                        throw;
-                }
+                if (PruneCounts(cellsOfVariance, cellsOfDoubleVariance, rnd))
+                    return;
             }
         }
 
-        public async Task GenerateAsync(IProgress<int>? progress = null, CancellationToken cancellationToken = default)
+        public async Task GenerateAsync(IProgress<int>? progress = null, CancellationToken cancellationToken = default, Random? rng = null)
         {
+            Random rnd = rng ?? Random.Shared;
             AbortPrune = false;
-            bool done = false;
             List<IAction> backup = [];
-            while (!done && !cancellationToken.IsCancellationRequested && !AbortPrune)
+            for (int attempt = 0; attempt < MaxGenerateAttempts && !cancellationToken.IsCancellationRequested && !AbortPrune; attempt++)
             {
-                done = true;
-                await GenerateInitialLoopAsync(Random.Shared, backup, cancellationToken);
+                if (!await GenerateInitialLoopAsync(rnd, backup, cancellationToken))
+                {
+                    if (cancellationToken.IsCancellationRequested || AbortPrune) break;
+                    continue;
+                }
                 if (cancellationToken.IsCancellationRequested || AbortPrune) break;
                 UpdateCounts();
                 List<int> cellsOfVariance = new List<int>();
@@ -154,22 +181,14 @@ namespace LoopDeLoop
                 Clear();
                 try
                 {
-                    await PruneCountsAsync(cellsOfVariance, cellsOfDoubleVariance, progress, cancellationToken);
-                }
-                catch (Exception e)
-                {
-                    if (e is OperationCanceledException || cancellationToken.IsCancellationRequested || AbortPrune)
-                    {
+                    if (await PruneCountsAsync(cellsOfVariance, cellsOfDoubleVariance, progress, cancellationToken, rnd))
                         break;
-                    }
-                    if (e.Message == "Can't solve it anyway")
-                    {
-                        done = false;
-                        progress?.Report(0);
-                        await Task.Delay(1, cancellationToken);
-                    }
-                    else
-                        throw;
+                    progress?.Report(0);
+                    await Task.Delay(1, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
                 }
             }
 
@@ -222,7 +241,7 @@ namespace LoopDeLoop
 
         private bool TryExpandLoop(Random rnd, int targetAdditional)
         {
-            int lastTarget = 0;
+            int lastTarget = int.MinValue;
             while (lastTarget != targetAdditional)
             {
                 lastTarget = targetAdditional;
@@ -240,14 +259,7 @@ namespace LoopDeLoop
                     if (cellsToExpand.Count > 0 || targetAdditional > 0)
                         break;
                 }
-                for (int i = 0; i < cellsToExpand.Count; i++)
-                {
-                    int first = rnd.Next(cellsToExpand.Count);
-                    int second = rnd.Next(cellsToExpand.Count);
-                    int tmp = cellsToExpand[first];
-                    cellsToExpand[first] = cellsToExpand[second];
-                    cellsToExpand[second] = tmp;
-                }
+                rnd.Shuffle(CollectionsMarshal.AsSpan(cellsToExpand));
                 int index = 0;
                 while ((targetAdditional > 0 || RateBoringness() > GenerateBoringFraction) && index < cellsToExpand.Count)
                 {
@@ -550,7 +562,9 @@ namespace LoopDeLoop
                 RemoveTarget(cell);
             }
             successLookup.Clear();
-
+            patternLookup.Clear();
+            boringEdges = null;
+            edgeDistancesCache = null;
         }
         public void Clear()
         {
@@ -575,14 +589,16 @@ namespace LoopDeLoop
                     satisifiedCount++;
             }
             cellColorSets.Clear();
-            edgeChains.Clear();
             for (var index = 0; index < intersections.Count; index++)
             {
                 Intersection inters = intersections[index];
                 inters.ExcludedCount = 0;
                 inters.FilledCount = 0;
             }
-            edgePairRestrictions = new EdgePairRestriction[edges.Count, edges.Count];
+            if (edgePairRestrictions != null && edgePairRestrictions.GetLength(0) == edges.Count && edgePairRestrictions.GetLength(1) == edges.Count)
+                Array.Clear(edgePairRestrictions);
+            else
+                edgePairRestrictions = new EdgePairRestriction[edges.Count, edges.Count];
         }
 
         private int satisifiedCount;
@@ -591,7 +607,6 @@ namespace LoopDeLoop
         private List<List<int>> edgeSets = new List<List<int>>();
         private List<List<int>> colorSets = new List<List<int>>();
         private List<List<int>> cellColorSets = new List<List<int>>();
-        private List<Chain> edgeChains = new List<Chain>();
         public EdgePairRestriction[] GetEdgePairRestrictionsForEdge(int edge)
         {
             EdgePairRestriction[] restricts = new EdgePairRestriction[edges.Count];
@@ -638,53 +653,49 @@ namespace LoopDeLoop
 
         public event EventHandler? PrunedCountProgress;
 
-        public bool AbortPrune = false;
+        private bool abortPrune;
+        public bool AbortPrune
+        {
+            get => Volatile.Read(ref abortPrune);
+            set => Volatile.Write(ref abortPrune, value);
+        }
 
         private bool pruning = false;
 
-        private void PreparePruneTrials(out bool[] tried, out int[] trials, out int width, out int height)
+        private void PreparePruneTrials(Random rnd, out bool[] tried, out int[] trials, out int width, out int height)
         {
             tried = new bool[cells.Count];
             trials = new int[cells.Count];
             for (int i = 0; i < trials.Length; i++)
                 trials[i] = i;
-            Random.Shared.Shuffle(trials);
+            rnd.Shuffle(trials);
 
             width = 0;
             height = 0;
-            if (meshType == MeshType.SquareSymmetrical)
+            if (meshType == MeshType.SquareSymmetrical && intersections.Count > 1)
             {
-                bool found = true;
                 int iSearch = 0;
-                while (found)
+                while (TryGetEdgeJoining(iSearch, iSearch + 1, out _))
                 {
-                    try
-                    {
-                        GetEdgeJoining(iSearch, iSearch + 1);
-                    }
-                    catch
-                    {
-                        found = false;
-                    }
                     iSearch++;
                 }
-                height = iSearch - 1;
-                width = Cells.Count / height;
+                height = iSearch;
+                width = height > 0 ? Cells.Count / height : 0;
             }
         }
 
-        private int PruneCellStep(int trial, bool[] tried, int width, int height, List<int> cellsOfVariance, List<int> cellsOfDoubleVariance)
+        private int PruneCellStep(int trial, bool[] tried, int width, int height, List<int> cellsOfVariance, List<int> cellsOfDoubleVariance, CancellationToken cancellationToken = default)
         {
             List<int> prot = CalcProtectedCells(cellsOfVariance, cellsOfDoubleVariance);
             if (prot.Contains(trial))
                 return 1;
 
             Cell cell = cells[trial];
-            if (meshType != MeshType.SquareSymmetrical)
+            if (meshType != MeshType.SquareSymmetrical || width <= 0 || height <= 0)
             {
                 int oldVal = cell.TargetCount;
                 RemoveTarget(cell);
-                if (TrySolve() != SolveState.Solved)
+                if (TrySolve(false, cancellationToken) != SolveState.Solved)
                 {
                     AddTarget(cell, oldVal);
                 }
@@ -704,9 +715,9 @@ namespace LoopDeLoop
             int y = trial / width;
             int x = trial % width;
             int otherTrial = (height - y - 1) * width + (width - x - 1);
-            if (otherTrial == trial)
+            if (otherTrial == trial || otherTrial < 0 || otherTrial >= cells.Count)
             {
-                if (TrySolve() != SolveState.Solved)
+                if (TrySolve(false, cancellationToken) != SolveState.Solved)
                 {
                     AddTarget(cell, symOldVal);
                 }
@@ -730,7 +741,7 @@ namespace LoopDeLoop
             Cell otherCell = cells[otherTrial];
             int otherOldVal = otherCell.TargetCount;
             RemoveTarget(otherCell);
-            if (TrySolve() != SolveState.Solved)
+            if (TrySolve(false, cancellationToken) != SolveState.Solved)
             {
                 AddTarget(cell, symOldVal);
                 AddTarget(otherCell, otherOldVal);
@@ -745,17 +756,17 @@ namespace LoopDeLoop
             return 2;
         }
 
-        private void PruneCounts(List<int> cellsOfVariance, List<int> cellsOfDoubleVariance)
+        private bool PruneCounts(List<int> cellsOfVariance, List<int> cellsOfDoubleVariance, Random rnd)
         {
             SolveState state = TrySolve();
             if (state != SolveState.Solved)
-                throw new Exception("Can't solve it anyway");
+                return false;
             try
             {
                 pruning = true;
                 finalSolution = solutionsFound[0];
                 finalDepthPatern = solutionDepthPatern[0];
-                PreparePruneTrials(out bool[] tried, out int[] trials, out int width, out int height);
+                PreparePruneTrials(rnd, out bool[] tried, out int[] trials, out int width, out int height);
 
                 for (int index = 0; index < trials.Length; index++)
                 {
@@ -766,6 +777,7 @@ namespace LoopDeLoop
                     for (int s = 0; s < steps; s++)
                         PrunedCountProgress?.Invoke(this, EventArgs.Empty);
                 }
+                return true;
             }
             finally
             {
@@ -773,25 +785,25 @@ namespace LoopDeLoop
             }
         }
 
-        private async Task PruneCountsAsync(List<int> cellsOfVariance, List<int> cellsOfDoubleVariance, IProgress<int>? progress = null, CancellationToken cancellationToken = default)
+        private async Task<bool> PruneCountsAsync(List<int> cellsOfVariance, List<int> cellsOfDoubleVariance, IProgress<int>? progress = null, CancellationToken cancellationToken = default, Random? rng = null)
         {
             if (AbortPrune || cancellationToken.IsCancellationRequested)
-                return;
+                return true;
 
             await Task.Delay(1, cancellationToken);
 
-            SolveState state = TrySolve();
+            SolveState state = TrySolve(false, cancellationToken);
             if (AbortPrune || cancellationToken.IsCancellationRequested)
-                return;
+                return true;
 
             if (state != SolveState.Solved)
-                throw new Exception("Can't solve it anyway");
+                return false;
             try
             {
                 pruning = true;
                 finalSolution = solutionsFound[0];
                 finalDepthPatern = solutionDepthPatern[0];
-                PreparePruneTrials(out bool[] tried, out int[] trials, out int width, out int height);
+                PreparePruneTrials(rng ?? Random.Shared, out bool[] tried, out int[] trials, out int width, out int height);
 
                 int progressCounter = 0;
                 long lastYieldTicks = Stopwatch.GetTimestamp();
@@ -801,7 +813,7 @@ namespace LoopDeLoop
                     if (AbortPrune || cancellationToken.IsCancellationRequested)
                         break;
 
-                    int steps = PruneCellStep(trials[index], tried, width, height, cellsOfVariance, cellsOfDoubleVariance);
+                    int steps = PruneCellStep(trials[index], tried, width, height, cellsOfVariance, cellsOfDoubleVariance, cancellationToken);
                     if (steps == 0)
                         continue;
 
@@ -816,6 +828,7 @@ namespace LoopDeLoop
                         await Task.Delay(1, cancellationToken);
                     }
                 }
+                return true;
             }
             finally
             {
@@ -866,7 +879,7 @@ namespace LoopDeLoop
                 prot.Add(known[0]);
         }
 
-        public void SetRatingCodeOptions(string code)
+        public void SetRatingCodeOptions(string? code)
         {
             IterativeSolverDepth = int.MaxValue;
             IterativeRecMaxDepth = 1;
@@ -881,6 +894,8 @@ namespace LoopDeLoop
             UseCellColoring = false;
             ColoringCheats = false;
             UseMerging = false;
+            if (string.IsNullOrEmpty(code))
+                return;
             int state = -1;
             string numAccumulator = string.Empty;
             for (var index = 0; index < code.Length; index++)

@@ -308,7 +308,9 @@ namespace LoopDeLoop.Network
             }
             try
             {
+#pragma warning disable SYSLIB0006 // Legacy multiplayer is deprecated
                 readerThread?.Abort();
+#pragma warning restore SYSLIB0006
             }
             catch
             {

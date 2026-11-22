@@ -17,11 +17,10 @@ namespace LoopDeLoop
             if (Settings.Default.LastVersionSave == "0.0.0.0")
             {
                 Settings.Default.Upgrade();
-                Settings.Default.LastVersionSave = GetVersionNumber(); ;
+                Settings.Default.LastVersionSave = GetVersionNumber();
                 Settings.Default.Save();
             }
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
+            ApplicationConfiguration.Initialize();
             Application.Run(new LoopDeLoopForm());
         }
 

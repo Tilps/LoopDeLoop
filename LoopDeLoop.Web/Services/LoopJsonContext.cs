@@ -4,7 +4,7 @@ namespace LoopDeLoop.Web.Services
 {
     [JsonSerializable(typeof(SavedGameState))]
     [JsonSerializable(typeof(UserPreferences))]
-    internal partial class LoopJsonContext : JsonSerializerContext
+    public partial class LoopJsonContext : JsonSerializerContext
     {
     }
 }

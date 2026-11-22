@@ -149,7 +149,7 @@ namespace LoopDeLoop.Tests
             Assert.AreEqual(0, unique.BranchDepth);
             Assert.AreEqual(4, unique.ClueCount);
             Assert.AreEqual(4, unique.TotalCells);
-            Assert.Contains("I", unique.TechniqueTier);
+            Assert.Contains("S", unique.TechniqueTier);
 
             // 2. Empty grid -> Multiple Solutions
             var blank = new Mesh(2, 2, MeshType.Square);

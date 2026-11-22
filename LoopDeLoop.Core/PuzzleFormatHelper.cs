@@ -89,10 +89,9 @@ namespace LoopDeLoop
             AppendLoopyDesc(mesh, width, height, descBuilder);
             string desc = descBuilder.ToString();
             WriteLoopyField(sw, "DESC", desc);
-            WriteLoopyField(sw, "NSTATES", desc.Length.ToString());
-            WriteLoopyField(sw, "STATEPOS", desc.Length.ToString());
 
             bool complete = true;
+            var moves = new List<string>();
             var solveBuilder = new StringBuilder("S");
             for (int j = 0; j <= height; j++)
             {
@@ -115,7 +114,7 @@ namespace LoopDeLoop
                                 {
                                     string move = $"{i},{j}h{(st == EdgeState.Filled ? 'y' : 'n')}";
                                     solveBuilder.Append(move);
-                                    WriteLoopyField(sw, "MOVE", move);
+                                    moves.Add(move);
                                 }
                             }
                         }
@@ -134,7 +133,7 @@ namespace LoopDeLoop
                                 {
                                     string move = $"{i},{j}v{(st == EdgeState.Filled ? 'y' : 'n')}";
                                     solveBuilder.Append(move);
-                                    WriteLoopyField(sw, "MOVE", move);
+                                    moves.Add(move);
                                 }
                             }
                         }
@@ -142,6 +141,13 @@ namespace LoopDeLoop
                 }
             }
 
+            int stateCount = 1 + moves.Count + (complete ? 1 : 0);
+            WriteLoopyField(sw, "NSTATES", stateCount.ToString());
+            WriteLoopyField(sw, "STATEPOS", stateCount.ToString());
+            foreach (string move in moves)
+            {
+                WriteLoopyField(sw, "MOVE", move);
+            }
             if (complete)
             {
                 WriteLoopyField(sw, "SOLVE", solveBuilder.ToString());
@@ -285,44 +291,28 @@ namespace LoopDeLoop
             }
 
             // 5. Native .loop serialization
-            try
+            var nativeMesh = new Mesh(0, 0, MeshType.Square);
+            if (nativeMesh.LoadFromText(lines))
             {
-                var nativeMesh = new Mesh(0, 0, MeshType.Square);
-                if (nativeMesh.LoadFromText(lines))
+                mesh = nativeMesh;
+                detectedFormat = "Loop File";
+                if (TryGetSquareDimensions(nativeMesh, out int sw, out int sh))
                 {
-                    mesh = nativeMesh;
-                    detectedFormat = "Loop File";
-                    if (TryGetSquareDimensions(nativeMesh, out int sw, out int sh))
-                    {
-                        width = sw;
-                        height = sh;
-                    }
-                    return true;
+                    width = sw;
+                    height = sh;
                 }
-            }
-            catch
-            {
+                return true;
             }
 
             // 6. Legacy compressed share token fallback
-            if (!trimmed.Contains('\n'))
+            if (!trimmed.Contains('\n') && PuzzleCompression.TryDecompressFromUrlSafe(codeCandidate, out string decompressed) && !string.IsNullOrWhiteSpace(decompressed))
             {
-                try
+                var legacyMesh = new Mesh(0, 0, MeshType.Square);
+                if (legacyMesh.LoadFromText(decompressed.AsSpan()))
                 {
-                    string decompressed = PuzzleCompression.Decompress(codeCandidate);
-                    if (!string.IsNullOrWhiteSpace(decompressed))
-                    {
-                        var legacyMesh = new Mesh(0, 0, MeshType.Square);
-                        if (legacyMesh.LoadFromText(decompressed.AsSpan()))
-                        {
-                            mesh = legacyMesh;
-                            detectedFormat = "Legacy Share Link";
-                            return true;
-                        }
-                    }
-                }
-                catch
-                {
+                    mesh = legacyMesh;
+                    detectedFormat = "Legacy Share Link";
+                    return true;
                 }
             }
 
@@ -379,7 +369,7 @@ namespace LoopDeLoop
             if (xIdx <= 0)
                 return false;
 
-            if (!int.TryParse(paramPart.AsSpan(0, xIdx), out width) || width <= 0 || width > 100)
+            if (!int.TryParse(paramPart.AsSpan(0, xIdx), out width) || width <= 0 || width > PuzzleHelper.MaxGridDimension)
                 return false;
 
             int endH = xIdx + 1;
@@ -389,8 +379,37 @@ namespace LoopDeLoop
             if (endH == xIdx + 1)
                 return false;
 
-            if (!int.TryParse(paramPart.AsSpan(xIdx + 1, endH - (xIdx + 1)), out height) || height <= 0 || height > 100)
+            if (!int.TryParse(paramPart.AsSpan(xIdx + 1, endH - (xIdx + 1)), out height) || height <= 0 || height > PuzzleHelper.MaxGridDimension)
                 return false;
+
+            // Validate optional Loopy suffix: reject non-square grid types (t1, t2, etc.; t0 is square).
+            ReadOnlySpan<char> suffix = paramPart.AsSpan(endH);
+            int idx = 0;
+            while (idx < suffix.Length)
+            {
+                char flag = suffix[idx++];
+                if (flag == 't')
+                {
+                    int numStart = idx;
+                    while (idx < suffix.Length && char.IsDigit(suffix[idx]))
+                        idx++;
+                    if (numStart == idx || !int.TryParse(suffix[numStart..idx], out int gridType) || gridType != 0)
+                        return false;
+                }
+                else if (flag == 'r')
+                {
+                    while (idx < suffix.Length && char.IsDigit(suffix[idx]))
+                        idx++;
+                }
+                else if (flag is 'd' or 'e' or 'n' or 'h' or 'i')
+                {
+                    // Known difficulty / option suffixes (e.g., de, dn, dh, di)
+                }
+                else
+                {
+                    return false;
+                }
+            }
 
             return true;
         }
@@ -419,7 +438,7 @@ namespace LoopDeLoop
                     return false;
                 }
             }
-            return counter > 0;
+            return counter == totalCells;
         }
 
         private static bool TryParseLoopySave(string[] lines, out Mesh? mesh, out int width, out int height)
@@ -451,13 +470,13 @@ namespace LoopDeLoop
 
                     case "MOVE":
                         if (mesh == null) return false;
-                        if (!ApplyLoopyMove(mesh, height, payload))
+                        if (!ApplyLoopyMove(mesh, width, height, payload))
                             return false;
                         break;
 
                     case "SOLVE":
                         if (mesh == null) return false;
-                        ApplyLoopySolveString(mesh, height, payload);
+                        ApplyLoopySolveString(mesh, width, height, payload);
                         break;
                 }
             }
@@ -465,7 +484,7 @@ namespace LoopDeLoop
             return mesh != null && width > 0 && height > 0;
         }
 
-        private static bool ApplyLoopyMove(Mesh mesh, int height, string payload)
+        private static bool ApplyLoopyMove(Mesh mesh, int width, int height, string payload)
         {
             int comma = payload.IndexOf(',');
             if (comma <= 0 || payload.Length < comma + 4) return false;
@@ -476,25 +495,27 @@ namespace LoopDeLoop
             if (dir != 'h' && dir != 'v') return false;
             if (!int.TryParse(payload.AsSpan(comma + 1, payload.Length - comma - 3), out int y)) return false;
 
-            if (!TryGetLoopyEdgeIndex(mesh, x, y, dir == 'h', height, out int edgeIdx))
+            if (!TryGetLoopyEdgeIndex(mesh, x, y, dir == 'h', width, height, out int edgeIdx))
                 return false;
 
             if (op == 'u')
             {
                 if (mesh.Edges[edgeIdx].State != EdgeState.Empty)
                     new UnsetAction(mesh, edgeIdx).Perform();
+                return true;
             }
-            else if (op == 'y' || op == 'n')
+            if (op == 'y' || op == 'n')
             {
                 EdgeState target = op == 'y' ? EdgeState.Filled : EdgeState.Excluded;
                 if (mesh.Edges[edgeIdx].State != EdgeState.Empty)
                     new UnsetAction(mesh, edgeIdx).Perform();
                 new SetAction(mesh, edgeIdx, target).Perform();
+                return true;
             }
-            return true;
+            return false;
         }
 
-        private static void ApplyLoopySolveString(Mesh mesh, int height, string payload)
+        private static void ApplyLoopySolveString(Mesh mesh, int width, int height, string payload)
         {
             int x = 0, y = 0;
             bool horiz = false;
@@ -514,7 +535,7 @@ namespace LoopDeLoop
                     acc.Clear();
                     horiz = c == 'h';
                 }
-                else if ((c == 'y' || c == 'n') && TryGetLoopyEdgeIndex(mesh, x, y, horiz, height, out int edgeIdx))
+                else if ((c == 'y' || c == 'n') && TryGetLoopyEdgeIndex(mesh, x, y, horiz, width, height, out int edgeIdx))
                 {
                     EdgeState target = c == 'y' ? EdgeState.Filled : EdgeState.Excluded;
                     if (mesh.Edges[edgeIdx].State != EdgeState.Empty)
@@ -524,8 +545,22 @@ namespace LoopDeLoop
             }
         }
 
-        private static bool TryGetLoopyEdgeIndex(Mesh mesh, int x, int y, bool horiz, int height, out int edgeIndex)
+        private static bool TryGetLoopyEdgeIndex(Mesh mesh, int x, int y, bool horiz, int width, int height, out int edgeIndex)
         {
+            edgeIndex = -1;
+            if (x < 0 || y < 0)
+                return false;
+            if (horiz)
+            {
+                if (x >= width || y > height)
+                    return false;
+            }
+            else
+            {
+                if (x > width || y >= height)
+                    return false;
+            }
+
             int start = x * (height + 1) + y;
             int end = horiz ? start + height + 1 : start + 1;
             return TryFindEdgeJoining(mesh, start, end, out edgeIndex);
@@ -546,6 +581,42 @@ namespace LoopDeLoop
 
             width = lineLen / 2;
             height = lines.Length / 2;
+            if (width <= 0 || height <= 0 || width > PuzzleHelper.MaxGridDimension || height > PuzzleHelper.MaxGridDimension)
+                return false;
+
+            // Validate grid characters strictly before mutating a mesh.
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                if (line.Length > lineLen)
+                    return false;
+                if (line.Length < lineLen)
+                    line = line.PadRight(lineLen);
+
+                if (i % 2 == 0)
+                {
+                    for (int j = 0; j < lineLen; j += 2)
+                    {
+                        if (line[j] != '+') return false;
+                    }
+                    for (int j = 1; j < lineLen; j += 2)
+                    {
+                        if (line[j] is not (' ' or '-' or 'x' or 'X')) return false;
+                    }
+                }
+                else
+                {
+                    for (int j = 0; j < lineLen; j += 2)
+                    {
+                        if (line[j] is not (' ' or '|' or 'x' or 'X')) return false;
+                    }
+                    for (int j = 1; j < lineLen; j += 2)
+                    {
+                        if (line[j] is not (' ' or (>= '0' and <= '4'))) return false;
+                    }
+                }
+            }
+
             var candidate = new Mesh(width, height, MeshType.Square);
 
             for (int i = 0; i < lines.Length; i++)

@@ -9,21 +9,21 @@ using System.Threading.Tasks;
 
 namespace LoopDeLoop
 {
-    public enum EdgeState
+    public enum EdgeState : byte
     {
         Empty,
         Filled,
         Excluded,
     }
 
-    public enum TriState
+    public enum TriState : byte
     {
         Unknown,
         Same,
         Opposite,
     }
 
-    public enum EdgePairRestriction
+    public enum EdgePairRestriction : byte
     {
         None,
         NotBoth,
@@ -97,7 +97,6 @@ namespace LoopDeLoop
         public float X;
         public float Y;
         public int EdgeSet;
-        public ChainNode? EdgeSetEntry;
 
         public Intersection Clone()
         {
@@ -279,6 +278,11 @@ namespace LoopDeLoop
             this.useCellPairs = other.useCellPairs;
             this.useCellPairsTopLevel = other.useCellPairsTopLevel;
             this.useEdgeRestricts = other.useEdgeRestricts;
+            this.useMerging = other.useMerging;
+            this.useCellColoring = other.useCellColoring;
+            this.useCellColoringTrials = other.useCellColoringTrials;
+            this.useDerivedColoring = other.useDerivedColoring;
+            this.superSlowMo = other.superSlowMo;
             if (other.edgePairRestrictions != null)
                 this.edgePairRestrictions = (EdgePairRestriction[,])other.edgePairRestrictions.Clone();
             else
@@ -532,22 +536,35 @@ namespace LoopDeLoop
         List<int[]> solutionDepthPatern = new List<int[]>();
         List<int> curDepthPatern = new List<int>();
 
-        public int GetEdgeJoining(int inters1, int inters2)
+        public bool TryGetEdgeJoining(int inters1, int inters2, out int edgeIndex)
         {
+            if (inters1 < 0 || inters1 >= intersections.Count || inters2 < 0 || inters2 >= intersections.Count)
+            {
+                edgeIndex = -1;
+                return false;
+            }
             Intersection rInters1 = intersections[inters1];
             Intersection rInters2 = intersections[inters2];
             for (int i = 0; i < rInters1.Edges.Count; i++)
             {
-                int edgeIndex = rInters1.Edges[i];
+                int candidate = rInters1.Edges[i];
                 for (int j = 0; j < rInters2.Edges.Count; j++)
                 {
-                    int otherEdgeIndex = rInters2.Edges[j];
-                    if (edgeIndex == otherEdgeIndex)
+                    if (candidate == rInters2.Edges[j])
                     {
-                        return edgeIndex;
+                        edgeIndex = candidate;
+                        return true;
                     }
                 }
             }
+            edgeIndex = -1;
+            return false;
+        }
+
+        public int GetEdgeJoining(int inters1, int inters2)
+        {
+            if (TryGetEdgeJoining(inters1, inters2, out int edgeIndex))
+                return edgeIndex;
             throw new ArgumentException("Specified intersections aren't joined.");
         }
 
@@ -857,8 +874,10 @@ namespace LoopDeLoop
 
         private bool RawEdgeSet(EdgeState state, Edge edge)
         {
+            if (state == EdgeState.Empty)
+                throw new ArgumentException("Cannot set edge to Empty via RawEdgeSet.", nameof(state));
             if (edge.State != EdgeState.Empty)
-                throw new Exception("Edge already set.");
+                throw new InvalidOperationException("Edge already set.");
             edge.State = state;
             bool failed = false;
             for (var index = 0; index < edge.Cells.Count; index++)
@@ -963,6 +982,8 @@ namespace LoopDeLoop
 
         private void RawEdgeUnset(EdgeState state, Edge edge)
         {
+            if (state == EdgeState.Empty)
+                return;
             edge.State = EdgeState.Empty;
             for (var index = 0; index < edge.Cells.Count; index++)
             {
@@ -999,6 +1020,8 @@ namespace LoopDeLoop
         {
             Edge edge = edges[edgeIndex];
             oldState = edge.State;
+            if (oldState == EdgeState.Empty)
+                return false;
             RawEdgeUnset(oldState, edge);
             if (edge.EdgeSet != 0)
             {
@@ -1007,15 +1030,15 @@ namespace LoopDeLoop
                 edgeSetChanges.Add(new int[] { edgeIndex, 0, edge.EdgeSet, index });
                 edgeSets[edge.EdgeSet - 1].RemoveAt(index);
                 edge.EdgeSet = 0;
-                int curInter = edge.Intersections[0];
                 int target = edge.Intersections[1];
                 List<int> foundEdges = new List<int>();
+                HashSet<int> seenEdges = new HashSet<int>();
                 Stack<int> todoEdges = new Stack<int>();
                 Stack<int> todoPrevInters = new Stack<int>();
                 todoEdges.Push(edgeIndex);
                 todoPrevInters.Push(target);
                 bool foundTarget = false;
-                Dictionary<int, bool> foundInters = new Dictionary<int, bool>();
+                HashSet<int> foundInters = new HashSet<int>();
                 while (todoEdges.Count > 0)
                 {
                     int curEdge = todoEdges.Pop();
@@ -1026,7 +1049,7 @@ namespace LoopDeLoop
                         foundTarget = true;
                         break;
                     }
-                    if (!foundInters.ContainsKey(curInters))
+                    if (foundInters.Add(curInters))
                     {
                         Intersection inters = intersections[curInters];
                         for (var i = 0; i < inters.Edges.Count; i++)
@@ -1035,17 +1058,17 @@ namespace LoopDeLoop
                             if (nextEdge != curEdge)
                             {
                                 Edge e = edges[nextEdge];
-                                if (e.State == EdgeState.Filled)
+                                if (e.State == EdgeState.Filled && seenEdges.Add(nextEdge))
                                 {
+                                    foundEdges.Add(nextEdge);
                                     todoEdges.Push(nextEdge);
                                     todoPrevInters.Push(curInters);
                                 }
                             }
                         }
-                        foundInters[curInters] = true;
                     }
                 }
-                if (!foundTarget)
+                if (!foundTarget && foundEdges.Count > 0 && foundEdges.Count < edgeSets[oldEdgeSet - 1].Count)
                 {
                     edgeSets.Add(new List<int>());
                     int newEdgeSet = edgeSets.Count;
@@ -1053,7 +1076,9 @@ namespace LoopDeLoop
                     {
                         int otherEdgeIndex = foundEdges[i];
                         int otherIndex = edgeSets[oldEdgeSet - 1].IndexOf(otherEdgeIndex);
-                        edgeSetChanges.Add(new int[] {otherEdgeIndex, newEdgeSet, oldEdgeSet, otherIndex});
+                        if (otherIndex < 0)
+                            continue;
+                        edgeSetChanges.Add(new int[] { otherEdgeIndex, newEdgeSet, oldEdgeSet, otherIndex });
                         edgeSets[oldEdgeSet - 1].RemoveAt(otherIndex);
                         Edge e = edges[otherEdgeIndex];
                         e.EdgeSet = newEdgeSet;
@@ -1062,21 +1087,6 @@ namespace LoopDeLoop
                 }
             }
             return true;
-        }
-
-        private int GetNextEdge(int curInter, int lastEdge)
-        {
-            Intersection inter = intersections[curInter];
-            for (var index = 0; index < inter.Edges.Count; index++)
-            {
-                int edgeIndex = inter.Edges[index];
-                if (edgeIndex == lastEdge)
-                    continue;
-                Edge e = edges[edgeIndex];
-                if (e.State == EdgeState.Filled)
-                    return edgeIndex;
-            }
-            return -1;
         }
 
         internal void UnperformUnsetZero(int edgeIndex, EdgeState state, List<int[]> edgeSetChanges)
@@ -1126,7 +1136,7 @@ namespace LoopDeLoop
                     if (colorSetChanges[i][0] == colorSets.Count && colorSets[colorSets.Count - 1].Count == 0)
                         colorSets.RemoveAt(colorSets.Count - 1);
                     else
-                        throw new Exception("Color changes being performed out of order causing color leakage.");
+                        throw new InvalidOperationException("Color changes being performed out of order causing color leakage.");
                 }
                 else
                 {
@@ -1135,11 +1145,11 @@ namespace LoopDeLoop
                     int after = colorSetChanges[i][2];
                     Edge e = edges[edge];
                     if (e.Color != after)
-                        throw new Exception("Colors being undone out of order.");
+                        throw new InvalidOperationException("Colors being undone out of order.");
                     e.Color = before;
                     List<int> currentSet = colorSets[Math.Abs(after) - 1];
                     if (currentSet[currentSet.Count - 1] != edge)
-                        throw new Exception("Colors being undone out of order.");
+                        throw new InvalidOperationException("Colors being undone out of order.");
                     currentSet.RemoveAt(currentSet.Count - 1);
                     if (before != 0)
                     {
@@ -1156,25 +1166,23 @@ namespace LoopDeLoop
             {
                 if (colorSetChanges[i].Length == 1)
                 {
-                   // Debug.WriteLine(string.Format("Unjoin Cell dropping {0}", colorSetChanges[i][0]), "Actions");
                     if (colorSetChanges[i][0] == cellColorSets.Count && cellColorSets[cellColorSets.Count - 1].Count == 0)
                         cellColorSets.RemoveAt(cellColorSets.Count - 1);
                     else
-                        throw new Exception("Color changes being performed out of order causing color leakage.");
+                        throw new InvalidOperationException("Color changes being performed out of order causing color leakage.");
                 }
                 else
                 {
-                   // Debug.WriteLine(string.Format("Unjoin Cell reverting {0} from {1} to {2}", colorSetChanges[i][0], colorSetChanges[i][2], colorSetChanges[i][1]), "Actions");
                     int cell = colorSetChanges[i][0];
                     int before = colorSetChanges[i][1];
                     int after = colorSetChanges[i][2];
                     Cell c = cells[cell];
                     if (c.Color != after)
-                        throw new Exception("Colors being undone out of order.");
+                        throw new InvalidOperationException("Colors being undone out of order.");
                     c.Color = before;
                     List<int> currentSet = cellColorSets[Math.Abs(after) - 1];
                     if (currentSet[currentSet.Count - 1] != cell)
-                        throw new Exception("Colors being undone out of order.");
+                        throw new InvalidOperationException("Colors being undone out of order.");
                     currentSet.RemoveAt(currentSet.Count - 1);
                     if (before != 0)
                     {
@@ -1248,39 +1256,6 @@ namespace LoopDeLoop
             edgePairRestrictions[edge1, edge2] = EdgePairRestriction.None;
             edgePairRestrictions[edge2, edge1] = EdgePairRestriction.None;
         }
-
-        Dictionary<int, List<KeyValuePair<int, int>>> edgeToPathSegmentMap = new Dictionary<int, List<KeyValuePair<int, int>>>();
-        List<LoopPath> paths = new List<LoopPath>();
-    }
-
-    // Path discovery - pattern check, adds a path.
-    // Adding an edge which doesn't touch any other edges, adds a path.
-    // Trial options, advanced merging logic can determine a path.  These paths can contain nested paths. (But if nested path is only proven on one trial we haven't proven a path...)
-    // Adding an edge which touches an existing edge, extends a path. If the path is nested, the parent path entry needs updating.
-    // Adding an exclusion which is in a path, excludes that path option.  
-    // All edges of a path option are locked, exception nested paths.
-    // If the last path option is excluded, all edges of the path are proven.
-    // if two paths touch, all edges at that intersection which are not in either path are disproven.
-    // if a path is added which touches two paths, perform validation.
-    // Validation follows paths to determine the cycle.  
-    // If a cycle exists then verifies that every path is in at least one path option, and that the longest path option is greater than the 'minimal path length'.
-    // Additional validation, Verifies that no definitive paths occur as children of path options in such a way which proves a contradiction.
-    // Specifically, any path which only occur as a child of one path, must not be in a different possibility branch to any other such path.
-    // Alternatively, any path which occurs as a child of one path must be assumed to be the right path option, 
-    // if this leads to the exclusion of a path from the overal path set, a contradiction has been found and validation has failed.
-
-    public class LoopPath
-    {
-        public List<PathSegment> PathOptions = new List<PathSegment>();
-        public int PathStart;
-        public int PathEnd;
-    }
-
-    public class PathSegment
-    {
-        public LoopPath? Parent;
-        // Positive for an edge number, negative for a path index.
-        public List<int> PathBits = new List<int>();
     }
 
     public class SetAction : IAction
@@ -1437,13 +1412,14 @@ namespace LoopDeLoop
             if (!mesh.PerformUnsetZero(edge, out oldState, edgeSetChanges))
             {
                 successful = false;
+                return false;
             }
             return true;
         }
 
         public void Unperform()
         {
-            if (edgeSetChanges != null)
+            if (successful && edgeSetChanges != null)
                 mesh.UnperformUnsetZero(edge, oldState, edgeSetChanges);
         }
 
@@ -1557,12 +1533,13 @@ namespace LoopDeLoop
 
         public bool Perform()
         {
-            successful = true;
             colorSetChanges = new List<int[]>();
             if (!mesh.JoinColor(edge1, edge2, !same, colorSetChanges, ref wasteOfTime))
             {
+                successful = false;
                 return false;
             }
+            successful = true;
             return true;
         }
 
@@ -1609,13 +1586,7 @@ namespace LoopDeLoop
             this.cell1 = cell1;
             this.cell2 = cell2;
             this.same = same;
-#if DEBUG
-           // st = new StackTrace(true);
-#endif
         }
-#if DEBUG
-        public StackTrace? st;
-#endif
         private Mesh mesh;
         public int Cell1
         {
@@ -1687,12 +1658,13 @@ namespace LoopDeLoop
 
         public bool Perform()
         {
-            successful = true;
             colorSetChanges = new List<int[]>();
             if (!mesh.JoinCellColor(cell1, cell2, !same, colorSetChanges, ref wasteOfTime))
             {
+                successful = false;
                 return false;
             }
+            successful = true;
             return true;
         }
 
@@ -1719,7 +1691,7 @@ namespace LoopDeLoop
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(mesh.GetHashCode(), cell1, cell1, same ? 1 : 0);
+            return HashCode.Combine(mesh.GetHashCode(), cell1, cell2, same ? 1 : 0);
         }
 
         public override bool Equals(object? obj)
@@ -1771,12 +1743,13 @@ namespace LoopDeLoop
 
         public bool Perform()
         {
-            successful = true;
             oldColor = mesh.Cells[cell1].Color;
             if (!mesh.ClearCellColor(cell1, out oldSetPos))
             {
+                successful = false;
                 return false;
             }
+            successful = true;
             return true;
         }
 
@@ -1822,13 +1795,7 @@ namespace LoopDeLoop
             this.edge1 = edge1;
             this.edge2 = edge2;
             this.state = state;
-#if DEBUG
-           // st = new StackTrace(true);
-#endif
         }
-#if DEBUG
-        public StackTrace? st;
-#endif
         private Mesh mesh;
         public int Edge1
         {
@@ -1893,11 +1860,12 @@ namespace LoopDeLoop
 
         public bool Perform()
         {
-            successful = true;
             if (!mesh.RestrictEdges(edge1, edge2, state, ref wasteOfTime))
             {
+                successful = false;
                 return false;
             }
+            successful = true;
             return true;
         }
 
@@ -1932,25 +1900,6 @@ namespace LoopDeLoop
             if (obj is IAction action)
                 return Equals(action);
             return false;
-        }
-    }
-
-    public static class HashCode
-    {
-        public static int Combine(int a, int b)
-        {
-            return ((a << 5) + a) ^ b;
-        }
-        public static int Combine(int a, int b, int c)
-        {
-            int middle= ((a << 5) + a) ^ b;
-            return ((middle << 5) + middle) ^ c;
-        }
-        public static int Combine(int a, int b, int c, int d)
-        {
-            int middle = ((a << 5) + a) ^ b;
-            middle = ((middle << 5) + middle) ^ c;
-            return ((middle << 5) + middle) ^ d;
         }
     }
 
@@ -2016,88 +1965,6 @@ namespace LoopDeLoop
         }
 
 #endregion
-    }
-
-    public class Chain
-    {
-        public ChainNode? Start;
-        public ChainNode? End;
-    }
-
-    public class ChainNode
-    {
-        public int Intersection;
-
-        public ChainNode? Link1;
-        public ChainNode? Link2;
-
-        public ChainNode? GetNext(ChainNode? prior)
-        {
-            if (prior == Link1)
-                return Link2;
-            return Link1;
-        }
-
-        public void Join(ChainNode other)
-        {
-            if (Link1 == null)
-            {
-                Link1 = other;
-                Link1.JoinInternal(this);
-            }
-            else if (Link2 == null)
-            {
-                Link2 = other;
-                Link2.JoinInternal(this);
-            }
-            else
-                throw new InvalidOperationException("Can't join chain, already doubly joined.");
-        }
-        private void JoinInternal(ChainNode other)
-        {
-            if (Link1 == null)
-            {
-                Link1 = other;
-            }
-            else if (Link2 == null)
-            {
-                Link2 = other;
-            }
-            else
-                throw new InvalidOperationException("Can't join chain, already doubly joined.");
-        }
-
-        public void Remove(ChainNode other)
-        {
-            if (Link1 == other)
-            {
-                Link1 = null;
-                other.RemoveInternal(this);
-            }
-            else if (Link2 == other)
-            {
-                Link2 = null;
-                other.RemoveInternal(this);
-            }
-            else
-                throw new InvalidOperationException("Can't break from chain, not joined.");
-        }
-        private void RemoveInternal(ChainNode other)
-        {
-            if (Link1 == other)
-            {
-                Link1 = null;
-            }
-            else if (Link2 == other)
-            {
-                Link2 = null;
-            }
-            else
-                throw new InvalidOperationException("Can't break from chain, not joined.");
-        }
-
-        public int[]? EdgesToLink1;
-        public int[]? EdgesToLink2;
     }
 
     /// <summary>
@@ -2202,80 +2069,5 @@ namespace LoopDeLoop
                 ranker[i] = 0;
             }
         }
-    }
-
-    // Dirty evil list replacement.  Minimal functionality and convienience, maximal speed?
-    public class QuickList
-    {
-        public QuickList()
-            : this(4)
-        {
-        }
-        public QuickList(int length)
-        {
-            Buffer = new int[length];
-        }
-
-        public QuickList(QuickList other)
-        {
-            Buffer = new int[other.Buffer.Length];
-            for (int i = 0; i < other.Count; i++)
-            {
-                Buffer[i] = other.Buffer[i];
-            }
-            Count = other.Count;
-        }
-
-        public void AddList(QuickList other)
-        {
-            // TODO known size resize for performance?
-            for (int i = 0; i < other.Count; i++)
-            {
-                Add(other.Buffer[i]);
-            }
-        }
-        public int Count;
-        public void Add(int value)
-        {
-            if (Count == Buffer.Length)
-            {
-                int[] newBuffer = new int[Buffer.Length * 2];
-                Array.Copy(Buffer, newBuffer, Count);
-                Buffer = newBuffer;
-            }
-            Buffer[Count] = value;
-            Count++;
-        }
-        public void Clear()
-        {
-            Count = 0;
-        }
-
-        public int this[int i]
-        {
-            get { return Buffer[i]; }
-            set { Buffer[i] = value; }
-        }
-
-        public bool Contains(int value)
-        {
-            for (int i = 0; i < Count; i++)
-            {
-                if (Buffer[i] == value) return true;
-            }
-            return false;
-        }
-
-        public int IndexOf(int value)
-        {
-            for (int i = 0; i < Count; i++)
-            {
-                if (Buffer[i] == value) return i;
-            }
-            return -1;
-
-        }
-
-        public int[] Buffer;
     }
 }

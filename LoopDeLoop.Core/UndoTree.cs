@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 
 namespace LoopDeLoop
 {
@@ -11,7 +10,7 @@ namespace LoopDeLoop
             get;
         }
         /// <summary>
-        /// Usually true after perform is called if it returns true, but not gauranteed.
+        /// Usually true after perform is called if it returns true, but not guaranteed.
         /// </summary>
         bool Successful
         {
@@ -25,15 +24,14 @@ namespace LoopDeLoop
     {
         public UndoTree()
         {
-            root = new UndoNode(null, null, ref curIndex);
+            root = new UndoNode(null, null);
             current = root;
         }
+
         class UndoNode
         {
-            public UndoNode(IAction? action, UndoNode? parent, ref int curIndex)
+            public UndoNode(IAction? action, UndoNode? parent)
             {
-                Index = curIndex;
-                curIndex++;
                 Action = action;
                 Children = [];
                 LastDoneChild = null;
@@ -43,17 +41,12 @@ namespace LoopDeLoop
                     parent.Children.Add(this);
                     parent.LastDoneChild = this;
                 }
-                CurrentlyUndone = false;
             }
-            public int Index;
             public IAction? Action;
-            public bool CurrentlyUndone;
             public UndoNode? Parent;
             public List<UndoNode> Children;
             public UndoNode? LastDoneChild;
         }
-
-        int curIndex = 0;
 
         UndoNode root;
         UndoNode current;
@@ -66,14 +59,13 @@ namespace LoopDeLoop
             {
                 if (child.Action != null && child.Action.Equals(action))
                 {
-                    current.LastDoneChild = child;
-                    return Redo();
+                    return RedoChild(child);
                 }
             }
             bool res = action.Perform();
             if (!res)
                 return false;
-            UndoNode node = new UndoNode(action, current, ref curIndex);
+            UndoNode node = new UndoNode(action, current);
             current = node;
             if (markNext)
             {
@@ -106,7 +98,6 @@ namespace LoopDeLoop
             if (current.Action == null || current.Parent == null)
                 return false;
             current.Action.Unperform();
-            current.CurrentlyUndone = true;
             current = current.Parent;
             OnCanUndoRedoMaybeChanged(EventArgs.Empty);
             return true;
@@ -124,7 +115,7 @@ namespace LoopDeLoop
             {
                 current.LastDoneChild = current.Children.Count > 0 ? current.Children[^1] : null;
             }
-            if (marked == toRemove)
+            if (marked != null && IsDescendantOrSelf(marked, toRemove))
             {
                 marked = current;
             }
@@ -143,12 +134,19 @@ namespace LoopDeLoop
         public bool Redo()
         {
             UndoNode? next = current.LastDoneChild;
-            if (next == null || next.Action == null)
+            if (next == null)
+                return false;
+            return RedoChild(next);
+        }
+
+        private bool RedoChild(UndoNode next)
+        {
+            if (next.Action == null)
                 return false;
             bool res = next.Action.Perform();
             if (!res)
                 return false;
-            next.CurrentlyUndone = false;
+            current.LastDoneChild = next;
             current = next;
             if (markNext)
             {
@@ -167,8 +165,7 @@ namespace LoopDeLoop
             {
                 if (child.Action != null && child.Action.Equals(action))
                 {
-                    current.LastDoneChild = child;
-                    return Redo();
+                    return RedoChild(child);
                 }
             }
             return false;
@@ -194,8 +191,22 @@ namespace LoopDeLoop
         }
         UndoNode? marked = null;
 
+        private static bool IsDescendantOrSelf(UndoNode node, UndoNode potentialAncestor)
+        {
+            UndoNode? cursor = node;
+            while (cursor != null)
+            {
+                if (cursor == potentialAncestor)
+                    return true;
+                cursor = cursor.Parent;
+            }
+            return false;
+        }
+
         public void RevertToMark()
         {
+            if (marked == null || !IsDescendantOrSelf(current, marked))
+                return;
             while (current != marked && CanUndo)
                 Undo();
         }

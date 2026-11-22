@@ -49,7 +49,7 @@ namespace LoopDeLoop
 
         readonly Lock generatorLock = new();
         bool generating = false;
-        Thread? generatorThread = null;
+        CancellationTokenSource? generatorCts = null;
         Mesh? generatingMesh = null;
         bool stopping;
 
@@ -92,9 +92,9 @@ namespace LoopDeLoop
                 {
                     generating = false;
                     buttonNew.Text = "New";
-                    if (generatorThread != null)
-                        generatorThread.Abort();
-                    generatorThread = null;
+                    if (generatingMesh != null)
+                        generatingMesh.AbortPrune = true;
+                    generatorCts?.Cancel();
                 }
                 else
                 {
@@ -102,70 +102,95 @@ namespace LoopDeLoop
                     generating = true;
                     stopping = false;
                     buttonNew.Text = "Stop";
-                    generatorThread = new Thread(Generate);
+                    var cts = new CancellationTokenSource();
+                    generatorCts = cts;
+                    Thread generatorThread = new Thread(() => Generate(newMesh, cts));
                     generatorThread.IsBackground = true;
-                    generatorThread.Start(newMesh);
+                    generatorThread.Start();
                 }
             }
         }
 
-        private void Generate(object? newMeshObj)
+        private void Generate(Mesh newMesh, CancellationTokenSource cts)
         {
             try
             {
-                Mesh newMesh = (Mesh)newMeshObj!;
-                try
+                if (!IsDisposed && IsHandleCreated)
                 {
-                    this.Invoke(new ParameterizedThreadStart(ShowBar), newMesh.Cells.Count);
+                    try { this.Invoke(new ParameterizedThreadStart(ShowBar), newMesh.Cells.Count); }
+                    catch (ObjectDisposedException) { }
+                    catch (InvalidOperationException) { }
                 }
-                catch
-                {
-                }
+
                 newMesh.PrunedCountProgress += new EventHandler(Mesh_PrunedCountProgress);
                 try
                 {
-                    newMesh.Generate();
+                    newMesh.GenerateAsync(null, cts.Token).GetAwaiter().GetResult();
                 }
-                catch
+                catch (OperationCanceledException)
                 {
                     return;
                 }
-                newMesh.PrunedCountProgress -= new EventHandler(Mesh_PrunedCountProgress);
+                finally
+                {
+                    newMesh.PrunedCountProgress -= new EventHandler(Mesh_PrunedCountProgress);
+                }
+
+                if (cts.IsCancellationRequested)
+                    return;
+
                 if (Settings.Default.AutoStart)
                 {
                     AutoStart(newMesh);
                 }
-                try
+                if (!IsDisposed && IsHandleCreated)
                 {
-                    this.Invoke(new ParameterizedThreadStart(UpdateMesh), newMesh);
-                }
-                catch (InvalidOperationException)
-                {
-                    // We're shuting down? whatever.
-                }
-                lock (generatorLock)
-                {
-                    generating = false;
-                    generatorThread = null;
-                    this.Invoke(new MethodInvoker(ResetGeneratorButton));
+                    try
+                    {
+                        this.Invoke(new ParameterizedThreadStart(UpdateMesh), newMesh);
+                    }
+                    catch (ObjectDisposedException) { }
+                    catch (InvalidOperationException) { }
                 }
             }
             catch (Exception e)
             {
-                if (!(e is ThreadAbortException))
+                if (!IsDisposed && IsHandleCreated)
                 {
                     try
                     {
                         this.BeginInvoke(new ParameterizedThreadStart(UnexpectedExceptionMessage), e);
                     }
-                    catch
-                    {
-                    }
+                    catch (ObjectDisposedException) { }
+                    catch (InvalidOperationException) { }
                 }
             }
             finally
             {
-                this.BeginInvoke(new MethodInvoker(HideBar));
+                bool shouldResetButton = false;
+                lock (generatorLock)
+                {
+                    if (ReferenceEquals(generatorCts, cts))
+                    {
+                        generating = false;
+                        generatingMesh = null;
+                        generatorCts = null;
+                        shouldResetButton = true;
+                    }
+                }
+                cts.Dispose();
+
+                if (!IsDisposed && IsHandleCreated)
+                {
+                    try
+                    {
+                        if (shouldResetButton)
+                            this.BeginInvoke(new MethodInvoker(ResetGeneratorButton));
+                        this.BeginInvoke(new MethodInvoker(HideBar));
+                    }
+                    catch (ObjectDisposedException) { }
+                    catch (InvalidOperationException) { }
+                }
             }
         }
 
@@ -209,6 +234,7 @@ namespace LoopDeLoop
             if (bar != null)
             {
                 labelDepthPatern.Parent?.Controls.Remove(bar);
+                bar.Dispose();
                 bar = null;
             }
         }
@@ -304,23 +330,22 @@ namespace LoopDeLoop
         }
 
         readonly Lock ratingThreadLock = new();
-        Thread? ratingThread = null;
+        CancellationTokenSource? ratingCts = null;
 
         private void Rate()
         {
             Mesh toRate = new Mesh(loopDisplay1.Mesh);
+            CancellationTokenSource cts = new();
             lock (ratingThreadLock)
             {
-                if (ratingThread != null)
-                    ratingThread.Abort();
-                ratingThread = null;
+                ratingCts?.Cancel();
+                ratingCts = cts;
                 labelDepthPatern.Text = "Rating...";
-                ratingThread = new Thread(RatingThreadProc);
+                Thread ratingThread = new Thread(() => RatingThreadProc(toRate, cts));
                 ratingThread.IsBackground = true;
                 ratingThread.Priority = ThreadPriority.Lowest;
-                ratingThread.Start(toRate);
+                ratingThread.Start();
             }
-
         }
 
         internal static void UnexpectedExceptionMessage(object? o)
@@ -329,28 +354,30 @@ namespace LoopDeLoop
                 MessageBox.Show("An unexpected error has occured. Error details: " + e.ToString());
         }
 
-        private void RatingThreadProc(object? toRateObj)
+        private void SafeSetLabel(string text, CancellationToken token)
         {
+            if (token.IsCancellationRequested || IsDisposed || !IsHandleCreated)
+                return;
             try
             {
-                Mesh toRate = (Mesh)toRateObj!;
+                this.Invoke(new ParameterizedThreadStart(SetLabel), text);
+            }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
+        }
+
+        private void RatingThreadProc(Mesh sourceMesh, CancellationTokenSource cts)
+        {
+            CancellationToken token = cts.Token;
+            try
+            {
+                Mesh toRate = PuzzleHelper.CreateFullSolverMesh(sourceMesh);
                 toRate.Clear();
                 string rating = string.Empty;
-                toRate.SolverMethod = SolverMethod.Recursive;
-                toRate.IterativeSolverDepth = int.MaxValue;
-                toRate.UseIntersectCellInteractsInSolver = false;
-                toRate.UseCellPairsTopLevel = true;
-                // TODO: Consider whether this is a performance loss or win.
-                toRate.UseCellPairs = false;
-                toRate.UseColoring = true;
-                toRate.UseEdgeRestricts = true;
-                toRate.UseCellColoring = true;
-                toRate.ConsiderMultipleLoops = true;
-                toRate.UseMerging = true;
-                toRate.UseDerivedColoring = true;
-                // TODO: match this value to solve to get the best performance.
-                toRate.IterativeRecMaxDepth = 1;
-                SolveState solveState = toRate.TrySolve();
+                SolveState solveState = toRate.TrySolve(false, token);
+                if (token.IsCancellationRequested)
+                    return;
+
                 if (solveState != SolveState.Solved)
                 {
                     if (solveState == SolveState.MultipleSolutions)
@@ -364,7 +391,7 @@ namespace LoopDeLoop
                 {
                     int[] bestDepth = toRate.DepthPatern;
                     rating = "F - Depth:" + bestDepth.Length;
-                    this.Invoke(new ParameterizedThreadStart(SetLabel), rating + " - Rating...");
+                    SafeSetLabel(rating + " - Rating...", token);
                     rating = string.Empty;
                     string codes = Settings.Default.RatingCodes;
                     string[] codeArray = codes.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
@@ -379,9 +406,13 @@ namespace LoopDeLoop
                     }
                     foreach (string code in codeList)
                     {
+                        if (token.IsCancellationRequested)
+                            return;
                         toRate.SetRatingCodeOptions(code);
-                        if (toRate.TrySolve() == SolveState.Solved)
+                        if (toRate.TrySolve(false, token) == SolveState.Solved)
                         {
+                            if (token.IsCancellationRequested)
+                                return;
                             bool found = false;
                             string alternate = code + " - Depth:" + toRate.DepthPatern.Length;
                             if (!code.Contains("F"))
@@ -391,10 +422,11 @@ namespace LoopDeLoop
                                 int lastSuccessLength = -1;
                                 while (min < max - 1)
                                 {
-
+                                    if (token.IsCancellationRequested)
+                                        return;
                                     int mid = (min + max) / 2;
                                     toRate.IterativeSolverDepth = mid;
-                                    if (toRate.TrySolve() == SolveState.Solved)
+                                    if (toRate.TrySolve(false, token) == SolveState.Solved)
                                     {
                                         max = mid;
                                         lastSuccessLength = toRate.DepthPatern.Length;
@@ -418,38 +450,46 @@ namespace LoopDeLoop
                                     rating += " and ";
                                 rating += alternate;
                             }
-                            this.Invoke(new ParameterizedThreadStart(SetLabel), rating + " - Rating...");
+                            SafeSetLabel(rating + " - Rating...", token);
                         }
-                        else
+                        else if (!token.IsCancellationRequested)
                         {
                             if (!code.Contains("F"))
                             {
                                 if (rating.Length > 0)
                                     rating += " and ";
-                                rating += code + " - UnFin:" + (toRate.PercentSolved * 100).ToString("G2") + "%";
-                                this.Invoke(new ParameterizedThreadStart(SetLabel), rating + " - Rating...");
+                                rating += code + " - Solved:" + (toRate.PercentSolved * 100).ToString("G2") + "%";
+                                SafeSetLabel(rating + " - Rating...", token);
                             }
-                       }
+                        }
                     }
                 }
-                this.Invoke(new ParameterizedThreadStart(SetLabel), rating);
-                lock (ratingThreadLock)
-                {
-                    ratingThread = null;
-                }
+                SafeSetLabel(rating, token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Replaced by newer rating request
             }
             catch (Exception e)
             {
-                if (!(e is ThreadAbortException))
+                if (!token.IsCancellationRequested && !IsDisposed && IsHandleCreated)
                 {
                     try
                     {
                         this.BeginInvoke(new ParameterizedThreadStart(UnexpectedExceptionMessage), e);
                     }
-                    catch
-                    {
-                    }
+                    catch (ObjectDisposedException) { }
+                    catch (InvalidOperationException) { }
                 }
+            }
+            finally
+            {
+                lock (ratingThreadLock)
+                {
+                    if (ReferenceEquals(ratingCts, cts))
+                        ratingCts = null;
+                }
+                cts.Dispose();
             }
         }
 
@@ -490,18 +530,6 @@ namespace LoopDeLoop
         private void SetLabel(object? newLabelObj)
         {
             labelDepthPatern.Text = (string)newLabelObj!;
-        }
-
-        private bool VerifyBoardSize(int width, int height)
-        {
-            if (width > 20 || height > 20)
-            {
-                if (DialogResult.No == MessageBox.Show("You have chosen a large size, it may take an extremely long time to generate, are you sure you wish to continue?", "Large size grid detected.", MessageBoxButtons.YesNo))
-                {
-                    return false;
-                }
-            }
-            return true;
         }
 
         private string ArrayToText(int[] array)
@@ -548,58 +576,44 @@ namespace LoopDeLoop
             try
             {
                 Mesh original = loopDisplay1.Mesh;
-                original.ConsiderMultipleLoops = true;
-                original.UseIntersectCellInteractsInSolver = false;
-                original.UseColoring = true;
-                original.UseEdgeRestricts = true;
-                original.UseCellColoring = true;
-                original.SolverMethod = SolverMethod.Recursive;
-                original.ContaminateFullSolver = true;
-                original.ColoringCheats = true;
-                original.UseDerivedColoring = true;
-                original.UseMerging = true;
-                original.UseCellPairsTopLevel = true;
-                // TODO: consider whether having this on makes it faster or not.
-                original.UseCellPairs = false;
-                // TODO: adjust this number for best performance. (When does true recursion become a win...)
-                original.IterativeRecMaxDepth = 1;
+                Mesh solver = PuzzleHelper.CreateFullSolverMesh(original);
+                solver.Clear();
                 if (Settings.Default.VisualSolve)
-                    original.MeshChangeUpdate += new MeshChangeUpdateEventHandler(Mesh_MeshChangeUpdate);
-                SolveState res = original.TrySolve();
+                    solver.MeshChangeUpdate += new MeshChangeUpdateEventHandler(Mesh_MeshChangeUpdate);
+                SolveState res = solver.TrySolve();
                 if (res == SolveState.Solved)
                 {
-                    SolveComplete(original);
+                    SolveComplete((original, solver));
                 }
                 if (Settings.Default.VisualSolve)
-                    original.MeshChangeUpdate -= new MeshChangeUpdateEventHandler(Mesh_MeshChangeUpdate);
+                    solver.MeshChangeUpdate -= new MeshChangeUpdateEventHandler(Mesh_MeshChangeUpdate);
             }
             catch (Exception e)
             {
-                if (!(e is ThreadAbortException))
+                if (!IsDisposed && IsHandleCreated)
                 {
                     try
                     {
                         this.BeginInvoke(new ParameterizedThreadStart(UnexpectedExceptionMessage), e);
                     }
-                    catch
-                    {
-                    }
+                    catch (ObjectDisposedException) { }
+                    catch (InvalidOperationException) { }
                 }
             }
         }
 
-        private void SolveComplete(object? mesh)
+        private void SolveComplete(object? stateObj)
         {
             if (this.InvokeRequired)
             {
-                this.BeginInvoke(new ParameterizedThreadStart(SolveComplete), mesh);
+                if (!IsDisposed && IsHandleCreated)
+                    this.BeginInvoke(new ParameterizedThreadStart(SolveComplete), stateObj);
                 return;
             }
-            Mesh original = (Mesh)mesh!;
-            if (loopDisplay1.Mesh == original && loopDisplay1.Mesh.SolutionFound != null)
+            if (stateObj is (Mesh original, Mesh solver) && loopDisplay1.Mesh == original && solver.SolutionFound != null)
             {
-                labelDepthPatern.Text = ArrayToText(loopDisplay1.Mesh.DepthPatern);
-                loopDisplay1.Mesh = loopDisplay1.Mesh.SolutionFound;
+                labelDepthPatern.Text = ArrayToText(solver.DepthPatern);
+                loopDisplay1.Mesh = solver.SolutionFound;
             }
         }
 
@@ -611,13 +625,14 @@ namespace LoopDeLoop
                     System.Threading.Thread.Sleep(10);
                 else
                     System.Threading.Thread.Sleep(100);
-                try
+                if (!IsDisposed && IsHandleCreated)
                 {
-                    this.BeginInvoke(new MeshChangeUpdateEventHandler(Mesh_MeshChangeUpdate), sender, args);
-                }
-                catch (InvalidOperationException)
-                {
-                    // Ignore shutdown errors.
+                    try
+                    {
+                        this.BeginInvoke(new MeshChangeUpdateEventHandler(Mesh_MeshChangeUpdate), sender, args);
+                    }
+                    catch (ObjectDisposedException) { }
+                    catch (InvalidOperationException) { }
                 }
                 return;
             }
@@ -626,54 +641,27 @@ namespace LoopDeLoop
 
         private void LoopDeLoopForm_Load(object sender, EventArgs e)
         {
-
         }
 
         private void loadToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            OpenFileDialog dialog = new OpenFileDialog();
+            using OpenFileDialog dialog = new OpenFileDialog();
             dialog.DefaultExt = "loop";
-            dialog.Filter = "Loop-De-Loop files|*.loop|Text Files (*.txt)|*.txt|All Files (*.*)|*.*";
+            dialog.Filter = "Loop-De-Loop files|*.loop|Text Files (*.txt)|*.txt|Loopy Files (*.loopy)|*.loopy|All Files (*.*)|*.*";
             dialog.RestoreDirectory = true;
             if (dialog.ShowDialog() == DialogResult.OK)
             {
                 try
                 {
-                    string[] lines = File.ReadAllLines(dialog.FileName);
-                    if (lines.Length == 0)
-                        throw new Exception("File format invalid");
-                    if (lines[0].Length == 0)
-                        throw new Exception("File format invalid");
-                    // The old 'standard format'.  Used for mesh type square.
-                    if (lines[0][0] == '+')
+                    string rawText = File.ReadAllText(dialog.FileName);
+                    if (!PuzzleFormatHelper.TryParsePuzzle(rawText, out Mesh? loadedMesh, out _, out _, out _) || loadedMesh == null)
                     {
-                        LoadSimpleSquare(lines);
-                        labelDepthPatern.Text = string.Empty;
-                        loopDisplay1.Refresh();
+                        MessageBox.Show("Failed to open puzzle, file does not contain valid data.");
+                        return;
                     }
-                    else if (IsLoopySave(lines))
-                    {
-                        LoadLoopySave(lines);
-                        labelDepthPatern.Text = string.Empty;
-                        loopDisplay1.Refresh();
-
-                    }
-                    else if (IsLoopy(lines))
-                    {
-                        LoadLoopyPuzzle(lines);
-                        labelDepthPatern.Text = string.Empty;
-                        loopDisplay1.Refresh();
-                    }
-                    else
-                    {
-                        MeshType type = (MeshType)Enum.Parse(typeof(MeshType), lines[0]);
-                        Mesh mesh = new Mesh(0, 0, type);
-                        if (!mesh.LoadFromText(lines))
-                            return;
-                        loopDisplay1.Mesh = mesh;
-                        labelDepthPatern.Text = string.Empty;
-                        loopDisplay1.Refresh();
-                    }
+                    loopDisplay1.Mesh = loadedMesh;
+                    labelDepthPatern.Text = string.Empty;
+                    loopDisplay1.Refresh();
                     Rate();
                     secs = 0;
                     if (Settings.Default.ShowClock)
@@ -686,456 +674,37 @@ namespace LoopDeLoop
                     MessageBox.Show("Failed to open puzzle, file does not contain valid data.");
                 }
             }
-
         }
-
-        private void LoadLoopyPuzzle(string[] lines)
-        {
-            string[] parts = lines[0].Split(':');
-            string[] parts2 = parts[0].Split('x');
-            int width = int.Parse(parts2[0]);
-            int height = int.Parse(parts2[1]);
-            loopDisplay1.Mesh = new Mesh(width, height, MeshType.Square);
-            int counter = 0;
-            for (int i = 0; i < parts[1].Length; i++)
-            {
-                if (char.IsDigit(parts[1][i]))
-                {
-                    loopDisplay1.Mesh.AddTarget(loopDisplay1.Mesh.Cells[counter / width + (counter % width) * height], int.Parse("" + parts[1][i]));
-                    counter++;
-                }
-                else
-                {
-                    for (int j = 0; j < parts[1][i] - 'a' + 1; j++)
-                    {
-                        loopDisplay1.Mesh.AddTarget(loopDisplay1.Mesh.Cells[counter / width + (counter % width) * height], -1);
-                        counter++;
-                    }
-                }
-            }
-        }
-
-        private void LoadSimpleSquare(string[] lines)
-        {
-            loopDisplay1.Mesh = new Mesh(lines[0].Length / 2, lines.Length / 2, MeshType.Square);
-            int height = lines.Length / 2;
-            for (int i = 0; i < lines.Length; i++)
-            {
-                if (i % 2 == 0)
-                {
-                    int row = i / 2;
-
-                    for (int j = 1; j < lines[i].Length; j += 2)
-                    {
-                        int edgeIndex = loopDisplay1.Mesh.GetEdgeJoining((j / 2) * (height + 1) + row, (j / 2 + 1) * (height + 1) + row);
-                        List<IAction> backup = new List<IAction>();
-                        if (lines[i][j] != ' ')
-                            loopDisplay1.Mesh.Perform(edgeIndex, (lines[i][j] == '-' ? EdgeState.Filled : EdgeState.Excluded), backup, 0);
-                    }
-                }
-                else
-                {
-                    int row = i / 2;
-                    for (int j = 1; j < lines[i].Length; j += 2)
-                    {
-                        Cell c = loopDisplay1.Mesh.Cells[(j / 2) * height + row];
-                        loopDisplay1.Mesh.AddTarget(c, lines[i][j] == ' ' ? -1 : int.Parse("" + lines[i][j]));
-                    }
-                    for (int j = 0; j < lines[i].Length; j += 2)
-                    {
-                        int edgeIndex = loopDisplay1.Mesh.GetEdgeJoining((j / 2) * (height + 1) + row, (j / 2) * (height + 1) + row + 1);
-                        List<IAction> backup = new List<IAction>();
-                        if (lines[i][j] != ' ')
-                            loopDisplay1.Mesh.Perform(edgeIndex, (lines[i][j] == '|' ? EdgeState.Filled : EdgeState.Excluded), backup, 0);
-                    }
-                }
-            }
-        }
-
-        private void LoadLoopySave(string[] lines)
-        {
-            int width = 0;
-            int height = 0;
-            foreach (string line in lines)
-            {
-                string[] bits = line.Split(new char[] { ':' }, 3, StringSplitOptions.None);
-                string type = bits[0].Trim();
-                switch (type)
-                {
-                    case "PARAMS":
-                        {
-                            int first = bits[2].IndexOf('x');
-                            int second = bits[2].IndexOf('r');
-                            width = int.Parse(bits[2].Substring(0, first));
-                            height = int.Parse(bits[2].Substring(first + 1, second - first - 1));
-                            loopDisplay1.Mesh = new Mesh(width, height, MeshType.Square);
-                        }
-                        break;
-                    case "DESC":
-                        {
-                            int counter = 0;
-                            for (int i = 0; i < bits[2].Length; i++)
-                            {
-                                if (char.IsDigit(bits[2][i]))
-                                {
-                                    loopDisplay1.Mesh.AddTarget(loopDisplay1.Mesh.Cells[counter / width + (counter % width) * height], int.Parse("" + bits[2][i]));
-                                    counter++;
-                                }
-                                else
-                                {
-                                    for (int j = 0; j < bits[2][i] - 'a' + 1; j++)
-                                    {
-                                        loopDisplay1.Mesh.AddTarget(loopDisplay1.Mesh.Cells[counter / width + (counter % width) * height], -1);
-                                        counter++;
-                                    }
-                                }
-                            }
-                        }
-                        break;
-                    case "MOVE":
-                        {
-                            string[] coords = bits[2].Split(',');
-                            int x = int.Parse(coords[0]);
-                            int y = int.Parse(coords[1].Substring(0, coords[1].Length - 2));
-                            bool horiz = coords[1][coords[1].Length - 2] == 'h';
-                            if (coords[1][coords[1].Length - 1] == 'u')
-                            {
-                                ForceClearEdge(x, y, horiz, height);
-                            }
-                            else
-                            {
-                                bool isSet = coords[1][coords[1].Length - 1] == 'y';
-                                EnsureEdge(x, y, horiz, isSet, height);
-                            }
-                        }
-                        break;
-                    case "SOLVE":
-                        {
-                            int x = 0;
-                            int y = 0;
-                            bool horiz = false;
-                            string accumulator = string.Empty;
-                            foreach (char c in bits[2])
-                            {
-                                if (char.IsDigit(c))
-                                {
-                                    accumulator += c;
-                                }
-                                if (c == ',')
-                                {
-                                    x = int.Parse(accumulator);
-                                    accumulator = string.Empty;
-                                }
-                                else if (c == 'h' || c == 'v')
-                                {
-                                    y = int.Parse(accumulator);
-                                    accumulator = string.Empty;
-                                    horiz = c == 'h';
-                                }
-                                else if (c == 'n')
-                                {
-                                    EnsureEdge(x, y, horiz, false, height);
-                                }
-                                else if (c == 'y')
-                                {
-                                    EnsureEdge(x, y, horiz, true, height);
-                                }
-                            }
-                        }
-                        break;
-                }
-            }
-        }
-        
-        private void EnsureEdge(int x, int y, bool horiz, bool line, int height)
-        {
-            int start = x * (height + 1) + y;
-            int end = start + (horiz ? height : 0) + 1;
-            int edge = loopDisplay1.Mesh.GetEdgeJoining(start, end);
-            EdgeState curState = loopDisplay1.Mesh.Edges[edge].State;
-            EdgeState newState = line ? EdgeState.Filled : EdgeState.Excluded;
-            if (curState != EdgeState.Empty)
-            {
-                if (curState != newState)
-                {
-                    loopDisplay1.UndoTree.Do(new UnsetAction(loopDisplay1.Mesh, edge));
-                    loopDisplay1.UndoTree.Do(new SetAction(loopDisplay1.Mesh, edge, newState));
-                }
-            }
-            else
-                loopDisplay1.UndoTree.Do(new SetAction(loopDisplay1.Mesh, edge, newState));
-        }
-
-        private void ForceClearEdge(int x, int y, bool horiz, int height)
-        {
-            int start = x * (height + 1) + y;
-            int end = start + (horiz ? height : 0) + 1;
-            int edge = loopDisplay1.Mesh.GetEdgeJoining(start, end);
-            EdgeState curState = loopDisplay1.Mesh.Edges[edge].State;
-            if (curState != EdgeState.Empty)
-            {
-                loopDisplay1.UndoTree.Do(new UnsetAction(loopDisplay1.Mesh, edge));
-            }
-        }
-
-        private bool IsLoopy(string[] lines)
-        {
-            string[] parts = lines[0].Split(':');
-            if (parts.Length != 2)
-                return false;
-            string[] parts2 = parts[0].Split('x');
-            if (parts2.Length != 2)
-                return false;
-            return true;
-        }
-
-
-        private bool IsLoopySave(string[] lines)
-        {
-            if (lines.Length < 3)
-                return false;
-            if (lines[0] != @"SAVEFILE:41:Simon Tatham's Portable Puzzle Collection")
-                return false;
-            if (lines[1] != @"VERSION :1:1")
-                return false;
-            if (lines[2] != @"GAME    :5:Loopy")
-                return false;
-            return true;
-        }
-
 
         private void saveToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            SaveFileDialog dialog = new SaveFileDialog();
+            using SaveFileDialog dialog = new SaveFileDialog();
             dialog.RestoreDirectory = true;
             dialog.DefaultExt = "loop";
             dialog.Filter = "Loop-De-Loop Files|*.loop";
-            bool canUseNiceFormats = (loopDisplay1.Mesh.MeshType == MeshType.Square || loopDisplay1.Mesh.MeshType == MeshType.SquareSymmetrical) && !loopDisplay1.ShowColors && !loopDisplay1.ShowCellColors;
+            bool canUseNiceFormats = PuzzleFormatHelper.CanExportSquareFormats(loopDisplay1.Mesh)
+                && !loopDisplay1.ShowColors
+                && !loopDisplay1.ShowCellColors;
             if (canUseNiceFormats)
             {
-                dialog.Filter = dialog.Filter + "|Text files|*.txt";
-                dialog.Filter = dialog.Filter + "|Loopy puzzles|*.loopy";
-                dialog.Filter = dialog.Filter + "|Loopy save game|*.loopy";
+                dialog.Filter += "|Text files|*.txt|Loopy puzzles|*.loopy|Loopy save game|*.loopy";
             }
+
             if (dialog.ShowDialog() == DialogResult.OK)
             {
-                if (canUseNiceFormats)
+                string? content = (canUseNiceFormats, dialog.FilterIndex) switch
                 {
-                    bool found = true;
-                    int iSearch = 0;
-                    while (found)
-                    {
-                        found = true;
-                        try
-                        {
-                            loopDisplay1.Mesh.GetEdgeJoining(iSearch, iSearch + 1);
-                        }
-                        catch
-                        {
-                            found = false;
-                        }
-                        iSearch++;
-                    }
-                    int height = iSearch - 1;
-                    int width = loopDisplay1.Mesh.Cells.Count / height;
-                    using (TextWriter writer = File.CreateText(dialog.FileName))
-                    {
-                        if (dialog.FilterIndex == 4)
-                        {
-                            writer.WriteLine(@"SAVEFILE:41:Simon Tatham's Portable Puzzle Collection");
-                            writer.WriteLine(@"VERSION :1:1");
-                            writer.WriteLine(@"GAME    :5:Loopy");
-                            LoopySaveWrite(writer, "PARAMS", string.Format("{0}x{1}r0de", width, height));
-                            LoopySaveWrite(writer, "CPARAMS", string.Format("{0}x{1}r0de", width, height));
-                            LoopySaveWrite(writer, "SEED", 0.ToString());
-                            StringBuilder builder = new StringBuilder();
-                            int blankCount = 0;
-                            for (int j = 0; j < height; j++)
-                            {
-                                for (int i = 0; i < width; i++)
-                                {
-                                    Cell cell = loopDisplay1.Mesh.Cells[i * height + j];
-                                    if (cell.TargetCount >= 0)
-                                    {
-                                        if (blankCount > 0)
-                                            builder.Append((char)('a' + (blankCount - 1)));
-                                        blankCount = 0;
-                                        builder.Append(cell.TargetCount);
-                                    }
-                                    else
-                                        blankCount++;
+                    (true, 2) => PuzzleFormatHelper.ExportSquareAscii(loopDisplay1.Mesh),
+                    (true, 3) => PuzzleFormatHelper.ExportLoopyDescriptor(loopDisplay1.Mesh) + Environment.NewLine,
+                    (true, 4) => PuzzleFormatHelper.ExportLoopySave(loopDisplay1.Mesh),
+                    _ => PuzzleFormatHelper.ExportLoopText(loopDisplay1.Mesh)
+                };
 
-                                }
-                                if (blankCount > 0)
-                                    builder.Append((char)('a' + (blankCount - 1)));
-                                blankCount = 0;
-                            }
-                            LoopySaveWrite(writer, "DESC", builder.ToString());
-                            LoopySaveWrite(writer, "NSTATES", builder.Length.ToString());
-                            LoopySaveWrite(writer, "STATEPOS", builder.Length.ToString());
-                            bool complete = true;
-                            builder.Length = 0;
-                            builder.Append('S');
-                            for (int j = 0; j <= height; j++)
-                            {
-                                for (int k = 0; k < 2; k++)
-                                {
-                                    for (int i = 0; i <= width; i++)
-                                    {
-                                        if (k == 0)
-                                        {
-                                            if (i < width)
-                                            {
-                                                StringBuilder moveBuilder = new StringBuilder();
-                                                moveBuilder.AppendFormat("{0},{1}h", i, j); 
-                                                int start = i * (height + 1) + j;
-                                                int end = start + height + 1;
-                                                Edge edge = loopDisplay1.Mesh.Edges[loopDisplay1.Mesh.GetEdgeJoining(start, end)];
-                                                if (edge.State == EdgeState.Filled)
-                                                    moveBuilder.Append('y');
-                                                else if (edge.State == EdgeState.Excluded)
-                                                    moveBuilder.Append('n');
-                                                else
-                                                    complete = false;
-                                                if (!moveBuilder.ToString().EndsWith("h"))
-                                                {
-                                                    builder.Append(moveBuilder.ToString());
-                                                    LoopySaveWrite(writer, "MOVE", moveBuilder.ToString());
-                                                }
-                                            }
-                                        }
-                                        else
-                                        {
-                                            if (j < height)
-                                            {
-                                                StringBuilder moveBuilder = new StringBuilder();
-                                                moveBuilder.AppendFormat("{0},{1}v", i, j);
-                                                int start = i * (height + 1) + j;
-                                                int end = start + 1;
-                                                Edge edge = loopDisplay1.Mesh.Edges[loopDisplay1.Mesh.GetEdgeJoining(start, end)];
-                                                if (edge.State == EdgeState.Filled)
-                                                    moveBuilder.Append('y');
-                                                else if (edge.State == EdgeState.Excluded)
-                                                    moveBuilder.Append('n');
-                                                else
-                                                    complete = false;
-                                                if (!moveBuilder.ToString().EndsWith("v"))
-                                                {
-                                                    builder.Append(moveBuilder.ToString());
-                                                    LoopySaveWrite(writer, "MOVE", moveBuilder.ToString());
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            if (complete)
-                            {
-                                LoopySaveWrite(writer, "SOLVE", builder.ToString());
-                            }
-                        }
-                        else if (dialog.FilterIndex == 3)
-                        {
-                            writer.Write("{0}x{1}:", width, height);
-                            int blankCount = 0;
-                            for (int j = 0; j < height; j++)
-                            {
-                                for (int i = 0; i < width; i++)
-                                {
-                                    Cell cell = loopDisplay1.Mesh.Cells[i * height + j];
-                                    if (cell.TargetCount >= 0)
-                                    {
-                                        if (blankCount > 0)
-                                            writer.Write((char)('a' + (blankCount - 1)));
-                                        blankCount = 0;
-                                        writer.Write(cell.TargetCount);
-                                    }
-                                    else
-                                        blankCount++;
-
-                                }
-                                if (blankCount > 0)
-                                    writer.Write((char)('a' + (blankCount - 1)));
-                                blankCount = 0;
-                            }
-                            writer.WriteLine();
-                        }
-                        else
-                        {
-                            for (int j = 0; j <= height; j++)
-                            {
-                                for (int k = 0; k < 2; k++)
-                                {
-                                    for (int i = 0; i <= width; i++)
-                                    {
-                                        if (k == 0)
-                                        {
-                                            writer.Write("+");
-                                            if (i < width)
-                                            {
-                                                int start = i * (height + 1) + j;
-                                                int end = start + height + 1;
-                                                Edge edge = loopDisplay1.Mesh.Edges[loopDisplay1.Mesh.GetEdgeJoining(start, end)];
-                                                if (edge.State == EdgeState.Filled)
-                                                    writer.Write("-");
-                                                else if (edge.State == EdgeState.Excluded)
-                                                    writer.Write("x");
-                                                else
-                                                    writer.Write(" ");
-                                            }
-                                        }
-                                        else
-                                        {
-                                            if (j < height)
-                                            {
-                                                int start = i * (height + 1) + j;
-                                                int end = start + 1;
-                                                Edge edge = loopDisplay1.Mesh.Edges[loopDisplay1.Mesh.GetEdgeJoining(start, end)];
-                                                if (edge.State == EdgeState.Filled)
-                                                    writer.Write("|");
-                                                else if (edge.State == EdgeState.Excluded)
-                                                    writer.Write("x");
-                                                else
-                                                    writer.Write(" ");
-
-                                                if (i < width)
-                                                {
-                                                    Cell cell = loopDisplay1.Mesh.Cells[i * height + j];
-                                                    if (cell.TargetCount >= 0)
-                                                        writer.Write(cell.TargetCount);
-                                                    else
-                                                        writer.Write(" ");
-                                                }
-                                            }
-                                        }
-                                    }
-                                    if (k == 0 || j < height)
-                                        writer.WriteLine();
-                                }
-                            }
-                        }
-                    }
-                }
-                else
+                if (content != null)
                 {
-                    Mesh mesh = loopDisplay1.Mesh;
-                    using (TextWriter writer = File.CreateText(dialog.FileName))
-                    {
-                        mesh.Save(writer);
-                    }
+                    File.WriteAllText(dialog.FileName, content);
                 }
             }
-
-        }
-
-        private void LoopySaveWrite(TextWriter writer, string name, string value)
-        {
-            writer.Write(name.PadRight(8, ' '));
-            writer.Write(':');
-            writer.Write(value.Length);
-            writer.Write(':');
-            writer.Write(value);
-            writer.WriteLine();
         }
 
 

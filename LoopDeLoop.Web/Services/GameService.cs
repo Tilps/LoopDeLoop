@@ -16,6 +16,11 @@ namespace LoopDeLoop.Web.Services
         public string SizeText { get; set; } = "10x10";
         public int Difficulty { get; set; } = 1; // Easy
 
+        // Active puzzle geometry metadata (independent of pending form edits)
+        public int ActiveWidth { get; private set; }
+        public int ActiveHeight { get; private set; }
+        public MeshType ActiveType => CurrentMesh?.MeshType ?? CurrentType;
+
         public bool DisallowFalseMove { get; set; } = false;
         public bool ShowCellColors { get; set; } = false;
         public bool ShowEdgeColors
@@ -56,11 +61,14 @@ namespace LoopDeLoop.Web.Services
         public GeneratorSolverMode SolverModeOverride { get; set; } = GeneratorSolverMode.Auto;
 
         public bool IsGenerating { get; private set; }
+        public bool IsBusy { get; private set; }
+        public string? BusyMessage { get; private set; }
         public int PrunedProgress { get; private set; }
         public int TotalCells { get; private set; }
 
+        private TimeSpan? solvedElapsed;
         public DateTime? StartTime { get; private set; }
-        public TimeSpan ElapsedTime => StartTime.HasValue ? DateTime.UtcNow - StartTime.Value : TimeSpan.Zero;
+        public TimeSpan ElapsedTime => solvedElapsed ?? (StartTime.HasValue ? DateTime.UtcNow - StartTime.Value : TimeSpan.Zero);
         public bool IsSolved { get; private set; }
         public bool WasAutoSolved { get; private set; }
 
@@ -73,11 +81,18 @@ namespace LoopDeLoop.Web.Services
         public string? HintMessage { get; private set; }
 
         public event Action? OnStateChanged;
+        public event Action? OnBoardPersistedStateChanged;
 
         public bool CanUndo => UndoTree.CanUndo;
         public bool CanRedo => UndoTree.CanRedo;
 
         public void NotifyChanged()
+        {
+            OnStateChanged?.Invoke();
+            OnBoardPersistedStateChanged?.Invoke();
+        }
+
+        public void NotifyVisualChanged()
         {
             OnStateChanged?.Invoke();
         }
@@ -102,6 +117,17 @@ namespace LoopDeLoop.Web.Services
             return cts.Token;
         }
 
+        private static void CancelAndDispose(ref CancellationTokenSource? cts)
+        {
+            var previous = cts;
+            cts = null;
+            if (previous != null)
+            {
+                previous.Cancel();
+                previous.Dispose();
+            }
+        }
+
         private void ClearTransientBoardState()
         {
             preVictoryMarkedEdges = null;
@@ -111,7 +137,7 @@ namespace LoopDeLoop.Web.Services
             PendingGroupEdgeIndex = null;
             CurrentAnalysis = null;
             DismissVisualSolveInternal();
-            ClearHint();
+            ClearHintInternal();
         }
 
         public void CancelGeneration()
@@ -122,59 +148,76 @@ namespace LoopDeLoop.Web.Services
             }
             generationCts?.Cancel();
             IsGenerating = false;
-            NotifyChanged();
+            GenerationStartTime = null;
+            NotifyVisualChanged();
         }
 
         public async Task GenerateNewPuzzleAsync()
         {
-            if (IsGenerating) return;
+            if (IsGenerating || IsBusy) return;
 
-            var token = ResetTokenSource(ref generationCts);
+            var myCts = new CancellationTokenSource();
+            var previous = generationCts;
+            generationCts = myCts;
+            if (previous != null)
+            {
+                previous.Cancel();
+            }
+            var token = myCts.Token;
 
             DismissVisualSolveInternal();
             IsGenerating = true;
             GenerationStartTime = DateTime.UtcNow;
-            IsSolved = false;
             PrunedProgress = 0;
             TotalCells = 0;
-            NotifyChanged();
+            NotifyVisualChanged();
 
-            // Allow UI to render the loading overlay before computation begins
-            await Task.Delay(20);
-
-            if (!PuzzleHelper.ParseSize(SizeText, CurrentType, out int width, out int height))
-            {
-                PuzzleHelper.GetDefaultSize(CurrentType, out width, out height);
-                SizeText = $"{width}x{height}";
-            }
-
+            bool generatedNewBoard = false;
             try
             {
-                Mesh mesh = PuzzleHelper.MakeMesh(width, height, CurrentType, Difficulty);
+                // Allow UI to render the loading overlay before computation begins
+                await Task.Delay(20, token);
+
+                MeshType requestedType = CurrentType;
+                int requestedDifficulty = Difficulty;
+                if (!PuzzleHelper.ParseSize(SizeText, requestedType, out int width, out int height))
+                {
+                    PuzzleHelper.GetDefaultSize(requestedType, out width, out height);
+                    SizeText = $"{width}x{height}";
+                }
+
+                Mesh mesh = PuzzleHelper.MakeMesh(width, height, requestedType, requestedDifficulty);
                 ApplyGeneratorOverrides(mesh);
                 generatingMesh = mesh;
                 TotalCells = mesh.Cells.Count;
-                NotifyChanged();
+                NotifyVisualChanged();
 
                 var progress = new Progress<int>(p =>
                 {
-                    PrunedProgress = p;
-                    NotifyChanged();
+                    if (ReferenceEquals(generationCts, myCts))
+                    {
+                        PrunedProgress = p;
+                        NotifyVisualChanged();
+                    }
                 });
 
                 await mesh.GenerateAsync(progress, token);
 
-                if (!token.IsCancellationRequested && !mesh.AbortPrune)
+                if (!token.IsCancellationRequested && !mesh.AbortPrune && ReferenceEquals(generationCts, myCts))
                 {
                     CurrentMesh = mesh;
+                    ActiveWidth = width;
+                    ActiveHeight = height;
                     MarkedEdges.Clear();
                     UndoTree = new UndoTree();
                     ApplyAutoStartIfEnabled(mesh);
                     StartTime = DateTime.UtcNow;
+                    solvedElapsed = null;
                     IsSolved = false;
                     WasAutoSolved = false;
                     ClearTransientBoardState();
                     CheckSolution();
+                    generatedNewBoard = true;
                 }
             }
             catch (OperationCanceledException)
@@ -183,12 +226,18 @@ namespace LoopDeLoop.Web.Services
             }
             finally
             {
-                generatingMesh = null;
-                generationCts?.Dispose();
-                generationCts = null;
-                GenerationStartTime = null;
-                IsGenerating = false;
-                NotifyChanged();
+                if (ReferenceEquals(generationCts, myCts))
+                {
+                    generatingMesh = null;
+                    generationCts = null;
+                    GenerationStartTime = null;
+                    IsGenerating = false;
+                }
+                myCts.Dispose();
+                if (generatedNewBoard)
+                    NotifyChanged();
+                else
+                    NotifyVisualChanged();
             }
         }
 
@@ -288,14 +337,14 @@ namespace LoopDeLoop.Web.Services
             if (PendingGroupEdgeIndex is not int firstEdge)
             {
                 PendingGroupEdgeIndex = edgeIndex;
-                NotifyChanged();
+                NotifyVisualChanged();
                 return true;
             }
 
             PendingGroupEdgeIndex = null;
             if (firstEdge == edgeIndex)
             {
-                NotifyChanged();
+                NotifyVisualChanged();
                 return true;
             }
 
@@ -308,7 +357,6 @@ namespace LoopDeLoop.Web.Services
             }
 
             FlashInvalidEdge(edgeIndex);
-            NotifyChanged();
             return false;
         }
 
@@ -317,7 +365,7 @@ namespace LoopDeLoop.Web.Services
             if (PendingGroupEdgeIndex.HasValue)
             {
                 PendingGroupEdgeIndex = null;
-                NotifyChanged();
+                NotifyVisualChanged();
             }
         }
 
@@ -331,17 +379,38 @@ namespace LoopDeLoop.Web.Services
 
         public string? ExportSquareAscii() => CurrentMesh != null ? PuzzleFormatHelper.ExportSquareAscii(CurrentMesh) : null;
 
+        public string GetShareCode()
+        {
+            if (CurrentMesh == null) return string.Empty;
+            if (ActiveWidth > 0 && ActiveHeight > 0)
+            {
+                return PuzzleCodec.Encode(CurrentMesh, ActiveWidth, ActiveHeight);
+            }
+            if (PuzzleFormatHelper.TryGetSquareDimensions(CurrentMesh, out int sw, out int sh))
+            {
+                return PuzzleCodec.Encode(CurrentMesh, sw, sh);
+            }
+            return PuzzleCompression.Compress(CurrentMesh.SaveToString());
+        }
+
         public bool ImportPuzzle(string rawInput, out string detectedFormat)
         {
             detectedFormat = string.Empty;
-            if (IsGenerating || !PuzzleFormatHelper.TryParsePuzzle(rawInput, out Mesh? mesh, out detectedFormat, out int w, out int h) || mesh == null)
+            if (IsGenerating || IsBusy || !PuzzleFormatHelper.TryParsePuzzle(rawInput, out Mesh? mesh, out detectedFormat, out int w, out int h) || mesh == null)
                 return false;
 
             CurrentMesh = mesh;
             CurrentType = mesh.MeshType;
+            ActiveWidth = w;
+            ActiveHeight = h;
             if (w > 0 && h > 0)
             {
                 SizeText = $"{w}x{h}";
+            }
+            else
+            {
+                PuzzleHelper.GetDefaultSize(mesh.MeshType, out int dw, out int dh);
+                SizeText = $"{dw}x{dh}";
             }
             TotalCells = mesh.Cells.Count;
             PrunedProgress = 0;
@@ -349,6 +418,7 @@ namespace LoopDeLoop.Web.Services
             UndoTree = new UndoTree();
             MarkedEdges.Clear();
             StartTime = DateTime.UtcNow;
+            solvedElapsed = null;
             IsSolved = false;
             WasAutoSolved = false;
             ClearTransientBoardState();
@@ -362,82 +432,28 @@ namespace LoopDeLoop.Web.Services
         {
             if (CurrentMesh == null || IsGenerating) return null;
 
-            int clueCount = 0;
-            foreach (var cell in CurrentMesh.Cells)
-            {
-                if (cell.TargetCount >= 0) clueCount++;
-            }
-            int totalCells = CurrentMesh.Cells.Count;
-            int edgeCount = CurrentMesh.Edges.Count;
-
-            Mesh solver = CreateFullSolverMesh(CurrentMesh);
-            solver.Clear();
-
-            SolveState fullResult = solver.TrySolve();
-            if (fullResult == SolveState.MultipleSolutions)
-            {
-                CurrentAnalysis = new PuzzleAnalysisResult("Multiple Solutions", "Non-unique", 0, clueCount, totalCells, edgeCount);
-                NotifyChanged();
-                return CurrentAnalysis;
-            }
-            if (fullResult != SolveState.Solved)
-            {
-                CurrentAnalysis = new PuzzleAnalysisResult("No Solution", "Unsolvable", 0, clueCount, totalCells, edgeCount);
-                NotifyChanged();
-                return CurrentAnalysis;
-            }
-
-            // RecursiveTrySolve pushes a base frame before checking trials, so branch count is Length - 1.
-            int branchDepth = Math.Max(0, (solver.DepthPatern?.Length ?? 0) - 1);
-            string tier = $"Recursive Search (F, Depth {branchDepth})";
-            int? lookaheadDepth = null;
-
-            // Check lightest deductive tiers on demand, matching WinForms RatingThreadProc
-            solver.SetRatingCodeOptions("I");
-            if (solver.TrySolve() == SolveState.Solved)
-            {
-                int min = -1;
-                int max = solver.Edges.Count;
-                while (min < max - 1)
-                {
-                    int mid = (min + max) / 2;
-                    solver.IterativeSolverDepth = mid;
-                    if (solver.TrySolve() == SolveState.Solved)
-                        max = mid;
-                    else
-                        min = mid;
-                }
-                lookaheadDepth = max;
-                tier = max == 0 ? "Direct Deductions (I0)" : $"Iterative Lookahead (I{max})";
-            }
-            else
-            {
-                solver.SetRatingCodeOptions("IC");
-                if (solver.TrySolve() == SolveState.Solved)
-                {
-                    tier = "Cell-Edge Interactions (IC)";
-                }
-                else
-                {
-                    solver.SetRatingCodeOptions("ID");
-                    if (solver.TrySolve() == SolveState.Solved)
-                    {
-                        tier = "Edge Coloring (ID)";
-                    }
-                    else
-                    {
-                        solver.SetRatingCodeOptions("ICR");
-                        if (solver.TrySolve() == SolveState.Solved)
-                        {
-                            tier = "Edge Restrictions (ICR)";
-                        }
-                    }
-                }
-            }
-
-            CurrentAnalysis = new PuzzleAnalysisResult("Unique Solution", tier, branchDepth, clueCount, totalCells, edgeCount, lookaheadDepth);
-            NotifyChanged();
+            CurrentAnalysis = PuzzleHelper.AnalyzePuzzle(CurrentMesh);
+            NotifyVisualChanged();
             return CurrentAnalysis;
+        }
+
+        public async Task<PuzzleAnalysisResult?> AnalyzeCurrentPuzzleAsync()
+        {
+            if (CurrentMesh == null || IsGenerating || IsBusy) return null;
+            IsBusy = true;
+            BusyMessage = "Analyzing puzzle...";
+            NotifyVisualChanged();
+            try
+            {
+                await Task.Delay(20);
+                return AnalyzeCurrentPuzzle();
+            }
+            finally
+            {
+                IsBusy = false;
+                BusyMessage = null;
+                NotifyVisualChanged();
+            }
         }
 
         public void ToggleEdge(int edgeIndex, bool isAlternative)
@@ -579,7 +595,9 @@ namespace LoopDeLoop.Web.Services
             }
         }
 
-        public void Fix()
+        public void Fix() => Fix(notify: true);
+
+        private void Fix(bool notify)
         {
             if (CurrentMesh == null) return;
             DismissVisualSolveInternal();
@@ -590,7 +608,8 @@ namespace LoopDeLoop.Web.Services
                     MarkedEdges.Add(i);
             }
             UndoTree.Mark();
-            NotifyChanged();
+            if (notify)
+                NotifyChanged();
         }
 
         public void Unfix()
@@ -622,15 +641,21 @@ namespace LoopDeLoop.Web.Services
             bool currentlySolved = PuzzleHelper.CheckIsSolved(CurrentMesh);
             if (currentlySolved && !IsSolved)
             {
+                solvedElapsed = StartTime.HasValue ? DateTime.UtcNow - StartTime.Value : TimeSpan.Zero;
                 IsSolved = true;
                 preVictoryMarkedEdges = MarkedEdges.ToArray();
                 preVictoryUndoMark = UndoTree.ClearMark();
                 UndoTree.SetMarkedDirect(preVictoryUndoMark);
                 preVictoryUndoTree = UndoTree;
-                Fix(); // Auto-fix solution upon victory
+                Fix(notify: false); // Auto-fix solution upon victory
             }
             else if (!currentlySolved && IsSolved)
             {
+                if (solvedElapsed.HasValue)
+                {
+                    StartTime = DateTime.UtcNow - solvedElapsed.Value;
+                    solvedElapsed = null;
+                }
                 IsSolved = false;
                 WasAutoSolved = false;
                 if (preVictoryUndoTree != null && ReferenceEquals(preVictoryUndoTree, UndoTree) && preVictoryMarkedEdges != null)
@@ -662,8 +687,10 @@ namespace LoopDeLoop.Web.Services
                 cellColors[i] = CurrentMesh.Cells[i].Color;
             }
 
-            PuzzleHelper.ParseSize(SizeText, CurrentType, out int w, out int h);
-            string puzzleEncoded = PuzzleCodec.Encode(CurrentMesh, w, h);
+            string puzzleEncoded = GetShareCode();
+            string activeSize = ActiveWidth > 0 && ActiveHeight > 0
+                ? $"{ActiveWidth}x{ActiveHeight}"
+                : SizeText;
 
             return new SavedGameState
             {
@@ -676,38 +703,63 @@ namespace LoopDeLoop.Web.Services
                 WasAutoSolved = WasAutoSolved,
                 DisallowFalseMove = DisallowFalseMove,
                 ShowCellColors = ShowCellColors,
-                Type = CurrentType.ToString(),
-                Size = SizeText,
+                Type = ActiveType.ToString(),
+                Size = activeSize,
                 Difficulty = Difficulty
             };
         }
 
         private static readonly char[] LineSeparators = ['\r', '\n'];
+        private const double MaxPersistedElapsedSeconds = 365.0 * 24.0 * 3600.0;
 
         public bool RestoreState(SavedGameState state)
         {
-            if (string.IsNullOrEmpty(state.Puzzle)) return false;
+            if (state == null || string.IsNullOrEmpty(state.Puzzle)) return false;
 
             Mesh? mesh;
-            if (PuzzleCodec.TryDecode(state.Puzzle, out var decodedMesh, out int _, out int _, out var _))
+            int w = 0, h = 0;
+            if (PuzzleCodec.TryDecode(state.Puzzle, out var decodedMesh, out w, out h, out var _))
             {
                 mesh = decodedMesh;
+            }
+            else if (PuzzleCompression.TryDecompressFromUrlSafe(state.Puzzle, out string decompressed) && !string.IsNullOrWhiteSpace(decompressed))
+            {
+                mesh = new Mesh(0, 0, MeshType.Square);
+                if (!mesh.LoadFromText(decompressed.AsSpan()))
+                    return false;
+                if (PuzzleFormatHelper.TryGetSquareDimensions(mesh, out int sw, out int sh))
+                {
+                    w = sw;
+                    h = sh;
+                }
             }
             else
             {
                 var lines = state.Puzzle.Split(LineSeparators, StringSplitOptions.RemoveEmptyEntries);
                 mesh = new Mesh(0, 0, MeshType.Square);
                 if (!mesh.LoadFromText(lines)) return false;
+                if (PuzzleFormatHelper.TryGetSquareDimensions(mesh, out int sw, out int sh))
+                {
+                    w = sw;
+                    h = sh;
+                }
             }
 
             if (mesh == null) return false;
 
             CurrentMesh = mesh;
             CurrentType = mesh.MeshType;
-            if (!string.IsNullOrEmpty(state.Size)) SizeText = state.Size;
-            Difficulty = state.Difficulty;
-            DisallowFalseMove = state.DisallowFalseMove;
-            ShowCellColors = state.ShowCellColors;
+            ActiveWidth = w;
+            ActiveHeight = h;
+            if (w > 0 && h > 0)
+            {
+                SizeText = $"{w}x{h}";
+            }
+            else if (!string.IsNullOrEmpty(state.Size) && PuzzleHelper.ParseSize(state.Size, mesh.MeshType, out int pw, out int ph))
+            {
+                SizeText = $"{pw}x{ph}";
+            }
+            Difficulty = Math.Clamp(state.Difficulty, 0, 5);
             TotalCells = mesh.Cells.Count;
             PrunedProgress = 0;
             IsGenerating = false;
@@ -719,9 +771,13 @@ namespace LoopDeLoop.Web.Services
                 mesh.Clear();
                 for (int i = 0; i < state.EdgeStates.Length; i++)
                 {
-                    var st = (EdgeState)state.EdgeStates[i];
-                    if (st != EdgeState.Empty)
-                        new SetAction(mesh, i, st).Perform();
+                    int raw = state.EdgeStates[i];
+                    if (raw is >= 0 and <= byte.MaxValue && Enum.IsDefined((EdgeState)(byte)raw))
+                    {
+                        var st = (EdgeState)(byte)raw;
+                        if (st != EdgeState.Empty)
+                            new SetAction(mesh, i, st).Perform();
+                    }
                 }
             }
 
@@ -729,7 +785,8 @@ namespace LoopDeLoop.Web.Services
             {
                 for (int i = 0; i < state.CellColors.Length; i++)
                 {
-                    mesh.Cells[i].Color = state.CellColors[i];
+                    int c = state.CellColors[i];
+                    mesh.Cells[i].Color = c is -1 or 0 or 1 ? c : 0;
                 }
             }
 
@@ -742,15 +799,20 @@ namespace LoopDeLoop.Web.Services
                 }
             }
 
-            StartTime = state.ElapsedSeconds > 0
-                ? DateTime.UtcNow.AddSeconds(-state.ElapsedSeconds)
+            double clampedElapsed = double.IsFinite(state.ElapsedSeconds)
+                ? Math.Clamp(state.ElapsedSeconds, 0.0, MaxPersistedElapsedSeconds)
+                : 0.0;
+
+            StartTime = clampedElapsed > 0
+                ? DateTime.UtcNow.AddSeconds(-clampedElapsed)
                 : DateTime.UtcNow;
 
             IsSolved = state.IsSolved;
+            solvedElapsed = state.IsSolved ? TimeSpan.FromSeconds(clampedElapsed) : null;
             WasAutoSolved = state.IsSolved && state.WasAutoSolved;
             ClearTransientBoardState();
             CheckSolution();
-            NotifyChanged();
+            NotifyVisualChanged();
             return true;
         }
 
@@ -759,28 +821,38 @@ namespace LoopDeLoop.Web.Services
             if (string.IsNullOrEmpty(puzzleText)) return false;
 
             Mesh? mesh;
-            if (PuzzleCodec.TryDecode(puzzleText, out var decodedMesh, out int w, out int h, out var _))
+            int w = 0, h = 0;
+            if (PuzzleCodec.TryDecode(puzzleText, out var decodedMesh, out w, out h, out var _))
             {
                 mesh = decodedMesh;
-                SizeText = $"{w}x{h}";
             }
             else
             {
                 var lines = puzzleText.Split(LineSeparators, StringSplitOptions.RemoveEmptyEntries);
                 mesh = new Mesh(0, 0, MeshType.Square);
                 if (!mesh.LoadFromText(lines)) return false;
+                if (PuzzleFormatHelper.TryGetSquareDimensions(mesh, out int sw, out int sh))
+                {
+                    w = sw;
+                    h = sh;
+                }
             }
 
             if (mesh == null) return false;
 
             CurrentMesh = mesh;
             CurrentType = mesh.MeshType;
+            ActiveWidth = w;
+            ActiveHeight = h;
+            if (w > 0 && h > 0)
+                SizeText = $"{w}x{h}";
             TotalCells = mesh.Cells.Count;
             PrunedProgress = 0;
             IsGenerating = false;
             UndoTree = new UndoTree();
             MarkedEdges.Clear();
             StartTime = DateTime.UtcNow;
+            solvedElapsed = null;
             IsSolved = false;
             WasAutoSolved = false;
             ClearTransientBoardState();
@@ -815,60 +887,49 @@ namespace LoopDeLoop.Web.Services
             var token = ResetTokenSource(ref invalidFlashCts);
 
             InvalidEdgeIndex = edgeIndex;
-            NotifyChanged();
+            NotifyVisualChanged();
 
             _ = ClearAfterDelayAsync(600, token, () =>
             {
                 if (InvalidEdgeIndex == edgeIndex)
                 {
                     InvalidEdgeIndex = null;
-                    NotifyChanged();
+                    NotifyVisualChanged();
                 }
             });
         }
 
-        public void ClearHint()
+        private bool ClearHintInternal()
         {
-            hintFlashCts?.Cancel();
-            hintMessageCts?.Cancel();
+            CancelAndDispose(ref hintFlashCts);
+            CancelAndDispose(ref hintMessageCts);
+            bool hadHint = HintEdgeIndex.HasValue || HintMessage != null;
             HintEdgeIndex = null;
             HintMessage = null;
-            NotifyChanged();
+            return hadHint;
+        }
+
+        public void ClearHint()
+        {
+            if (ClearHintInternal())
+                NotifyVisualChanged();
         }
 
         public void ResetCurrentPuzzle()
         {
-            if (CurrentMesh == null || IsGenerating) return;
+            if (CurrentMesh == null || IsGenerating || IsBusy) return;
 
             CurrentMesh.Clear();
             MarkedEdges.Clear();
             UndoTree = new UndoTree();
             ApplyAutoStartIfEnabled(CurrentMesh);
             StartTime = DateTime.UtcNow;
+            solvedElapsed = null;
             IsSolved = false;
             WasAutoSolved = false;
             ClearTransientBoardState();
             CheckSolution();
             NotifyChanged();
-        }
-
-        private static Mesh CreateFullSolverMesh(Mesh source)
-        {
-            Mesh solver = new Mesh(source);
-            solver.ConsiderMultipleLoops = true;
-            solver.UseIntersectCellInteractsInSolver = false;
-            solver.UseColoring = true;
-            solver.UseEdgeRestricts = true;
-            solver.UseCellColoring = true;
-            solver.SolverMethod = SolverMethod.Recursive;
-            solver.ContaminateFullSolver = true;
-            solver.ColoringCheats = true;
-            solver.UseDerivedColoring = true;
-            solver.UseMerging = true;
-            solver.UseCellPairsTopLevel = true;
-            solver.UseCellPairs = false;
-            solver.IterativeRecMaxDepth = 1;
-            return solver;
         }
 
         private const int MaxVisualSolveFrames = 1500;
@@ -916,7 +977,7 @@ namespace LoopDeLoop.Web.Services
         public void DismissVisualSolve()
         {
             if (DismissVisualSolveInternal())
-                NotifyChanged();
+                NotifyVisualChanged();
         }
 
         public bool StartVisualSolve()
@@ -924,9 +985,9 @@ namespace LoopDeLoop.Web.Services
             if (CurrentMesh == null || IsGenerating) return false;
 
             DismissVisualSolveInternal();
-            ClearHint();
+            ClearHintInternal();
 
-            Mesh solver = CreateFullSolverMesh(CurrentMesh);
+            Mesh solver = PuzzleHelper.CreateFullSolverMesh(CurrentMesh);
             solver.Clear();
             solver.SuperSlowMo = true;
 
@@ -998,13 +1059,32 @@ namespace LoopDeLoop.Web.Services
                 }
 
                 VisualSolveStepIndex = 0;
-                NotifyChanged();
+                NotifyVisualChanged();
                 return true;
             }
 
             DismissVisualSolveInternal();
-            NotifyChanged();
+            NotifyVisualChanged();
             return false;
+        }
+
+        public async Task<bool> StartVisualSolveAsync()
+        {
+            if (CurrentMesh == null || IsGenerating || IsBusy) return false;
+            IsBusy = true;
+            BusyMessage = "Recording solver steps...";
+            NotifyVisualChanged();
+            try
+            {
+                await Task.Delay(20);
+                return StartVisualSolve();
+            }
+            finally
+            {
+                IsBusy = false;
+                BusyMessage = null;
+                NotifyVisualChanged();
+            }
         }
 
         public void SetVisualSolveStep(int index)
@@ -1013,7 +1093,7 @@ namespace LoopDeLoop.Web.Services
             int clamped = Math.Clamp(index, 0, visualSolveSteps.Count - 1);
             if (clamped == VisualSolveStepIndex) return;
             VisualSolveStepIndex = clamped;
-            NotifyChanged();
+            NotifyVisualChanged();
         }
 
         public bool StepVisualSolveForward()
@@ -1021,7 +1101,7 @@ namespace LoopDeLoop.Web.Services
             if (!IsVisualSolving || VisualSolveStepIndex >= visualSolveSteps.Count - 1)
                 return false;
             VisualSolveStepIndex++;
-            NotifyChanged();
+            NotifyVisualChanged();
             return true;
         }
 
@@ -1030,7 +1110,7 @@ namespace LoopDeLoop.Web.Services
             if (!IsVisualSolving || VisualSolveStepIndex <= 0)
                 return false;
             VisualSolveStepIndex--;
-            NotifyChanged();
+            NotifyVisualChanged();
             return true;
         }
 
@@ -1057,7 +1137,7 @@ namespace LoopDeLoop.Web.Services
             if (CurrentMesh == null || IsGenerating) return false;
 
             DismissVisualSolveInternal();
-            Mesh original = CreateFullSolverMesh(CurrentMesh);
+            Mesh original = PuzzleHelper.CreateFullSolverMesh(CurrentMesh);
             original.Clear();
 
             SolveState res = original.TrySolve();
@@ -1075,6 +1155,25 @@ namespace LoopDeLoop.Web.Services
             return false;
         }
 
+        public async Task<bool> SolvePuzzleAsync()
+        {
+            if (CurrentMesh == null || IsGenerating || IsBusy) return false;
+            IsBusy = true;
+            BusyMessage = "Solving puzzle...";
+            NotifyVisualChanged();
+            try
+            {
+                await Task.Delay(20);
+                return SolvePuzzle();
+            }
+            finally
+            {
+                IsBusy = false;
+                BusyMessage = null;
+                NotifyVisualChanged();
+            }
+        }
+
         public bool RequestHint(bool applyMove)
         {
             if (CurrentMesh == null || IsGenerating) return false;
@@ -1082,6 +1181,7 @@ namespace LoopDeLoop.Web.Services
 
             var (edgeIdx, targetState, message) = ComputeHint();
             HintMessage = message;
+            bool boardMutated = false;
 
             if (edgeIdx.HasValue)
             {
@@ -1091,8 +1191,11 @@ namespace LoopDeLoop.Web.Services
                 if (applyMove)
                 {
                     var action = new PuzzleSetEdgeStateAction(CurrentMesh, edgeIdx.Value, targetState, DisallowFalseMove);
-                    UndoTree.Do(action);
-                    CheckSolution();
+                    if (UndoTree.Do(action))
+                    {
+                        boardMutated = true;
+                        CheckSolution();
+                    }
                 }
                 else
                 {
@@ -1108,7 +1211,7 @@ namespace LoopDeLoop.Web.Services
                     if (HintEdgeIndex == capturedEdge)
                     {
                         HintEdgeIndex = null;
-                        NotifyChanged();
+                        NotifyVisualChanged();
                     }
                 });
             }
@@ -1117,11 +1220,33 @@ namespace LoopDeLoop.Web.Services
             _ = ClearAfterDelayAsync(5000, msgToken, () =>
             {
                 HintMessage = null;
-                NotifyChanged();
+                NotifyVisualChanged();
             });
 
-            NotifyChanged();
+            if (boardMutated)
+                NotifyChanged();
+            else
+                NotifyVisualChanged();
             return edgeIdx.HasValue;
+        }
+
+        public async Task<bool> RequestHintAsync(bool applyMove)
+        {
+            if (CurrentMesh == null || IsGenerating || IsBusy) return false;
+            IsBusy = true;
+            BusyMessage = "Computing hint...";
+            NotifyVisualChanged();
+            try
+            {
+                await Task.Delay(20);
+                return RequestHint(applyMove);
+            }
+            finally
+            {
+                IsBusy = false;
+                BusyMessage = null;
+                NotifyVisualChanged();
+            }
         }
 
         public (int? EdgeIndex, EdgeState TargetState, string Message) ComputeHint()
@@ -1197,7 +1322,7 @@ namespace LoopDeLoop.Web.Services
             }
 
             // 3. Fallback: full solver search on current state
-            Mesh fullSolverMesh = CreateFullSolverMesh(CurrentMesh);
+            Mesh fullSolverMesh = PuzzleHelper.CreateFullSolverMesh(CurrentMesh);
 
             SolveState solveRes = fullSolverMesh.TrySolve();
             if ((solveRes == SolveState.Solved || solveRes == SolveState.MultipleSolutions) && fullSolverMesh.SolutionFound != null)
@@ -1304,15 +1429,6 @@ namespace LoopDeLoop.Web.Services
         string Status,
         bool IsBacktrack = false,
         bool IsBranching = false);
-
-    public sealed record PuzzleAnalysisResult(
-        string SolveStatus,
-        string TechniqueTier,
-        int BranchDepth,
-        int ClueCount,
-        int TotalCells,
-        int EdgeCount,
-        int? LookaheadDepth = null);
 
     public class UserPreferences
     {

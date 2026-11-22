@@ -11,7 +11,7 @@
     <RootNamespace>LoopDeLoop</RootNamespace>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
-    <NoWarn>$(NoWarn);WFO1000;SYSLIB0006;CA1416</NoWarn>
+    <NoWarn>$(NoWarn);WFO1000;CA1416</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

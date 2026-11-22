@@ -372,22 +372,6 @@ body, html {
     cursor: pointer;
 }
 
-.cell-text {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-weight: 700;
-    fill: var(--clue-default);
-    user-select: none;
-    pointer-events: none;
-}
-
-.cell-text-satisfied {
-    fill: var(--clue-satisfied);
-}
-
-.cell-text-error {
-    fill: var(--danger);
-}
-
 .edge-empty {
     stroke: var(--edge-empty);
     stroke-width: 1.5;
@@ -416,13 +400,6 @@ body, html {
     stroke: var(--edge-cross-marked);
     stroke-width: 2.2;
     stroke-linecap: round;
-}
-
-.edge-hit {
-    stroke: transparent;
-    stroke-width: 16;
-    stroke-linecap: round;
-    cursor: pointer;
 }
 
 .edge-invalid-highlight {
@@ -547,7 +524,7 @@ body, html {
     color: var(--text-secondary);
     text-align: center;
     margin-top: 0.25rem;
-    animation: toast-in 0.25s ease-out;
+    animation: fade-in 0.25s ease-out;
 }
 
 .cancel-gen-btn {
@@ -561,7 +538,17 @@ body, html {
     cursor: pointer;
     box-shadow: var(--shadow);
     transition: all 0.15s ease;
-    animation: toast-in 0.25s ease-out;
+    animation: fade-in 0.25s ease-out;
+}
+
+@keyframes fade-in {
+    from { transform: translateY(0.5rem); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes banner-in {
+    from { transform: translate(-50%, -100%); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
 }
 
 .cancel-gen-btn:hover {
@@ -691,7 +678,7 @@ body, html {
 
 .modal-subtext {
     font-size: 0.875rem;
-    color: var(--text-muted, #94a3b8);
+    color: var(--text-secondary);
     margin-top: -0.25rem;
     margin-bottom: 0.75rem;
 }
@@ -1035,7 +1022,7 @@ body, html {
     font-size: 0.875rem;
     font-weight: 600;
     z-index: 1000;
-    animation: toast-in 0.25s ease-out;
+    animation: banner-in 0.25s ease-out;
 }
 
 .update-banner .btn {
@@ -1347,6 +1334,28 @@ body, html {
     animation: hint-pulse 0.85s ease-in-out infinite;
 }
 
+@keyframes hint-pulse {
+    0%, 100% { opacity: 0.95; stroke-width: 7.5px; }
+    50% { opacity: 0.45; stroke-width: 5px; }
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
 /* Monochrome Vector Print Stylesheet */
 @media print {
     @page {
@@ -1392,9 +1401,15 @@ body, html {
         background: #ffffff !important;
     }
 
-    .edge-empty {
+    .cell-poly {
+        fill: transparent !important;
+    }
+
+    .edge-empty,
+    .edge-grouped {
         stroke: #cbd5e1 !important;
         stroke-width: 1px !important;
+        stroke-dasharray: none !important;
     }
 
     .edge-filled,

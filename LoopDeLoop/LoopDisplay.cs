@@ -109,8 +109,20 @@ namespace LoopDeLoop
         }
         private bool showCellColorsAdvanced = true;
 
+        private void DisposePenTable()
+        {
+            if (penTable == null)
+                return;
+            for (int i = 0; i < penTable.Length; i++)
+            {
+                penTable[i]?.Dispose();
+            }
+            penTable = null;
+        }
+
         private void BuildPenTable()
         {
+            DisposePenTable();
             penTable = new Pen[mesh.Edges.Count + 1];
             List<Color> colorList = new List<Color>();
             colorList.Add(BackColor);
@@ -187,7 +199,7 @@ The formula for hue difference is slightly more complicated.
         private bool TooClose(Color c, Color color)
         {
             float cr = c.GetBrightness() * c.GetSaturation();
-            float or = color.GetBrightness() * c.GetSaturation();
+            float or = color.GetBrightness() * color.GetSaturation();
             float ctheta = c.GetHue();
             float otheta = color.GetHue();
             float cz = c.GetBrightness();
@@ -541,10 +553,7 @@ The formula for hue difference is slightly more complicated.
                 LoopClickAction action = new LoopClickAction(mesh, closestEdge, e.Button, autoMove, disallowFalseMove, useICInAuto, considerMultipleLoopsInAuto, useColoringInAuto, useCellColoringInAuto, useEdgeRestrictsInAuto, useCellPairsInAuto);
                 if (!undoTree.Do(action))
                 {
-                    redEdge = closestEdge;
-                    Thread thread = new Thread(new ThreadStart(ClearRed));
-                    thread.IsBackground = true;
-                    thread.Start();
+                    ScheduleClearRed(closestEdge);
                 }
                 else if (noToggle)
                 {
@@ -553,47 +562,11 @@ The formula for hue difference is slightly more complicated.
                 }
                 else
                 {
-                    bool satisified = true;
-                    for (int i = 0; i < mesh.Cells.Count; i++)
+                    if (PuzzleHelper.CheckIsSolved(mesh))
                     {
-                        if (mesh.Cells[i].TargetCount >= 0 && mesh.Cells[i].FilledCount != mesh.Cells[i].TargetCount)
-                            satisified = false;
-                    }
-                    if (satisified)
-                    {
-                        Mesh copy = new Mesh(mesh);
-                        try
-                        {
-                            copy.SolverMethod = SolverMethod.Recursive;
-                            copy.UseIntersectCellInteractsInSolver = false;
-                            copy.Clear();
-                            if (copy.TrySolve() == SolveState.Solved)
-                            {
-                                bool done = true;
-                                for (int i = 0; i < mesh.Edges.Count; i++)
-                                {
-                                    if (copy.SolutionFound.Edges[i].State == EdgeState.Filled)
-                                    {
-                                        if (mesh.Edges[i].State != EdgeState.Filled)
-                                            done = false;
-                                    }
-                                    else if (mesh.Edges[i].State == EdgeState.Filled)
-                                        done = false;
-                                }
-                                if (done)
-                                {
-                                    allDone = true;
-                                    if (Solved != null)
-                                        Solved(this, EventArgs.Empty);
-                                    Thread thread = new Thread(new ThreadStart(Done));
-                                    thread.IsBackground = true;
-                                    thread.Start();
-                                }
-                            }
-                        }
-                        catch
-                        {
-                        }
+                        allDone = true;
+                        Solved?.Invoke(this, EventArgs.Empty);
+                        ScheduleClearDone();
                     }
                 }
                 this.Refresh();
@@ -613,52 +586,49 @@ The formula for hue difference is slightly more complicated.
 
         public event MoveEventHandler? MovePerformed;
 
-        private void ClearRed()
-        {
-            try
-            {
-                int curRed = redEdge;
-                Thread.Sleep(1000);
-                if (curRed == redEdge)
-                    redEdge = -1;
-                this.BeginInvoke(new MethodInvoker(Refresh));
-            }
-            catch (Exception e)
-            {
-                if (!(e is ThreadAbortException))
-                {
-                    try
-                    {
-                        this.BeginInvoke(new ParameterizedThreadStart(LoopDeLoopForm.UnexpectedExceptionMessage), e);
-                    }
-                    catch
-                    {
-                    }
-                }
-            }
+        private System.Windows.Forms.Timer? redClearTimer;
+        private System.Windows.Forms.Timer? doneClearTimer;
 
-        }
-        private void Done()
+        private void ScheduleClearRed(int edgeIndex)
         {
-            try
+            redEdge = edgeIndex;
+            if (redClearTimer == null)
             {
-                Thread.Sleep(1000);
-                allDone = false;
-                this.BeginInvoke(new MethodInvoker(Refresh));
-            }
-            catch (Exception e)
-            {
-                if (!(e is ThreadAbortException))
+                redClearTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+                redClearTimer.Tick += (_, _) =>
                 {
-                    try
-                    {
-                        this.BeginInvoke(new ParameterizedThreadStart(LoopDeLoopForm.UnexpectedExceptionMessage), e);
-                    }
-                    catch
-                    {
-                    }
-                }
+                    redClearTimer.Stop();
+                    redEdge = -1;
+                    if (!IsDisposed) Refresh();
+                };
             }
+            redClearTimer.Stop();
+            redClearTimer.Start();
+        }
+
+        private void ScheduleClearDone()
+        {
+            if (doneClearTimer == null)
+            {
+                doneClearTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+                doneClearTimer.Tick += (_, _) =>
+                {
+                    doneClearTimer.Stop();
+                    allDone = false;
+                    if (!IsDisposed) Refresh();
+                };
+            }
+            doneClearTimer.Stop();
+            doneClearTimer.Start();
+        }
+
+        private void DisposeManagedDisplayResources()
+        {
+            DisposePenTable();
+            redClearTimer?.Dispose();
+            redClearTimer = null;
+            doneClearTimer?.Dispose();
+            doneClearTimer = null;
         }
         int redEdge = -1;
         public void RaiseMouseWheel(MouseEventArgs e)
@@ -727,22 +697,25 @@ The formula for hue difference is slightly more complicated.
 
         protected override void OnPaint(PaintEventArgs pe)
         {
-            Brush fontBrush = new SolidBrush(this.ForeColor);
+            using Brush fontBrush = new SolidBrush(this.ForeColor);
             Pen emptyLink = Pens.LightGray;
             Pen redLink = Pens.Red;
             Pen greenLink = Pens.Green;
-            Pen fullLink = Pens.Black;
-            if (showColors || showCellColors)
-                fullLink = new Pen(Color.Black, 3);
-            Brush dot = new SolidBrush(this.ForeColor);
-            Rectangle border = this.ClientRectangle;
-            border.Width = border.Width - 1;
-            border.Height = border.Height - 1;
-            ControlPaint.DrawVisualStyleBorder(pe.Graphics, border);
-            DrawMesh(pe.Graphics, fontBrush, emptyLink, redLink, greenLink, fullLink, dot);
-            if (allDone)
+            Pen? ownedFullLink = (showColors || showCellColors) ? new Pen(Color.Black, 3) : null;
+            using (ownedFullLink)
             {
-                pe.Graphics.DrawString("DONE!", new Font(Font.FontFamily, Font.Size * 3), fontBrush, this.Width / 2 - FontHeight * 3, this.Height / 2 - FontHeight * 3);
+                Pen fullLink = ownedFullLink ?? Pens.Black;
+                using Brush dot = new SolidBrush(this.ForeColor);
+                Rectangle border = this.ClientRectangle;
+                border.Width = border.Width - 1;
+                border.Height = border.Height - 1;
+                ControlPaint.DrawVisualStyleBorder(pe.Graphics, border);
+                DrawMesh(pe.Graphics, fontBrush, emptyLink, redLink, greenLink, fullLink, dot);
+                if (allDone)
+                {
+                    using Font doneFont = new Font(Font.FontFamily, Font.Size * 3);
+                    pe.Graphics.DrawString("DONE!", doneFont, fontBrush, this.Width / 2 - FontHeight * 3, this.Height / 2 - FontHeight * 3);
+                }
             }
             // Calling the base class OnPaint
             base.OnPaint(pe);
@@ -750,7 +723,7 @@ The formula for hue difference is slightly more complicated.
 
         private void DrawMesh(Graphics g, Brush fontBrush, Pen emptyLink, Pen redLink, Pen greenLink, Pen fullLink, Brush dot)
         {
-            Font cellColorFont = new Font(Font, FontStyle.Regular);
+            using Font cellColorFont = new Font(Font, FontStyle.Regular);
             Brush posCellColor = Brushes.Blue;
             Brush negCellColor = Brushes.Red;
             Brush outsideCellColor = Brushes.PowderBlue;
@@ -915,7 +888,7 @@ The formula for hue difference is slightly more complicated.
             cx *= linkLength;
             cy *= linkLength;
             cx += Margin.Left + additionalXMargin;
-            cy += Margin.Right + additionalYMargin;
+            cy += Margin.Top + additionalYMargin;
         }
 
         private static void DrawX(Graphics g, Pen fullLink, int centreX, int centreY)
@@ -928,23 +901,19 @@ The formula for hue difference is slightly more complicated.
         {
             if (graphics == null)
                 return;
-            Brush fontBrush = new SolidBrush(this.ForeColor);
+            using Brush fontBrush = new SolidBrush(this.ForeColor);
             Pen emptyLink = Pens.LightGray;
             Pen redLink = Pens.Red;
             Pen greenLink = Pens.Green;
             Pen fullLink = Pens.Black;
-            Brush dot = new SolidBrush(this.ForeColor);
+            using Brush dot = new SolidBrush(this.ForeColor);
             DrawMesh(graphics, fontBrush, emptyLink, redLink, greenLink, fullLink, dot);
-
         }
 
         internal void Flash(IAction iAction)
         {
             SetAction setAction = (SetAction)iAction;
-            redEdge = setAction.EdgeIndex;
-            Thread thread = new Thread(new ThreadStart(ClearRed));
-            thread.IsBackground = true;
-            thread.Start();
+            ScheduleClearRed(setAction.EdgeIndex);
             this.Refresh();
         }
 

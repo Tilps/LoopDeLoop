@@ -386,11 +386,7 @@ namespace LoopDeLoop
             {
                 int start = intersects[k];
                 int end = intersects[(k + 1) % intersects.Count];
-                try
-                {
-                    GetEdgeJoining(start, end);
-                }
-                catch
+                if (!TryGetEdgeJoining(start, end, out _))
                 {
                     AddEdge(start, end);
                 }
@@ -466,8 +462,14 @@ namespace LoopDeLoop
                 Intersection lastInter = inters;
                 double lastAngle = Math.Atan2(nextInter.Y - inters.Y, nextInter.X - inters.X);
                 corners.Add(i);
+                bool validCycle = true;
                 while (next != i)
                 {
+                    if (corners.Count > intersections.Count)
+                    {
+                        validCycle = false;
+                        break;
+                    }
                     corners.Add(next);
                     int realLast = last;
                     last = next;
@@ -500,11 +502,18 @@ namespace LoopDeLoop
                             }
                         }
                     }
+                    if (next == -1)
+                    {
+                        validCycle = false;
+                        break;
+                    }
                     if (nextAngle > Math.PI)
                         nextAngle -= Math.PI * 2;
                     lastAngle = nextAngle;
                     nextInter = intersections[next];
                 }
+                if (!validCycle || corners.Count < 3)
+                    continue;
                 int min = int.MaxValue;
                 foreach (int corner in corners)
                 {
@@ -527,9 +536,14 @@ namespace LoopDeLoop
                         float dx1 = midInter.X - startInter.X;
                         float dy2 = endInter.Y - midInter.Y;
                         float dx2 = endInter.X - midInter.X;
+                        double len1 = Math.Sqrt(dx1 * dx1 + dy1 * dy1);
+                        double len2 = Math.Sqrt(dx2 * dx2 + dy2 * dy2);
+                        if (len1 == 0.0 || len2 == 0.0)
+                            continue;
                         double cross = dy1 * dx2 - dx1 * dy2;
                         double dot = dx1 * dx2 + dy1 * dy2;
-                        double angle = Math.Acos(dot / Math.Sqrt(dx1 * dx1 + dy1 * dy1) / Math.Sqrt(dx2 * dx2 + dy2 * dy2));
+                        double cosAngle = Math.Clamp(dot / (len1 * len2), -1.0, 1.0);
+                        double angle = Math.Acos(cosAngle);
                         if (cross < 0)
                             angle = -angle;
 
@@ -994,7 +1008,7 @@ namespace LoopDeLoop
             for (int row = 0; row < height; row++)
             {
                 bool isOddRow = (row % 2 == 1);
-                int rowCount = isOddRow ? width : (width - 1);
+                int rowCount = (isOddRow || height == 1) ? width : Math.Max(1, width - 1);
                 float rowOffset = isOddRow ? halfUnitWidth : evenRowOffset;
 
                 for (int col = 0; col < rowCount; col++)

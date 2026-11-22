@@ -186,33 +186,43 @@ namespace LoopDeLoop.Tests
         [TestMethod]
         public void FixedEdges_CannotBeModified()
         {
+            var game = new LoopDeLoop.Web.Services.GameService();
             var mesh = new Mesh(3, 3, MeshType.Square);
-            var tree = new UndoTree();
-            var markedEdges = new HashSet<int>();
+            mesh.SetClue(0, 2);
+            game.LoadPuzzleText(PuzzleCodec.Encode(mesh, 3, 3));
 
-            // Fill edge 0
-            tree.Do(new PuzzleSetEdgeStateAction(mesh, 0, EdgeState.Filled));
-            Assert.AreEqual(EdgeState.Filled, mesh.Edges[0].State);
+            // Fill edge 0 and fix it
+            game.SetEdgeDirect(0, EdgeState.Filled);
+            Assert.AreEqual(EdgeState.Filled, game.CurrentMesh!.Edges[0].State);
+            game.Fix();
+            Assert.IsTrue(game.MarkedEdges.Contains(0));
+            Assert.IsFalse(game.MarkedEdges.Contains(1));
 
-            // Fix edge 0
-            markedEdges.Add(0);
+            // Attempts to modify fixed edge 0 must be ignored
+            game.ToggleEdge(0, isAlternative: false);
+            Assert.AreEqual(EdgeState.Filled, game.CurrentMesh.Edges[0].State);
+            game.SetEdgeDirect(0, EdgeState.Excluded);
+            Assert.AreEqual(EdgeState.Filled, game.CurrentMesh.Edges[0].State);
 
-            // Verify edge is locked
-            Assert.IsTrue(markedEdges.Contains(0));
+            // Edge 1 is not fixed and can be modified, then reverted to checkpoint
+            game.SetEdgeDirect(1, EdgeState.Filled);
+            Assert.AreEqual(EdgeState.Filled, game.CurrentMesh.Edges[1].State);
+            game.RevertToFix();
+            Assert.AreEqual(EdgeState.Empty, game.CurrentMesh.Edges[1].State);
+            Assert.AreEqual(EdgeState.Filled, game.CurrentMesh.Edges[0].State);
 
-            // Edge 1 is not fixed
-            Assert.IsFalse(markedEdges.Contains(1));
-
-            // Clear fix
-            markedEdges.Clear();
-            Assert.IsFalse(markedEdges.Contains(0));
+            // Unfix unlocks edge 0
+            game.Unfix();
+            Assert.IsFalse(game.MarkedEdges.Contains(0));
+            game.SetEdgeDirect(0, EdgeState.Empty);
+            Assert.AreEqual(EdgeState.Empty, game.CurrentMesh.Edges[0].State);
         }
 
         [TestMethod]
         public void PuzzleCompression_RoundTrip()
         {
             var mesh = PuzzleHelper.MakeMesh(3, 3, MeshType.Square, 0);
-            mesh.Generate();
+            mesh.Generate(new Random(42));
             string original = mesh.SaveToString();
 
             string compressed = PuzzleCompression.CompressToUrlSafe(original);
@@ -223,7 +233,7 @@ namespace LoopDeLoop.Tests
             Assert.AreEqual(original, decompressed);
 
             var reloaded = new Mesh(0, 0, MeshType.Square);
-            reloaded.LoadFromText(decompressed.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries));
+            Assert.IsTrue(reloaded.LoadFromText(decompressed.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)));
             Assert.AreEqual(mesh.Cells.Count, reloaded.Cells.Count);
             Assert.AreEqual(mesh.Edges.Count, reloaded.Edges.Count);
         }
@@ -232,11 +242,12 @@ namespace LoopDeLoop.Tests
         public void ReconstructionFromClues_Succeeds()
         {
             var types = new[] { MeshType.Square, MeshType.Hexagonal, MeshType.Octagon };
+            int seed = 100;
             foreach (var type in types)
             {
                 PuzzleHelper.GetDefaultSize(type, out int w, out int h);
                 var mesh1 = PuzzleHelper.MakeMesh(w, h, type, 0);
-                mesh1.Generate();
+                mesh1.Generate(new Random(seed++));
 
                 int[] clues = mesh1.Cells.Select(c => c.TargetCount).ToArray();
 
@@ -270,14 +281,14 @@ namespace LoopDeLoop.Tests
                 MeshType.Pentagon
             };
 
+            int seed = 200;
             foreach (var type in types)
             {
                 PuzzleHelper.GetDefaultSize(type, out int w, out int h);
                 var mesh = PuzzleHelper.MakeMesh(w, h, type, 0);
-                mesh.Generate();
+                mesh.Generate(new Random(seed++));
 
                 string encoded = PuzzleCodec.Encode(mesh, w, h);
-                Console.WriteLine($"{type} ({w}x{h}) [{encoded.Length} chars]: {encoded}");
                 Assert.IsFalse(string.IsNullOrWhiteSpace(encoded));
                 Assert.IsTrue(encoded.Length < 150, $"Encoded string for {type} should be ultra-compact (was {encoded.Length}: {encoded})");
 
@@ -379,7 +390,7 @@ namespace LoopDeLoop.Tests
         public void Solver_RepeatedSolves_ReusesConnectableTrackerWithoutError()
         {
             var mesh = PuzzleHelper.MakeMesh(4, 4, MeshType.Square, 1); // Difficulty 1 enables ConsiderMultipleLoops
-            mesh.Generate();
+            mesh.Generate(new Random(301));
 
             // Run TrySolve multiple times to exercise connectableTracker caching across solves
             var state1 = mesh.TrySolve();
@@ -397,25 +408,30 @@ namespace LoopDeLoop.Tests
             cts.Cancel(); // Pre-cancelled
 
             // Should complete quickly and exit cleanly without unhandled exception
-            await mesh.GenerateAsync(cancellationToken: cts.Token);
+            await mesh.GenerateAsync(cancellationToken: cts.Token, rng: new Random(302));
             Assert.IsTrue(cts.IsCancellationRequested);
+            Assert.IsTrue(mesh.Cells.All(c => c.TargetCount == -1), "Pre-cancelled generation must not populate clues");
         }
 
         [TestMethod]
         public async Task GenerateAsync_AbortedViaAbortPrune_AbortsCleanly()
         {
             var mesh = PuzzleHelper.MakeMesh(6, 6, MeshType.Square, 0);
-            var task = mesh.GenerateAsync();
-            mesh.AbortPrune = true;
-            await task;
-            Assert.IsTrue(mesh.AbortPrune);
+            int reportedSteps = 0;
+            var progress = new Progress<int>(p =>
+            {
+                reportedSteps = p;
+                if (p >= 1) mesh.AbortPrune = true;
+            });
+            await mesh.GenerateAsync(progress: progress, rng: new Random(303));
+            Assert.IsTrue(mesh.AbortPrune || reportedSteps == mesh.Cells.Count);
         }
 
         [TestMethod]
         public async Task GenerateAsync_ProducesValidPuzzle()
         {
             var mesh = PuzzleHelper.MakeMesh(3, 3, MeshType.Square, 0);
-            await mesh.GenerateAsync();
+            await mesh.GenerateAsync(rng: new Random(304));
 
             Assert.AreEqual(SolveState.Solved, mesh.TrySolve());
         }

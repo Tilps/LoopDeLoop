@@ -23,16 +23,16 @@ namespace LoopDeLoop
                 bool res = unsetAction.Perform();
                 if (!res || !unsetAction.Successful)
                 {
-                    if (disallowFalseMove)
-                    {
-                        allSuccessful = false;
-                        if (res)
-                            actionsPerformed.Add(unsetAction);
-                        return false;
-                    }
                     allSuccessful = false;
+                    if (res)
+                        actionsPerformed.Add(unsetAction);
+                    if (disallowFalseMove)
+                        return false;
                 }
-                actionsPerformed.Add(unsetAction);
+                else
+                {
+                    actionsPerformed.Add(unsetAction);
+                }
             }
 
             if (targetState != EdgeState.Empty)
@@ -111,8 +111,17 @@ namespace LoopDeLoop
 
         public bool Equals(IAction? other)
         {
-            return other is PuzzleEdgeAction o && o.mesh == mesh && o.edgeIndex == edgeIndex && o.isAlternativeCycle == isAlternativeCycle;
+            return other is PuzzleEdgeAction o
+                && o.mesh == mesh
+                && o.edgeIndex == edgeIndex
+                && o.isAlternativeCycle == isAlternativeCycle
+                && o.autoMove == autoMove
+                && o.disallowFalseMove == disallowFalseMove;
         }
+
+        public override bool Equals(object? obj) => obj is IAction action && Equals(action);
+
+        public override int GetHashCode() => HashCode.Combine(mesh, edgeIndex, isAlternativeCycle, autoMove, disallowFalseMove);
     }
 
     public class PuzzleCellColorAction : IAction
@@ -151,7 +160,7 @@ namespace LoopDeLoop
 
         public bool Perform()
         {
-            successful = true;
+            successful = false;
             Cell closest = mesh.Cells[cellIndex];
             int newColor = Toggle(closest.Color, reverse);
             actionsPerformed = new List<IAction>();
@@ -162,7 +171,7 @@ namespace LoopDeLoop
                 bool res = unsetAction.Perform();
                 if (!res || !unsetAction.Successful)
                 {
-                    if (res && !unsetAction.Successful)
+                    if (res)
                         actionsPerformed.Add(unsetAction);
                     Unperform();
                     return false;
@@ -176,7 +185,7 @@ namespace LoopDeLoop
                 bool res = setAction.Perform();
                 if (!res || !setAction.Successful)
                 {
-                    if (res && !setAction.Successful)
+                    if (res)
                         actionsPerformed.Add(setAction);
                     Unperform();
                     return false;
@@ -184,6 +193,7 @@ namespace LoopDeLoop
                 actionsPerformed.Add(setAction);
             }
 
+            successful = true;
             return true;
         }
 
@@ -197,9 +207,12 @@ namespace LoopDeLoop
 
         public bool Equals(IAction? other)
         {
-            if (other is not PuzzleCellColorAction o) return false;
-            return o.mesh == mesh && o.cellIndex == cellIndex && o.reverse == reverse;
+            return other is PuzzleCellColorAction o && o.mesh == mesh && o.cellIndex == cellIndex && o.reverse == reverse;
         }
+
+        public override bool Equals(object? obj) => obj is IAction action && Equals(action);
+
+        public override int GetHashCode() => HashCode.Combine(mesh, cellIndex, reverse);
     }
 
     public class PuzzleSetEdgeStateAction : IAction
@@ -253,8 +266,17 @@ namespace LoopDeLoop
 
         public bool Equals(IAction? other)
         {
-            return other is PuzzleSetEdgeStateAction o && o.mesh == mesh && o.edgeIndex == edgeIndex && o.targetState == targetState && o.disallowFalseMove == disallowFalseMove && o.autoMove == autoMove;
+            return other is PuzzleSetEdgeStateAction o
+                && o.mesh == mesh
+                && o.edgeIndex == edgeIndex
+                && o.targetState == targetState
+                && o.disallowFalseMove == disallowFalseMove
+                && o.autoMove == autoMove;
         }
+
+        public override bool Equals(object? obj) => obj is IAction action && Equals(action);
+
+        public override int GetHashCode() => HashCode.Combine(mesh, edgeIndex, targetState, disallowFalseMove, autoMove);
     }
 
     public class PuzzleBatchSolveAction : IAction
@@ -285,8 +307,8 @@ namespace LoopDeLoop
                 if (mesh.Edges[i].State != EdgeState.Empty)
                 {
                     var unset = new UnsetAction(mesh, i);
-                    unset.Perform();
-                    performed.Add(unset);
+                    if (unset.Perform())
+                        performed.Add(unset);
                 }
             }
             for (int i = 0; i < mesh.Edges.Count; i++)
@@ -294,8 +316,8 @@ namespace LoopDeLoop
                 if (newStates[i] != EdgeState.Empty)
                 {
                     var set = new SetAction(mesh, i, newStates[i]);
-                    set.Perform();
-                    performed.Add(set);
+                    if (set.Perform())
+                        performed.Add(set);
                 }
             }
             return true;
@@ -312,8 +334,21 @@ namespace LoopDeLoop
 
         public bool Equals(IAction? other)
         {
-            return other is PuzzleBatchSolveAction o && o.mesh == mesh;
+            return other is PuzzleBatchSolveAction o
+                && o.mesh == mesh
+                && newStates.AsSpan().SequenceEqual(o.newStates);
+        }
+
+        public override bool Equals(object? obj) => obj is IAction action && Equals(action);
+
+        public override int GetHashCode()
+        {
+            var hc = new HashCode();
+            hc.Add(mesh);
+            hc.Add(newStates.Length);
+            for (int i = 0; i < Math.Min(newStates.Length, 16); i++)
+                hc.Add(newStates[i]);
+            return hc.ToHashCode();
         }
     }
 }
-

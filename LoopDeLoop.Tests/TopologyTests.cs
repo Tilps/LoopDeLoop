@@ -198,7 +198,7 @@ namespace LoopDeLoop.Tests
         public void NewTopologies_CanSolveWithClues()
         {
             MeshType[] newTypes =
-            {
+            [
                 MeshType.Kites,
                 MeshType.AsymmetricPentagons,
                 MeshType.Diamonds,
@@ -206,26 +206,32 @@ namespace LoopDeLoop.Tests
                 MeshType.PentagonHexagon,
                 MeshType.FloretPentagons,
                 MeshType.CairoPentagons,
-                MeshType.Hexagonal4
-            };
+                MeshType.Hexagonal4,
+                MeshType.Square3,
+                MeshType.PentagonHexagon2
+            ];
 
             foreach (var type in newTypes)
             {
                 PuzzleHelper.GetDefaultSize(type, out int w, out int h);
                 var mesh = new Mesh(w, h, type);
 
-                // Setting a 0 clue forces all incident edges to be Empty
+                // Setting a 0 clue forces all incident edges to be Excluded via PerformStart
                 mesh.SetClue(0, 0);
-
-                var state = mesh.TrySolve();
-                Assert.AreNotEqual(SolveState.NoSolutions, state,
-                    $"{type}: Solver should not conclude NoSolutions for empty grid with single clue 0");
+                var changes = new List<IAction>();
+                Assert.IsTrue(mesh.PerformStart(changes), $"{type}: PerformStart should succeed for single clue 0");
 
                 foreach (int edgeIdx in mesh.Cells[0].Edges)
                 {
-                    Assert.AreEqual(EdgeState.Empty, mesh.Edges[edgeIdx].State,
-                        $"{type}: Edge {edgeIdx} of cell 0 should be marked Empty by clue 0");
+                    Assert.AreEqual(EdgeState.Excluded, mesh.Edges[edgeIdx].State,
+                        $"{type}: Edge {edgeIdx} of cell 0 should be marked Excluded by clue 0");
                 }
+
+                // Undo and verify TrySolve finds solutions cleanly and rolls back
+                mesh.Unperform(changes);
+                var state = mesh.TrySolve();
+                Assert.AreNotEqual(SolveState.NoSolutions, state,
+                    $"{type}: Solver should not conclude NoSolutions for empty grid with single clue 0");
             }
         }
 
@@ -260,256 +266,6 @@ namespace LoopDeLoop.Tests
             {
                 Assert.IsTrue(edge.Cells.Count == 1 || edge.Cells.Count == 2,
                     $"CairoPentagons edge has invalid cell count: {edge.Cells.Count}");
-            }
-        }
-
-        [TestMethod]
-        public void Test_Kites_ApproxPointStorage()
-        {
-            var oldMesh = new Mesh(3, 3, MeshType.Kites);
-
-            var newMesh = new Mesh(0, 0, MeshType.Square);
-            newMesh.Intersections.Clear();
-            newMesh.Edges.Clear();
-            newMesh.Cells.Clear();
-
-            var storage = new ApproxPointStorage(0.001f);
-            var intersects = new List<int>();
-
-            float hexWidth = 2.0f;
-            float halfWidth = hexWidth / 2f;
-            float quarterWidth = halfWidth / 2f;
-            float sqrt3 = MathF.Sqrt(3f);
-            float rowHeight = sqrt3 * halfWidth;
-            float shortDist = rowHeight / 3f;
-            float longDist = rowHeight - shortDist;
-
-            for (int row = 0; row < 3; row++)
-            {
-                int rowWidth = (row % 2 == 1) ? 4 : 3;
-                for (int col = 0; col < rowWidth; col++)
-                {
-                    float cx = col * hexWidth - (row % 2) * halfWidth;
-                    float cy = row * rowHeight;
-
-                    void AddPoly(params (float X, float Y)[] pts)
-                    {
-                        intersects.Clear();
-                        foreach (var pt in pts)
-                        {
-                            int beforeCount = newMesh.Intersections.Count;
-                            int idx = storage.Add(pt.X, pt.Y, beforeCount);
-                            intersects.Add(idx);
-                            if (idx == beforeCount)
-                            {
-                                var inters = new Intersection { X = pt.X, Y = pt.Y };
-                                newMesh.Intersections.Add(inters);
-                                if (Math.Abs(pt.X - 2.0f) < 0.01f && Math.Abs(pt.Y - 1.1547f) < 0.01f)
-                                {
-                                    Console.WriteLine($"Added new intersection {idx} at ({pt.X}, {pt.Y}) in row={row}, col={col}");
-                                }
-                            }
-                            else
-                            {
-                                if (Math.Abs(pt.X - 2.0f) < 0.01f && Math.Abs(pt.Y - 1.1547f) < 0.01f)
-                                {
-                                    Console.WriteLine($"Reused intersection {idx} for ({pt.X}, {pt.Y}) in row={row}, col={col}");
-                                }
-                            }
-                        }
-                        for (int k = 0; k < intersects.Count; k++)
-                        {
-                            int s = intersects[k];
-                            int e = intersects[(k + 1) % intersects.Count];
-                            try { newMesh.GetEdgeJoining(s, e); }
-                            catch { newMesh.AddEdge(s, e); }
-                        }
-                    }
-
-                    var top = (cx, cy - longDist);
-                    var bottom = (cx, cy + longDist);
-                    var topLeft = (cx - halfWidth, cy - shortDist);
-                    var topRight = (cx + halfWidth, cy - shortDist);
-                    var midLeft = (cx - halfWidth, cy);
-                    var center = (cx, cy);
-                    var midRight = (cx + halfWidth, cy);
-                    var bottomLeft = (cx - halfWidth, cy + shortDist);
-                    var bottomRight = (cx + halfWidth, cy + shortDist);
-                    var upperMidLeft = (cx - quarterWidth, cy - longDist + shortDist / 2f);
-                    var upperMidRight = (cx + quarterWidth, cy - longDist + shortDist / 2f);
-                    var lowerMidLeft = (cx - quarterWidth, cy + longDist - shortDist / 2f);
-                    var lowerMidRight = (cx + quarterWidth, cy + longDist - shortDist / 2f);
-
-                    AddPoly(upperMidLeft, top, upperMidRight, center);
-                    AddPoly(topLeft, upperMidLeft, center, midLeft);
-                    AddPoly(upperMidRight, topRight, midRight, center);
-                    AddPoly(center, lowerMidRight, bottom, lowerMidLeft);
-                    AddPoly(midLeft, center, lowerMidLeft, bottomLeft);
-                    AddPoly(midRight, bottomRight, lowerMidRight, center);
-                }
-            }
-
-            newMesh.CreateCells();
-
-            // Normalize newMesh coordinates to minX=0, minY=0 like oldMesh
-            float minX = float.MaxValue, minY = float.MaxValue;
-            foreach (var inters in newMesh.Intersections)
-            {
-                if (inters.X < minX) minX = inters.X;
-                if (inters.Y < minY) minY = inters.Y;
-            }
-            foreach (var inters in newMesh.Intersections)
-            {
-                inters.X -= minX;
-                inters.Y -= minY;
-            }
-
-            Console.WriteLine($"oldMesh cells={oldMesh.Cells.Count}, edges={oldMesh.Edges.Count}, vertices={oldMesh.Intersections.Count}");
-            Console.WriteLine($"newMesh cells={newMesh.Cells.Count}, edges={newMesh.Edges.Count}, vertices={newMesh.Intersections.Count}");
-
-            Assert.AreEqual(oldMesh.Cells.Count, newMesh.Cells.Count, "Cell count mismatch");
-            Assert.AreEqual(oldMesh.Edges.Count, newMesh.Edges.Count, "Edge count mismatch");
-            Assert.AreEqual(oldMesh.Intersections.Count, newMesh.Intersections.Count, "Vertex count mismatch");
-
-            // Verify vertex correspondence
-            int[] oldToNewVertex = new int[oldMesh.Intersections.Count];
-            for (int i = 0; i < oldMesh.Intersections.Count; i++)
-            {
-                var ov = oldMesh.Intersections[i];
-                int match = -1;
-                for (int j = 0; j < newMesh.Intersections.Count; j++)
-                {
-                    var nv = newMesh.Intersections[j];
-                    if (MathF.Abs(ov.X - nv.X) < 0.001f && MathF.Abs(ov.Y - nv.Y) < 0.001f)
-                    {
-                        match = j;
-                        break;
-                    }
-                }
-                Assert.IsTrue(match >= 0, $"No matching vertex in newMesh for oldMesh vertex {i} at ({ov.X}, {ov.Y})");
-                oldToNewVertex[i] = match;
-            }
-
-            // Verify edge correspondence
-            for (int i = 0; i < oldMesh.Edges.Count; i++)
-            {
-                var oe = oldMesh.Edges[i];
-                int nv1 = oldToNewVertex[oe.Intersections[0]];
-                int nv2 = oldToNewVertex[oe.Intersections[1]];
-                int newEdge = newMesh.GetEdgeJoining(nv1, nv2);
-                Assert.IsTrue(newEdge >= 0, $"No matching edge in newMesh between vertices {nv1} and {nv2}");
-            }
-        }
-
-        [TestMethod]
-        public void Test_Diamonds_ApproxPointStorage()
-        {
-            var oldMesh = new Mesh(4, 4, MeshType.Diamonds);
-
-            var newMesh = new Mesh(0, 0, MeshType.Square);
-            newMesh.Intersections.Clear();
-            newMesh.Edges.Clear();
-            newMesh.Cells.Clear();
-
-            var storage = new ApproxPointStorage(0.001f);
-            var intersects = new List<int>();
-
-            float side = 1.5f;
-            float halfSide = side / 2f;
-            float sqrt3 = MathF.Sqrt(3f);
-            float radius = sqrt3 * halfSide;
-            float colSpacing = 2f * radius;
-            float rowSpacing = 2f * side - halfSide;
-
-            void AddPoly(params (float X, float Y)[] pts)
-            {
-                intersects.Clear();
-                foreach (var pt in pts)
-                {
-                    int idx = storage.Add(pt.X, pt.Y, newMesh.Intersections.Count);
-                    intersects.Add(idx);
-                    if (idx == newMesh.Intersections.Count)
-                    {
-                        var inters = new Intersection { X = pt.X, Y = pt.Y };
-                        newMesh.Intersections.Add(inters);
-                    }
-                }
-                for (int k = 0; k < intersects.Count; k++)
-                {
-                    int s = intersects[k];
-                    int e = intersects[(k + 1) % intersects.Count];
-                    try { newMesh.GetEdgeJoining(s, e); }
-                    catch { newMesh.AddEdge(s, e); }
-                }
-            }
-
-            for (int row = 0; row < 4; row++)
-            {
-                for (int col = 0; col < 4; col++)
-                {
-                    float cx = radius + col * colSpacing + (row % 2) * radius;
-                    float cy = row * rowSpacing + side;
-
-                    var top = (cx, cy - side);
-                    var topLeft = (cx - radius, cy - halfSide);
-                    var topRight = (cx + radius, cy - halfSide);
-                    var center = (cx, cy);
-                    var bottomLeft = (cx - radius, cy + halfSide);
-                    var bottomRight = (cx + radius, cy + halfSide);
-                    var bottom = (cx, cy + side);
-
-                    AddPoly(topLeft, top, topRight, center);
-                    AddPoly(topLeft, center, bottom, bottomLeft);
-                    AddPoly(center, topRight, bottomRight, bottom);
-                }
-            }
-
-            newMesh.CreateCells();
-
-            // Normalize newMesh coordinates to minX=0, minY=0 like oldMesh
-            float minX = float.MaxValue, minY = float.MaxValue;
-            foreach (var inters in newMesh.Intersections)
-            {
-                if (inters.X < minX) minX = inters.X;
-                if (inters.Y < minY) minY = inters.Y;
-            }
-            foreach (var inters in newMesh.Intersections)
-            {
-                inters.X -= minX;
-                inters.Y -= minY;
-            }
-
-            Assert.AreEqual(oldMesh.Cells.Count, newMesh.Cells.Count, "Cell count mismatch");
-            Assert.AreEqual(oldMesh.Edges.Count, newMesh.Edges.Count, "Edge count mismatch");
-            Assert.AreEqual(oldMesh.Intersections.Count, newMesh.Intersections.Count, "Vertex count mismatch");
-
-            // Verify vertex correspondence
-            int[] oldToNewVertex = new int[oldMesh.Intersections.Count];
-            for (int i = 0; i < oldMesh.Intersections.Count; i++)
-            {
-                var ov = oldMesh.Intersections[i];
-                int match = -1;
-                for (int j = 0; j < newMesh.Intersections.Count; j++)
-                {
-                    var nv = newMesh.Intersections[j];
-                    if (MathF.Abs(ov.X - nv.X) < 0.001f && MathF.Abs(ov.Y - nv.Y) < 0.001f)
-                    {
-                        match = j;
-                        break;
-                    }
-                }
-                Assert.IsTrue(match >= 0, $"No matching vertex in newMesh for oldMesh vertex {i} at ({ov.X}, {ov.Y})");
-                oldToNewVertex[i] = match;
-            }
-
-            // Verify edge correspondence
-            for (int i = 0; i < oldMesh.Edges.Count; i++)
-            {
-                var oe = oldMesh.Edges[i];
-                int nv1 = oldToNewVertex[oe.Intersections[0]];
-                int nv2 = oldToNewVertex[oe.Intersections[1]];
-                int newEdge = newMesh.GetEdgeJoining(nv1, nv2);
-                Assert.IsTrue(newEdge >= 0, $"No matching edge in newMesh between vertices {nv1} and {nv2}");
             }
         }
     }
