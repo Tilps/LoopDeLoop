@@ -91,6 +91,7 @@
                     const base = window.location.pathname + window.location.search;
                     history.replaceState(null, '', hash ? base + '#' + hash : base);
                 } else {
+                    window._loopSuppressNextHashChange = true;
                     window.location.hash = hash;
                 }
             },
@@ -185,12 +186,25 @@
                 window.removeEventListener('keydown', window._loopKeydownHandler);
                 window._loopKeydownHandler = null;
             }
+            if (window._loopHashChangeHandler) {
+                window.removeEventListener('hashchange', window._loopHashChangeHandler);
+                window._loopHashChangeHandler = null;
+            }
             window._dotNetHomeRef = null;
         };
 
         window.registerLoopShortcuts = (dotNetRef) => {
             window.unregisterLoopShortcuts();
             window._dotNetHomeRef = dotNetRef;
+            window._loopHashChangeHandler = () => {
+                if (window._loopSuppressNextHashChange) {
+                    window._loopSuppressNextHashChange = false;
+                    return;
+                }
+                if (!window._dotNetHomeRef) return;
+                window._dotNetHomeRef.invokeMethodAsync('OnUrlHashChanged', window.location.hash || '');
+            };
+            window.addEventListener('hashchange', window._loopHashChangeHandler);
             window._loopKeydownHandler = (e) => {
                 if (!window._dotNetHomeRef) return;
                 if (e.key === 'Escape') {

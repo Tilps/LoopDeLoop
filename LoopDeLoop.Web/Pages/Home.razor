@@ -1111,6 +1111,67 @@
         }
     }
 
+    private async Task<bool> TryLoadPuzzleFromHashAsync(string? rawHash)
+    {
+        if (!GameService.TryExtractPuzzleHashPayload(rawHash, out string normalizedHash, out string code))
+            return false;
+
+        // A) Try compact format directly without double-decoding
+        if (code.Contains('/') && await TryLoadSavedOrTextAsync(code, normalizedHash))
+        {
+            return true;
+        }
+
+        // B) Fallback for legacy compressed URLs
+        if (PuzzleCompression.TryDecompressFromUrlSafe(code, out string puzzleText) && !string.IsNullOrEmpty(puzzleText))
+        {
+            return await TryLoadSavedOrTextAsync(puzzleText, normalizedHash);
+        }
+
+        return false;
+    }
+
+    [JSInvokable]
+    public async Task OnUrlHashChanged(string hash)
+    {
+        if (disposed || string.IsNullOrWhiteSpace(hash))
+            return;
+
+        if (Game.IsGenerating)
+            Game.CancelGeneration();
+        if (Game.IsBusy)
+            return;
+
+        try
+        {
+            bool loaded = await TryLoadPuzzleFromHashAsync(hash);
+            if (loaded)
+            {
+                showVictoryModal = false;
+                showSolveModal = false;
+                showResetModal = false;
+                showFilesModal = false;
+                showSettingsModal = false;
+                showHelpModal = false;
+                isMenuOpen = false;
+                lastSolvedState = Game.IsSolved;
+                ResetZoom();
+                ShowToast("Loaded shared puzzle!");
+                StateHasChanged();
+            }
+            else if (hash.TrimStart('#').StartsWith("p=", StringComparison.OrdinalIgnoreCase) ||
+                     hash.TrimStart('#').StartsWith("puzzle=", StringComparison.OrdinalIgnoreCase))
+            {
+                ShowToast("Could not load puzzle from link.");
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load puzzle from hash change: {ex.Message}");
+        }
+    }
+
     private async Task<bool> TryLoadSavedOrTextAsync(string puzzleText, string? alternateKey = null)
     {
         try
@@ -1238,21 +1299,7 @@
                 string hash = await JS.InvokeAsync<string>("loopHelpers.getUrlHash");
                 if (!string.IsNullOrEmpty(hash))
                 {
-                    if (hash.StartsWith('#')) hash = hash[1..];
-                    string code = hash;
-                    if (code.StartsWith("p=", StringComparison.Ordinal)) code = code[2..];
-                    else if (code.StartsWith("puzzle=", StringComparison.Ordinal)) code = code[7..];
-
-                    // A) Try compact format directly without double-decoding
-                    if (code.Contains('/') && await TryLoadSavedOrTextAsync(code, hash))
-                    {
-                        loaded = true;
-                    }
-                    // B) Fallback for legacy compressed URLs
-                    else if (PuzzleCompression.TryDecompressFromUrlSafe(code, out string puzzleText) && !string.IsNullOrEmpty(puzzleText))
-                    {
-                        loaded = await TryLoadSavedOrTextAsync(puzzleText);
-                    }
+                    loaded = await TryLoadPuzzleFromHashAsync(hash);
                 }
             }
             catch (Exception ex)

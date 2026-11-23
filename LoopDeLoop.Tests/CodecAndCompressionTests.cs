@@ -1,6 +1,7 @@
 using System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using LoopDeLoop;
+using LoopDeLoop.Web.Services;
 
 namespace LoopDeLoop.Tests
 {
@@ -88,6 +89,27 @@ namespace LoopDeLoop.Tests
 
             string restored = PuzzleCompression.Decompress(compressed);
             Assert.AreEqual(payload, restored);
+        }
+
+        [TestMethod]
+        public void GameService_TryExtractPuzzleHashPayload_HandlesRawAndPercentEncodedHashes()
+        {
+            Assert.IsFalse(GameService.TryExtractPuzzleHashPayload(null, out _, out _));
+            Assert.IsFalse(GameService.TryExtractPuzzleHashPayload("", out _, out _));
+            Assert.IsFalse(GameService.TryExtractPuzzleHashPayload("#", out _, out _));
+            Assert.IsFalse(GameService.TryExtractPuzzleHashPayload("#p=", out _, out _));
+
+            Assert.IsTrue(GameService.TryExtractPuzzleHashPayload("#p=sq/3x3/a1b2", out string norm1, out string payload1));
+            Assert.AreEqual("p=sq/3x3/a1b2", norm1);
+            Assert.AreEqual("sq/3x3/a1b2", payload1);
+
+            Assert.IsTrue(GameService.TryExtractPuzzleHashPayload("#PUZZLE=sq%2F3x3%2Fa1b2", out _, out string payload2));
+            Assert.AreEqual("sq/3x3/a1b2", payload2);
+
+            using var game = new GameService();
+            Assert.IsTrue(game.LoadPuzzleText(payload2));
+            Assert.IsNotNull(game.CurrentMesh);
+            Assert.AreEqual(9, game.CurrentMesh.Cells.Count);
         }
     }
 }
