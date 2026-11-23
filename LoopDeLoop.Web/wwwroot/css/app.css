@@ -1450,6 +1450,100 @@ body, html {
     color: var(--success);
 }
 
+.modal-backdrop-elevated {
+    z-index: 120;
+}
+
+.rating-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.rating-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.86rem;
+    color: var(--text-primary);
+}
+
+.rating-label {
+    font-weight: 600;
+    min-width: 5.2rem;
+}
+
+.star-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+}
+
+.star-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.35rem;
+    line-height: 1;
+    padding: 0.1rem 0.2rem;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: transform 0.1s ease, color 0.1s ease;
+}
+
+.star-btn:hover {
+    transform: scale(1.12);
+    color: #f59e0b;
+}
+
+.star-btn.active {
+    color: #f59e0b;
+}
+
+.star-clear-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    line-height: 1;
+    padding: 0.2rem 0.35rem;
+    margin-left: 0.25rem;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.star-clear-btn:hover {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+.debug-note-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.debug-note-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.debug-note-counter {
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+}
+
+.debug-note-textarea {
+    font-family: inherit;
+    font-size: 0.84rem;
+    resize: vertical;
+}
+
 .debug-log-status.error {
     color: var(--danger);
 }

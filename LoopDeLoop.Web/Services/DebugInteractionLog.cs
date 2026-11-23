@@ -6,7 +6,10 @@ namespace LoopDeLoop.Web.Services
 {
     public sealed class SolveInteractionLog
     {
+        public const int MaxNoteLength = 500;
+
         public int Version { get; set; } = 1;
+        public string InstallationId { get; set; } = string.Empty;
         public string PuzzleCode { get; set; } = string.Empty;
         public string MeshType { get; set; } = "Square";
         public int Width { get; set; }
@@ -19,8 +22,42 @@ namespace LoopDeLoop.Web.Services
         public long TotalElapsedMs { get; set; }
         public bool IsSolved { get; set; }
         public bool WasAutoSolved { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? DifficultyRating { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? QualityRating { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Note { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public DebugClientInfo? Client { get; set; }
+
         public DebugSettingsSnapshot Settings { get; set; } = new();
         public List<SolveInteractionEvent> Events { get; set; } = [];
+    }
+
+    public sealed class DebugClientInfo
+    {
+        public int ScreenWidth { get; set; }
+        public int ScreenHeight { get; set; }
+        public int ViewportWidth { get; set; }
+        public int ViewportHeight { get; set; }
+        public double DevicePixelRatio { get; set; }
+        public bool SawTouch { get; set; }
+        public bool SawMouse { get; set; }
+        public bool SawPen { get; set; }
+        public bool SawKeyboard { get; set; }
+    }
+
+    public sealed class DebugSubmitResult
+    {
+        public bool Ok { get; set; }
+        public int Status { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public string? Id { get; set; }
     }
 
     public sealed class DebugSettingsSnapshot

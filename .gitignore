@@ -233,3 +233,7 @@ $RECYCLE.BIN/
 
 # Local deployment scripts
 localscripts/
+
+# Debug telemetry secrets & downloaded logs (never commit)
+LoopDeLoop.Web/wwwroot/debug-config.json
+debug-logs/

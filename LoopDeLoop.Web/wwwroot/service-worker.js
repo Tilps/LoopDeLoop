@@ -1,5 +1,5 @@
 // LoopDeLoop Service Worker
-const CACHE_NAME = 'loopdeloop-v16';
+const CACHE_NAME = 'loopdeloop-v17';
 
 // Install event: remain waiting until user accepts update via SKIP_WAITING
 self.addEventListener('install', event => {
@@ -25,6 +25,11 @@ self.addEventListener('fetch', event => {
 
     // Only cache requests from our origin
     if (url.origin !== self.location.origin) return;
+
+    // Never cache debug nonce config or telemetry collector endpoints
+    if (url.pathname.endsWith('/debug-config.json') || url.pathname.includes('/telemetry/')) {
+        return;
+    }
 
     const isNetworkFirst =
         event.request.mode === 'navigate' ||

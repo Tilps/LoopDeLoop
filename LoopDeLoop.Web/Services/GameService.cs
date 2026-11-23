@@ -63,6 +63,61 @@ namespace LoopDeLoop.Web.Services
         private SolveInteractionLog? currentDebugLog;
         private long lastDebugEventElapsedMs;
         public int DebugEventCount => currentDebugLog?.Events.Count ?? 0;
+        public int DebugSessionId { get; private set; }
+        public string DebugInstallationId { get; private set; } = string.Empty;
+        public int? DebugDifficultyRating { get; private set; }
+        public int? DebugQualityRating { get; private set; }
+        public string DebugNote { get; private set; } = string.Empty;
+        public DebugClientInfo? DebugClientInfo { get; private set; }
+
+        public void SetDebugInstallationId(string? installationId)
+        {
+            if (string.IsNullOrWhiteSpace(installationId))
+                return;
+            string trimmed = installationId.Trim();
+            if (Guid.TryParse(trimmed, out Guid parsed))
+                DebugInstallationId = parsed.ToString("D");
+        }
+
+        public void SetDebugDifficultyRating(int? rating)
+        {
+            DebugDifficultyRating = rating is >= 1 and <= 5 ? rating : null;
+        }
+
+        public void ToggleDebugDifficultyRating(int star)
+        {
+            if (star is < 1 or > 5) return;
+            DebugDifficultyRating = DebugDifficultyRating == star ? null : star;
+        }
+
+        public void SetDebugQualityRating(int? rating)
+        {
+            DebugQualityRating = rating is >= 1 and <= 5 ? rating : null;
+        }
+
+        public void ToggleDebugQualityRating(int star)
+        {
+            if (star is < 1 or > 5) return;
+            DebugQualityRating = DebugQualityRating == star ? null : star;
+        }
+
+        public void SetDebugNote(string? note)
+        {
+            if (string.IsNullOrEmpty(note))
+            {
+                DebugNote = string.Empty;
+                return;
+            }
+            string cleaned = note.Replace("\0", string.Empty);
+            DebugNote = cleaned.Length > SolveInteractionLog.MaxNoteLength
+                ? cleaned[..SolveInteractionLog.MaxNoteLength]
+                : cleaned;
+        }
+
+        public void UpdateDebugClientInfo(DebugClientInfo? info)
+        {
+            DebugClientInfo = info;
+        }
 
         public static bool IsDebugQueryEnabled(string? queryString, string? hashFragment = null)
         {
@@ -157,6 +212,10 @@ namespace LoopDeLoop.Web.Services
 
         private void BeginDebugSession(string source)
         {
+            DebugDifficultyRating = null;
+            DebugQualityRating = null;
+            DebugNote = string.Empty;
+
             if (!DebugRecordingEnabled || CurrentMesh == null)
             {
                 currentDebugLog = null;
@@ -164,10 +223,12 @@ namespace LoopDeLoop.Web.Services
                 return;
             }
 
+            DebugSessionId++;
             lastDebugEventElapsedMs = 0;
             currentDebugLog = new SolveInteractionLog
             {
                 Version = 1,
+                InstallationId = DebugInstallationId,
                 PuzzleCode = GetShareCode(),
                 MeshType = ActiveType.ToString(),
                 Width = ActiveWidth,
@@ -230,9 +291,15 @@ namespace LoopDeLoop.Web.Services
             if (currentDebugLog == null)
                 return null;
 
+            currentDebugLog.InstallationId = DebugInstallationId;
             currentDebugLog.TotalElapsedMs = Math.Max(0L, (long)Math.Round(ElapsedTime.TotalMilliseconds));
             currentDebugLog.IsSolved = IsSolved;
             currentDebugLog.WasAutoSolved = WasAutoSolved;
+            currentDebugLog.DifficultyRating = DebugDifficultyRating;
+            currentDebugLog.QualityRating = DebugQualityRating;
+            string trimmedNote = DebugNote.Trim();
+            currentDebugLog.Note = string.IsNullOrEmpty(trimmedNote) ? null : trimmedNote;
+            currentDebugLog.Client = DebugClientInfo;
             currentDebugLog.Settings = CaptureDebugSettings();
             if (IsSolved && currentDebugLog.CompletedAtUtc == null)
                 currentDebugLog.CompletedAtUtc = DateTimeOffset.UtcNow;

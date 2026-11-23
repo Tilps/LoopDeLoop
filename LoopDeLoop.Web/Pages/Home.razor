@@ -465,7 +465,7 @@
                 <div class="board-left-hud">
                     @if (Game.DebugRecordingEnabled)
                     {
-                        <button class="debug-pill" @onclick="OpenDebugModal" title="Inspect, copy, or paste recorded solve interaction log">
+                        <button class="debug-pill" @onclick="OpenDebugModalAsync" title="Inspect, copy, submit, or paste recorded solve interaction log">
                             🐞 Debug (@Game.DebugEventCount)
                         </button>
                     }
@@ -540,24 +540,94 @@
                 {
                     <div class="debug-log-panel">
                         <div class="debug-log-header">
-                            <span>🐞 Interaction Log (@Game.DebugEventCount events)</span>
-                            <div class="debug-log-btn-row">
-                                <button class="btn btn-secondary btn-compact" @onclick="CopyDebugLogAsync">📋 Copy Log</button>
-                                <button class="btn btn-secondary btn-compact" @onclick="RefreshDebugLogText">↻ Refresh</button>
+                            <span>🐞 Debug Feedback (@Game.DebugEventCount events)</span>
+                            <button class="btn btn-secondary btn-compact" @onclick="OpenDebugModalAsync" title="Inspect the exact JSON payload before sending or copying">
+                                👁️ View JSON
+                            </button>
+                        </div>
+
+                        <div class="rating-rows">
+                            <div class="rating-row">
+                                <span class="rating-label">Difficulty:</span>
+                                <div class="star-group" role="group" aria-label="Difficulty rating">
+                                    @for (int s = 1; s <= 5; s++)
+                                    {
+                                        int starVal = s;
+                                        bool active = Game.DebugDifficultyRating.HasValue && starVal <= Game.DebugDifficultyRating.Value;
+                                        <button type="button"
+                                                class="star-btn @(active ? "active" : "")"
+                                                @onclick="() => OnDifficultyStarClicked(starVal)"
+                                                title="@(Game.DebugDifficultyRating == starVal ? $"Clear {starVal}-star difficulty rating" : $"Rate difficulty {starVal} of 5")"
+                                                aria-label="@($"Rate difficulty {starVal} of 5")"
+                                                aria-pressed="@(Game.DebugDifficultyRating == starVal)">
+                                            @(active ? "★" : "☆")
+                                        </button>
+                                    }
+                                    @if (Game.DebugDifficultyRating.HasValue)
+                                    {
+                                        <button type="button" class="star-clear-btn" @onclick="ClearDifficultyRating" title="Clear difficulty rating" aria-label="Clear difficulty rating">✕</button>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="rating-row">
+                                <span class="rating-label">Quality:</span>
+                                <div class="star-group" role="group" aria-label="Puzzle quality rating">
+                                    @for (int s = 1; s <= 5; s++)
+                                    {
+                                        int starVal = s;
+                                        bool active = Game.DebugQualityRating.HasValue && starVal <= Game.DebugQualityRating.Value;
+                                        <button type="button"
+                                                class="star-btn @(active ? "active" : "")"
+                                                @onclick="() => OnQualityStarClicked(starVal)"
+                                                title="@(Game.DebugQualityRating == starVal ? $"Clear {starVal}-star quality rating" : $"Rate quality {starVal} of 5")"
+                                                aria-label="@($"Rate quality {starVal} of 5")"
+                                                aria-pressed="@(Game.DebugQualityRating == starVal)">
+                                            @(active ? "★" : "☆")
+                                        </button>
+                                    }
+                                    @if (Game.DebugQualityRating.HasValue)
+                                    {
+                                        <button type="button" class="star-clear-btn" @onclick="ClearQualityRating" title="Clear quality rating" aria-label="Clear quality rating">✕</button>
+                                    }
+                                </div>
                             </div>
                         </div>
-                        <textarea class="files-textarea debug-log-textarea"
-                                  rows="5"
-                                  @bind="debugLogText"
-                                  aria-label="Debug interaction log JSON"
-                                  placeholder="Recorded interaction JSON (copy here or paste a saved log to load its puzzle)..."></textarea>
+
+                        <div class="debug-note-group">
+                            <div class="debug-note-header">
+                                <label for="debug-note-input">Optional note</label>
+                                <span class="debug-note-counter">@Game.DebugNote.Length / @SolveInteractionLog.MaxNoteLength</span>
+                            </div>
+                            <textarea id="debug-note-input"
+                                      class="files-textarea debug-note-textarea"
+                                      rows="2"
+                                      maxlength="@SolveInteractionLog.MaxNoteLength"
+                                      value="@Game.DebugNote"
+                                      @oninput="OnDebugNoteInput"
+                                      placeholder="Any thoughts on this puzzle (optional, max 500 chars)..."></textarea>
+                        </div>
+
                         <div class="debug-log-footer">
-                            <button class="btn btn-secondary btn-compact" @onclick="LoadPastedDebugLog" disabled="@string.IsNullOrWhiteSpace(debugLogText)">
-                                📥 Load Pasted Log
+                            <button class="btn @(debugSubmitted ? "btn-success" : "btn-primary") btn-compact"
+                                    @onclick="SubmitDebugLogAsync"
+                                    disabled="@isSubmittingDebugLog">
+                                @if (isSubmittingDebugLog)
+                                {
+                                    <span>Uploading...</span>
+                                }
+                                else if (debugSubmitted)
+                                {
+                                    <span>✓ Submitted</span>
+                                }
+                                else
+                                {
+                                    <span>📤 Submit Log</span>
+                                }
                             </button>
-                            @if (!string.IsNullOrEmpty(debugStatusMessage))
+                            @if (!string.IsNullOrEmpty(debugSubmitMessage))
                             {
-                                <span class="debug-log-status @(debugStatusIsError ? "error" : "success")">@debugStatusMessage</span>
+                                <span class="debug-log-status @(debugSubmitIsError ? "error" : "success")">@debugSubmitMessage</span>
                             }
                         </div>
                     </div>
@@ -572,23 +642,26 @@
     </div>
 }
 
-<!-- Debug Interaction Log Modal (accessible mid-solve or post-solve when ?debug is active) -->
+<!-- Debug Interaction Log Modal (separate preview/copy/paste/upload modal when ?debug is active) -->
 @if (Game.DebugRecordingEnabled && showDebugModal)
 {
-    <div class="modal-backdrop" @onclick="() => showDebugModal = false">
+    <div class="modal-backdrop modal-backdrop-elevated" @onclick="() => showDebugModal = false">
         <div class="modal-card settings-modal-card" role="dialog" aria-modal="true" aria-labelledby="debug-modal-title" @onclick:stopPropagation="true">
-            <h2 id="debug-modal-title" class="modal-title">🐞 Debug Interaction Log</h2>
+            <h2 id="debug-modal-title" class="modal-title">🐞 Debug JSON Preview</h2>
             <div class="modal-body settings-modal-body">
                 <p class="settings-hint">
-                    Recording enabled via <code>?debug</code> (@Game.DebugEventCount events, @GameTimer.FormatElapsed(Game.ElapsedTime)). Copy the JSON below or paste a saved log to load its puzzle.
+                    Exact payload recorded via <code>?debug</code> (@Game.DebugEventCount events, @GameTimer.FormatElapsed(Game.ElapsedTime)). Review, copy, submit, or paste a saved log to load its puzzle.
                 </p>
                 <div class="debug-log-btn-row">
-                    <button class="btn btn-primary" @onclick="CopyDebugLogAsync">📋 Copy Log</button>
-                    <button class="btn btn-secondary" @onclick="RefreshDebugLogText">↻ Refresh</button>
-                    <button class="btn btn-secondary" @onclick="LoadPastedDebugLog" disabled="@string.IsNullOrWhiteSpace(debugLogText)">📥 Load Pasted Log</button>
+                    <button class="btn btn-primary btn-compact" @onclick="SubmitDebugLogAsync" disabled="@isSubmittingDebugLog">
+                        @(isSubmittingDebugLog ? "Uploading..." : "📤 Submit Log")
+                    </button>
+                    <button class="btn btn-secondary btn-compact" @onclick="CopyDebugLogAsync">📋 Copy JSON</button>
+                    <button class="btn btn-secondary btn-compact" @onclick="RefreshDebugLogTextAsync">↻ Refresh</button>
+                    <button class="btn btn-secondary btn-compact" @onclick="LoadPastedDebugLog" disabled="@string.IsNullOrWhiteSpace(debugLogText)">📥 Load Pasted Log</button>
                 </div>
                 <textarea class="files-textarea debug-log-textarea"
-                          rows="9"
+                          rows="11"
                           @bind="debugLogText"
                           aria-label="Debug interaction log JSON"
                           placeholder="Recorded interaction JSON..."></textarea>
@@ -985,6 +1058,11 @@
     private string debugLogText = string.Empty;
     private string? debugStatusMessage;
     private bool debugStatusIsError = false;
+    private string? debugSubmitMessage;
+    private bool debugSubmitIsError = false;
+    private bool isSubmittingDebugLog = false;
+    private bool debugSubmitted = false;
+    private int lastResetDebugSessionId = -1;
 
     private double wheelDeltaAccumulator = 0;
     private const double WheelUndoRedoStepThreshold = 100.0;
@@ -1222,7 +1300,10 @@
         {
             string search = await JS.InvokeAsync<string>("loopHelpers.getUrlSearch");
             if (GameService.IsDebugQueryEnabled(search, hash))
+            {
+                await EnsureDebugInstallIdAsync();
                 Game.SetDebugRecordingEnabled(true);
+            }
 
             bool loaded = await TryLoadPuzzleFromHashAsync(hash);
             if (loaded)
@@ -1342,7 +1423,12 @@
             {
                 string search = await JS.InvokeAsync<string>("loopHelpers.getUrlSearch");
                 string initialHash = await JS.InvokeAsync<string>("loopHelpers.getUrlHash");
-                Game.SetDebugRecordingEnabled(GameService.IsDebugQueryEnabled(search, initialHash));
+                bool debugEnabled = GameService.IsDebugQueryEnabled(search, initialHash);
+                if (debugEnabled)
+                {
+                    await EnsureDebugInstallIdAsync();
+                }
+                Game.SetDebugRecordingEnabled(debugEnabled);
             }
             catch (JSException) { }
 
@@ -1439,6 +1525,15 @@
             boardInitializedForMesh = Game.CurrentMesh;
             await SafeInvokeVoidAsync("initLoopBoard", "game-board-svg", selfRef);
         }
+
+        if (Game.DebugRecordingEnabled && Game.DebugSessionId != lastResetDebugSessionId)
+        {
+            lastResetDebugSessionId = Game.DebugSessionId;
+            debugSubmitted = false;
+            debugSubmitMessage = null;
+            debugSubmitIsError = false;
+            await SafeInvokeVoidAsync("loopHelpers.resetSeenInputs");
+        }
     }
 
     private bool lastSolvedState = false;
@@ -1454,15 +1549,16 @@
 
         if (Game.IsSolved && !lastSolvedState)
         {
+            if (Game.DebugRecordingEnabled)
+            {
+                debugSubmitted = false;
+                debugSubmitMessage = null;
+                debugSubmitIsError = false;
+                _ = CaptureSolveClientInfoAsync();
+            }
             if (!Game.WasAutoSolved)
             {
                 showVictoryModal = true;
-                if (Game.DebugRecordingEnabled)
-                {
-                    debugLogText = Game.ExportDebugLogJson();
-                    debugStatusMessage = null;
-                    debugStatusIsError = false;
-                }
             }
         }
         lastSolvedState = Game.IsSolved;
@@ -2027,17 +2123,87 @@
         await SavePreferencesAsync();
     }
 
-    private void OpenDebugModal()
+    private async Task EnsureDebugInstallIdAsync()
+    {
+        if (!string.IsNullOrEmpty(Game.DebugInstallationId))
+            return;
+        try
+        {
+            string id = await JS.InvokeAsync<string>("loopHelpers.getOrCreateInstallationId");
+            Game.SetDebugInstallationId(id);
+        }
+        catch (JSException) { }
+    }
+
+    private async Task SyncDebugClientInfoAsync(bool forceRefresh = false)
+    {
+        if (!Game.DebugRecordingEnabled)
+            return;
+        // Once solved, keep the solve-completion input snapshot so typing a note doesn't taint SawKeyboard.
+        if (Game.IsSolved && Game.DebugClientInfo != null && !forceRefresh)
+            return;
+        try
+        {
+            string clientJson = await JS.InvokeAsync<string>("loopHelpers.getDebugClientInfoJson");
+            var info = JsonSerializer.Deserialize(clientJson, LoopJsonContext.Default.DebugClientInfo);
+            if (info != null)
+                Game.UpdateDebugClientInfo(info);
+        }
+        catch (Exception ex) when (ex is JSException or JsonException) { }
+    }
+
+    private async Task CaptureSolveClientInfoAsync()
+    {
+        if (disposed) return;
+        await EnsureDebugInstallIdAsync();
+        await SyncDebugClientInfoAsync(forceRefresh: true);
+    }
+
+    private void OnDifficultyStarClicked(int star)
+    {
+        Game.ToggleDebugDifficultyRating(star);
+        debugSubmitted = false;
+    }
+
+    private void ClearDifficultyRating()
+    {
+        Game.SetDebugDifficultyRating(null);
+        debugSubmitted = false;
+    }
+
+    private void OnQualityStarClicked(int star)
+    {
+        Game.ToggleDebugQualityRating(star);
+        debugSubmitted = false;
+    }
+
+    private void ClearQualityRating()
+    {
+        Game.SetDebugQualityRating(null);
+        debugSubmitted = false;
+    }
+
+    private void OnDebugNoteInput(ChangeEventArgs e)
+    {
+        Game.SetDebugNote(e.Value?.ToString());
+        debugSubmitted = false;
+    }
+
+    private async Task OpenDebugModalAsync()
     {
         isMenuOpen = false;
+        await EnsureDebugInstallIdAsync();
+        await SyncDebugClientInfoAsync();
         debugLogText = Game.ExportDebugLogJson();
         debugStatusMessage = null;
         debugStatusIsError = false;
         showDebugModal = true;
     }
 
-    private void RefreshDebugLogText()
+    private async Task RefreshDebugLogTextAsync()
     {
+        await EnsureDebugInstallIdAsync();
+        await SyncDebugClientInfoAsync();
         debugLogText = Game.ExportDebugLogJson();
         debugStatusMessage = $"Refreshed ({Game.DebugEventCount} events).";
         debugStatusIsError = false;
@@ -2045,6 +2211,8 @@
 
     private async Task CopyDebugLogAsync()
     {
+        await EnsureDebugInstallIdAsync();
+        await SyncDebugClientInfoAsync();
         string json = Game.ExportDebugLogJson();
         if (string.IsNullOrEmpty(json))
         {
@@ -2065,6 +2233,61 @@
             ? $"Copied {Game.DebugEventCount} events to clipboard!"
             : "Clipboard unavailable — copy directly from the box.";
         debugStatusIsError = !ok;
+    }
+
+    private async Task SubmitDebugLogAsync()
+    {
+        if (isSubmittingDebugLog || !Game.DebugRecordingEnabled)
+            return;
+
+        isSubmittingDebugLog = true;
+        debugSubmitMessage = null;
+        debugSubmitIsError = false;
+        try
+        {
+            await EnsureDebugInstallIdAsync();
+            await SyncDebugClientInfoAsync();
+            string json = Game.ExportDebugLogJson();
+            if (string.IsNullOrEmpty(json))
+            {
+                debugSubmitMessage = "No interaction log recorded yet.";
+                debugSubmitIsError = true;
+                debugStatusMessage = debugSubmitMessage;
+                debugStatusIsError = true;
+                return;
+            }
+
+            debugLogText = json;
+            string resultJson = await JS.InvokeAsync<string>("loopHelpers.submitDebugLogJson", json);
+            var res = JsonSerializer.Deserialize(resultJson, LoopJsonContext.Default.DebugSubmitResult);
+            if (res is { Ok: true })
+            {
+                debugSubmitted = true;
+                string idSuffix = !string.IsNullOrEmpty(res.Id) ? $" ({res.Id})" : string.Empty;
+                debugSubmitMessage = $"Uploaded{idSuffix}!";
+                debugSubmitIsError = false;
+                debugStatusMessage = debugSubmitMessage;
+                debugStatusIsError = false;
+            }
+            else
+            {
+                debugSubmitMessage = res?.Message ?? "Upload failed.";
+                debugSubmitIsError = true;
+                debugStatusMessage = debugSubmitMessage;
+                debugStatusIsError = true;
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JsonException)
+        {
+            debugSubmitMessage = "Could not upload debug log.";
+            debugSubmitIsError = true;
+            debugStatusMessage = debugSubmitMessage;
+            debugStatusIsError = true;
+        }
+        finally
+        {
+            isSubmittingDebugLog = false;
+        }
     }
 
     private async Task LoadPastedDebugLog()

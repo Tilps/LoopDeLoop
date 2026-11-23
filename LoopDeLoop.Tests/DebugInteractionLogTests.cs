@@ -146,4 +146,85 @@ public sealed class DebugInteractionLogTests
         Assert.IsFalse(targetGame.TryImportDebugLog("{}", out _, out string missingCodeMsg));
         Assert.IsTrue(missingCodeMsg.Contains("missing a valid puzzleCode"));
     }
+
+    [TestMethod]
+    public void DebugFeedback_RatingsNotesInstallIdAndClientInfo_RoundTripAndResetPerPuzzle()
+    {
+        using var game = new GameService();
+        game.SetDebugRecordingEnabled(true);
+        string installId = Guid.NewGuid().ToString("D");
+        game.SetDebugInstallationId(installId);
+        Assert.IsTrue(game.LoadPuzzleText("sq/3x3/a1b2", "hash"));
+
+        // Clearable difficulty & quality star ratings
+        game.ToggleDebugDifficultyRating(4);
+        Assert.AreEqual(4, game.DebugDifficultyRating);
+        game.ToggleDebugDifficultyRating(4); // clicking same star clears it
+        Assert.IsNull(game.DebugDifficultyRating);
+        game.SetDebugDifficultyRating(5);
+        game.SetDebugQualityRating(3);
+        Assert.AreEqual(5, game.DebugDifficultyRating);
+        Assert.AreEqual(3, game.DebugQualityRating);
+
+        // Out-of-range rating clears safely
+        game.SetDebugQualityRating(99);
+        Assert.IsNull(game.DebugQualityRating);
+        game.ToggleDebugQualityRating(4);
+
+        // Note length capped at 500 chars and null bytes stripped
+        string oversizedNote = "abc\0" + new string('x', 600);
+        game.SetDebugNote(oversizedNote);
+        Assert.AreEqual(SolveInteractionLog.MaxNoteLength, game.DebugNote.Length);
+        Assert.IsFalse(game.DebugNote.Contains('\0'));
+
+        // Client screen & input modality info
+        var client = new DebugClientInfo
+        {
+            ScreenWidth = 1920,
+            ScreenHeight = 1080,
+            ViewportWidth = 1280,
+            ViewportHeight = 720,
+            DevicePixelRatio = 2.0,
+            SawTouch = true,
+            SawMouse = false,
+            SawPen = false,
+            SawKeyboard = true
+        };
+        game.UpdateDebugClientInfo(client);
+
+        string json = game.ExportDebugLogJson();
+        SolveInteractionLog? restored = JsonSerializer.Deserialize(json, LoopJsonContext.Default.SolveInteractionLog);
+        Assert.IsNotNull(restored);
+        Assert.AreEqual(installId, restored.InstallationId);
+        Assert.AreEqual(5, restored.DifficultyRating);
+        Assert.AreEqual(4, restored.QualityRating);
+        Assert.AreEqual(SolveInteractionLog.MaxNoteLength, restored.Note!.Length);
+        Assert.IsNotNull(restored.Client);
+        Assert.AreEqual(1920, restored.Client.ScreenWidth);
+        Assert.AreEqual(1080, restored.Client.ScreenHeight);
+        Assert.AreEqual(1280, restored.Client.ViewportWidth);
+        Assert.AreEqual(720, restored.Client.ViewportHeight);
+        Assert.AreEqual(2.0, restored.Client.DevicePixelRatio);
+        Assert.IsTrue(restored.Client.SawTouch);
+        Assert.IsFalse(restored.Client.SawMouse);
+        Assert.IsTrue(restored.Client.SawKeyboard);
+
+        // Starting a new puzzle clears ratings/notes but preserves installation ID
+        int prevSession = game.DebugSessionId;
+        Assert.IsTrue(game.LoadPuzzleText("sq/4x4/3a2b1", "hash"));
+        Assert.IsTrue(game.DebugSessionId > prevSession);
+        Assert.IsNull(game.DebugDifficultyRating);
+        Assert.IsNull(game.DebugQualityRating);
+        Assert.AreEqual(string.Empty, game.DebugNote);
+        Assert.AreEqual(installId, game.DebugInstallationId);
+
+        // Verify DebugSubmitResult source-gen deserialization
+        DebugSubmitResult? res = JsonSerializer.Deserialize(
+            """{"Ok":true,"Status":201,"Message":"Saved.","Id":"20261124_000000_abcdef123456"}""",
+            LoopJsonContext.Default.DebugSubmitResult);
+        Assert.IsNotNull(res);
+        Assert.IsTrue(res.Ok);
+        Assert.AreEqual(201, res.Status);
+        Assert.AreEqual("20261124_000000_abcdef123456", res.Id);
+    }
 }
