@@ -435,80 +435,11 @@ namespace LoopDeLoop
                 {
                     Unperform(edgeChanges1);
                 }
-                bool success2 = Perform(GetOppositeAction(trials[i]), edgeChanges2, iterativeSolverDepth);
-                try
-                {
-                    if (success2)
-                    {
-                        if (!CheckConnectable())
-                        {
-                            success2 = false;
-                        }
-                    }
-                    if (success2 && iterativeRecDepth > 1)
-                    {
-                        bool ignored = false;
-                        success2 = IterativeTrySolveInternal(edgeChanges2, ref ignored, iterativeRecDepth - 1, trials[i]);
-                    }
-                    if (MeshChangeUpdate != null)
-                    {
-                        MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, edgeChanges2, success2));
-                    }
-                }
-                finally
-                {
-                    Unperform(edgeChanges2);
-                }
                 int addedActionsThisTrial = 0;
-                if (!success1 && !success2)
-                    return false;
-                else if (success1 && success2)
+                if (!success1 && MeshChangeUpdate == null && iterativeRecDepth == 1)
                 {
-                    List<IAction> merged = new List<IAction>();
-                    if (UseColoring && UseDerivedColoring)
-                    {
-                        merged.AddRange(DeriveColoring(edgeChanges1, edgeChanges2));
-                    }
-                    // TODO: consider derived edge restrictions, although I think merging is probably sufficient.
-                    if (useMerging)
-                    {
-                        merged.AddRange(MergeChanges(edgeChanges1, edgeChanges2));
-                    }
-                    if (merged.Count > 0)
-                    {
-                        bool colorCheatBackup = coloringCheats;
-                        try
-                        {
-                            if (iterTopLevel)
-                            {
-                                coloringCheats = true;
-                                topLevel = true;
-                            }
-                            int length = realChanges.Count;
-                            if (!Perform(merged, realChanges, iterTopLevel))
-                                return false;
-
-                            if (MeshChangeUpdate != null)
-                                MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true));
-                            addedActionsThisTrial = realChanges.Count - length;
-                            if (addedActionsThisTrial > 0)
-                                changed = true;
-                            // This doesn't appear to make any sense and PerformStart has changed now.
-                            /*if (changed && topLevel)
-                            {
-                                if (!PerformStart(realChanges))
-                                    return false;
-                            }*/
-                        }
-                        finally
-                        {
-                            coloringCheats = colorCheatBackup;
-                            topLevel = false;
-                        }
-                    }
-                }
-                else if (success1)
-                {
+                    // Side 1 hit a contradiction: commit the opposite side directly into realChanges
+                    // instead of probing side 2, unperforming it, and re-applying it a second time.
                     bool colorCheatBackup = coloringCheats;
                     try
                     {
@@ -518,10 +449,9 @@ namespace LoopDeLoop
                             topLevel = true;
                         }
                         int length = realChanges.Count;
-                        if (!Perform(edgeChanges1, realChanges, iterTopLevel))
+                        IAction opp = GetOppositeAction(trials[i]);
+                        if (!Perform(opp, realChanges, iterTopLevel ? int.MaxValue : iterativeSolverDepth) || !CheckConnectable())
                             return false;
-                        if (MeshChangeUpdate != null)
-                            MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true));
                         addedActionsThisTrial = realChanges.Count - length;
                         if (addedActionsThisTrial > 0)
                             changed = true;
@@ -534,27 +464,126 @@ namespace LoopDeLoop
                 }
                 else
                 {
-                    bool colorCheatBackup = coloringCheats;
+                    bool success2 = Perform(GetOppositeAction(trials[i]), edgeChanges2, iterativeSolverDepth);
                     try
                     {
-                        if (iterTopLevel)
+                        if (success2)
                         {
-                            coloringCheats = true;
-                            topLevel = true;
+                            if (!CheckConnectable())
+                            {
+                                success2 = false;
+                            }
                         }
-                        int length = realChanges.Count;
-                        if (!Perform(edgeChanges2, realChanges, iterTopLevel))
-                            return false;
+                        if (success2 && iterativeRecDepth > 1)
+                        {
+                            bool ignored = false;
+                            success2 = IterativeTrySolveInternal(edgeChanges2, ref ignored, iterativeRecDepth - 1, trials[i]);
+                        }
                         if (MeshChangeUpdate != null)
-                            MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true));
-                        addedActionsThisTrial = realChanges.Count - length;
-                        if (addedActionsThisTrial > 0)
-                            changed = true;
+                        {
+                            MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, edgeChanges2, success2));
+                        }
                     }
                     finally
                     {
-                        coloringCheats = colorCheatBackup;
-                        topLevel = false;
+                        Unperform(edgeChanges2);
+                    }
+                    if (!success1 && !success2)
+                        return false;
+                    else if (success1 && success2)
+                    {
+                        List<IAction> merged = new List<IAction>();
+                        if (UseColoring && UseDerivedColoring)
+                        {
+                            merged.AddRange(DeriveColoring(edgeChanges1, edgeChanges2));
+                        }
+                        // TODO: consider derived edge restrictions, although I think merging is probably sufficient.
+                        if (useMerging)
+                        {
+                            merged.AddRange(MergeChanges(edgeChanges1, edgeChanges2));
+                        }
+                        if (merged.Count > 0)
+                        {
+                            bool colorCheatBackup = coloringCheats;
+                            try
+                            {
+                                if (iterTopLevel)
+                                {
+                                    coloringCheats = true;
+                                    topLevel = true;
+                                }
+                                int length = realChanges.Count;
+                                if (!Perform(merged, realChanges, iterTopLevel))
+                                    return false;
+
+                                if (MeshChangeUpdate != null)
+                                    MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true));
+                                addedActionsThisTrial = realChanges.Count - length;
+                                if (addedActionsThisTrial > 0)
+                                    changed = true;
+                                // This doesn't appear to make any sense and PerformStart has changed now.
+                                /*if (changed && topLevel)
+                                {
+                                    if (!PerformStart(realChanges))
+                                        return false;
+                                }*/
+                            }
+                            finally
+                            {
+                                coloringCheats = colorCheatBackup;
+                                topLevel = false;
+                            }
+                        }
+                    }
+                    else if (success1)
+                    {
+                        bool colorCheatBackup = coloringCheats;
+                        try
+                        {
+                            if (iterTopLevel)
+                            {
+                                coloringCheats = true;
+                                topLevel = true;
+                            }
+                            int length = realChanges.Count;
+                            if (!Perform(edgeChanges1, realChanges, iterTopLevel))
+                                return false;
+                            if (MeshChangeUpdate != null)
+                                MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true));
+                            addedActionsThisTrial = realChanges.Count - length;
+                            if (addedActionsThisTrial > 0)
+                                changed = true;
+                        }
+                        finally
+                        {
+                            coloringCheats = colorCheatBackup;
+                            topLevel = false;
+                        }
+                    }
+                    else
+                    {
+                        bool colorCheatBackup = coloringCheats;
+                        try
+                        {
+                            if (iterTopLevel)
+                            {
+                                coloringCheats = true;
+                                topLevel = true;
+                            }
+                            int length = realChanges.Count;
+                            if (!Perform(edgeChanges2, realChanges, iterTopLevel))
+                                return false;
+                            if (MeshChangeUpdate != null)
+                                MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true));
+                            addedActionsThisTrial = realChanges.Count - length;
+                            if (addedActionsThisTrial > 0)
+                                changed = true;
+                        }
+                        finally
+                        {
+                            coloringCheats = colorCheatBackup;
+                            topLevel = false;
+                        }
                     }
                 }
 

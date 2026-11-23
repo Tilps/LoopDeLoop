@@ -45,13 +45,13 @@ namespace LoopDeLoop.TrialOrdering
     public sealed class IncidenceGnnModel
     {
         public const uint Magic = 0x4C444C4D; // "LDLM"
-        public const string DefaultResourceName = "LoopDeLoop.TrialOrdering.Weights.v4_all_h16_l2.ldlm";
+        public const string DefaultResourceName = "LoopDeLoop.TrialOrdering.Weights.ldl_side2_h16_l2.ldlm";
 
         private static readonly Lazy<IncidenceGnnModel> s_default =
             new Lazy<IncidenceGnnModel>(LoadDefaultEmbedded, LazyThreadSafetyMode.ExecutionAndPublication);
 
         /// <summary>
-        /// Thread-safe singleton for the embedded 34.1 KB unified model (v4_all_h16_l2).
+        /// Thread-safe singleton for the embedded 34.2 KB unified side-predicting model (ldl_side2_h16_l2).
         /// </summary>
         public static IncidenceGnnModel Default => s_default.Value;
 
@@ -67,6 +67,7 @@ namespace LoopDeLoop.TrialOrdering
         public readonly float[]?[] VNorm, CNorm, ENorm;
         public readonly LinearWeights EHead0, EHead1;
         public readonly LinearWeights CHead0, CHead1;
+        public bool HasSideHead => EHead1.OutDim >= 2 && CHead1.OutDim >= 2;
 
         public IncidenceGnnModel(string path)
             : this(OpenRead(path), leaveOpen: false)
@@ -162,6 +163,7 @@ namespace LoopDeLoop.TrialOrdering
         private readonly bool _useSmartCooldown;
         private readonly int _rescoreEdgeDelta;
         private readonly bool _autoMode;
+        private readonly bool _useSidePrediction;
 
         private Mesh? _cachedMesh;
         private MeshTopologyCache? _topo;
@@ -212,6 +214,8 @@ namespace LoopDeLoop.TrialOrdering
 
         private float[] _eScores = Array.Empty<float>();
         private float[] _cScores = Array.Empty<float>();
+        private float[] _eSides = Array.Empty<float>();
+        private float[] _cSides = Array.Empty<float>();
         private float[] _concatTmp = Array.Empty<float>();
 
         private float[] _sortScores = Array.Empty<float>();
@@ -226,7 +230,8 @@ namespace LoopDeLoop.TrialOrdering
             bool useSmartCooldown = false,
             int minEdgesToRestart = 0,
             int rescoreEdgeDelta = 0,
-            bool autoMode = true)
+            bool autoMode = true,
+            bool useSidePrediction = true)
         {
             _m = model ?? IncidenceGnnModel.Default;
             _postAction = postAction;
@@ -236,6 +241,7 @@ namespace LoopDeLoop.TrialOrdering
             _minEdgesToRestart = minEdgesToRestart;
             _rescoreEdgeDelta = rescoreEdgeDelta;
             _autoMode = autoMode;
+            _useSidePrediction = useSidePrediction;
         }
 
         /// <summary>
@@ -245,6 +251,8 @@ namespace LoopDeLoop.TrialOrdering
 
         public float[] EdgeScores => _eScores;
         public float[] CellScores => _cScores;
+        public float[] EdgeSides => _eSides;
+        public float[] CellSides => _cSides;
 
         public void OnSolveStart(Mesh mesh)
         {
@@ -306,8 +314,8 @@ namespace LoopDeLoop.TrialOrdering
             if (_vMsg.Length < V * H) { _vMsg = new float[V * H]; _vMax = new float[V * H]; _vCnt = new float[V]; }
             if (_cMsg.Length < C * H) { _cMsg = new float[C * H]; _cMax = new float[C * H]; _cCnt = new float[C]; }
 
-            if (_eScores.Length < E) _eScores = new float[E];
-            if (_cScores.Length < C) _cScores = new float[C];
+            if (_eScores.Length < E) { _eScores = new float[E]; _eSides = new float[E]; }
+            if (_cScores.Length < C) { _cScores = new float[C]; _cSides = new float[C]; }
             if (_concatTmp.Length < 5 * H + 32) _concatTmp = new float[5 * H + 32];
         }
 
@@ -337,8 +345,8 @@ namespace LoopDeLoop.TrialOrdering
 
             RunMessagePassing(topo, V, E, C, H);
 
-            EvalEdgeHead(_m.EHead0, _m.EHead1, _hE, mesh.Edges, E, H, _eScores);
-            EvalCellHead(_m.CHead0, _m.CHead1, _hC, mesh.Cells, C, H, _cScores);
+            EvalEdgeHead(_m.EHead0, _m.EHead1, _hE, mesh.Edges, E, H, _eScores, _eSides);
+            EvalCellHead(_m.CHead0, _m.CHead1, _hC, mesh.Cells, C, H, _cScores, _cSides);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -716,46 +724,78 @@ namespace LoopDeLoop.TrialOrdering
             }
         }
 
-        private static void EvalEdgeHead(LinearWeights h0, LinearWeights h1, float[] hArr, List<Edge> edges, int N, int H, float[] outScores)
+        private static void EvalEdgeHead(LinearWeights h0, LinearWeights h1, float[] hArr, List<Edge> edges, int N, int H, float[] outScores, float[] outSides)
         {
             float[] wt0 = h0.WT, B0 = h0.B;
             float[] W1 = h1.W;
             float b1 = h1.B[0];
+            bool hasSide = h1.OutDim >= 2;
+            float b2 = hasSide ? h1.B[1] : 0f;
             Span<float> acc = stackalloc float[H];
             for (int i = 0; i < N; i++)
             {
                 if (edges[i].State != EdgeState.Empty)
                 {
                     outScores[i] = -1e9f;
+                    outSides[i] = 0f;
                     continue;
                 }
                 B0.AsSpan().CopyTo(acc);
                 AccumulateMatVec(wt0, 0, hArr, i * H, H, acc, H);
                 float score = b1;
-                for (int o = 0; o < H; o++)
-                    if (acc[o] > 0f) score += W1[o] * acc[o];
+                if (hasSide)
+                {
+                    float side = b2;
+                    for (int o = 0; o < H; o++)
+                    {
+                        float a = acc[o];
+                        if (a > 0f) { score += W1[o] * a; side += W1[H + o] * a; }
+                    }
+                    outSides[i] = side;
+                }
+                else
+                {
+                    for (int o = 0; o < H; o++)
+                        if (acc[o] > 0f) score += W1[o] * acc[o];
+                }
                 outScores[i] = score;
             }
         }
 
-        private static void EvalCellHead(LinearWeights h0, LinearWeights h1, float[] hArr, List<Cell> cells, int N, int H, float[] outScores)
+        private static void EvalCellHead(LinearWeights h0, LinearWeights h1, float[] hArr, List<Cell> cells, int N, int H, float[] outScores, float[] outSides)
         {
             float[] wt0 = h0.WT, B0 = h0.B;
             float[] W1 = h1.W;
             float b1 = h1.B[0];
+            bool hasSide = h1.OutDim >= 2;
+            float b2 = hasSide ? h1.B[1] : 0f;
             Span<float> acc = stackalloc float[H];
             for (int i = 0; i < N; i++)
             {
                 if (Math.Abs(cells[i].Color) == 1)
                 {
                     outScores[i] = -1e9f;
+                    outSides[i] = 0f;
                     continue;
                 }
                 B0.AsSpan().CopyTo(acc);
                 AccumulateMatVec(wt0, 0, hArr, i * H, H, acc, H);
                 float score = b1;
-                for (int o = 0; o < H; o++)
-                    if (acc[o] > 0f) score += W1[o] * acc[o];
+                if (hasSide)
+                {
+                    float side = b2;
+                    for (int o = 0; o < H; o++)
+                    {
+                        float a = acc[o];
+                        if (a > 0f) { score += W1[o] * a; side += W1[H + o] * a; }
+                    }
+                    outSides[i] = side;
+                }
+                else
+                {
+                    for (int o = 0; o < H; o++)
+                        if (acc[o] > 0f) score += W1[o] * acc[o];
+                }
                 outScores[i] = score;
             }
         }
@@ -886,17 +926,25 @@ namespace LoopDeLoop.TrialOrdering
             }
 
             bool applyFrontierBump = !needFullNn && useCooldownHere;
+            bool flipSides = _useSidePrediction && _m.HasSideHead;
             for (int k = 0; k < n; k++)
             {
                 IAction action = trials[startIndex + k];
-                _sortScratch[k] = action;
                 _sortIndices[k] = k;
                 if (mesh.IsPointlessTrial(action))
                 {
+                    _sortScratch[k] = action;
                     _sortScores[k] = -1e9f;
                 }
                 else if (action is SetAction sa)
                 {
+                    if (flipSides)
+                    {
+                        EdgeState desired = _eSides[sa.EdgeIndex] > 0f ? EdgeState.Excluded : EdgeState.Filled;
+                        if (sa.EdgeState != desired)
+                            action = new SetAction(mesh, sa.EdgeIndex, desired);
+                    }
+                    _sortScratch[k] = action;
                     float s = _eScores[sa.EdgeIndex];
                     if (applyFrontierBump && _edgeDirty2[sa.EdgeIndex])
                         s += 1.5f;
@@ -906,6 +954,13 @@ namespace LoopDeLoop.TrialOrdering
                 }
                 else if (action is CellColorJoinAction ccj && ccj.Cell2 == -1)
                 {
+                    if (flipSides)
+                    {
+                        bool desiredSame = _cSides[ccj.Cell1] <= 0f;
+                        if (ccj.Same != desiredSame)
+                            action = new CellColorJoinAction(mesh, ccj.Cell1, -1, desiredSame);
+                    }
+                    _sortScratch[k] = action;
                     float s = _cScores[ccj.Cell1];
                     if (useCooldownHere && _cellFailed[ccj.Cell1])
                         s -= 100.0f;
@@ -913,6 +968,7 @@ namespace LoopDeLoop.TrialOrdering
                 }
                 else
                 {
+                    _sortScratch[k] = action;
                     _sortScores[k] = -1e6f;
                 }
             }

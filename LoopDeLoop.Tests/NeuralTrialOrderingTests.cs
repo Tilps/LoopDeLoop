@@ -20,6 +20,7 @@ public sealed class NeuralTrialOrderingTests
         Assert.AreEqual(2, model.NumLayers);
         Assert.IsTrue(model.UseColorPool);
         Assert.IsTrue(model.UseMaxPool);
+        Assert.IsTrue(model.HasSideHead);
     }
 
     [TestMethod]
@@ -83,5 +84,39 @@ public sealed class NeuralTrialOrderingTests
         {
             PuzzleHelper.UseNeuralTrialOrdering = prev;
         }
+    }
+
+    [TestMethod]
+    public void SidePredictionHead_ProducesFiniteNonTrivialSideLogits()
+    {
+        Mesh puzzle = PuzzleHelper.MakeMesh(8, 8, MeshType.Square, 4);
+        puzzle.Generate(new Random(123));
+        puzzle.Clear();
+        puzzle.PerformStart(new List<IAction>());
+
+        IncidenceGnnPolicy policy = IncidenceGnnPolicy.CreateDefault();
+        policy.ScoreAllNodes(puzzle, iterativeRecDepth: 1);
+
+        int emptyCount = 0;
+        int posCount = 0;
+        int negCount = 0;
+        for (int e = 0; e < puzzle.Edges.Count; e++)
+        {
+            if (puzzle.Edges[e].State == EdgeState.Empty)
+            {
+                emptyCount++;
+                float side = policy.EdgeSides[e];
+                Assert.IsTrue(float.IsFinite(side));
+                if (side > 0f) posCount++;
+                else if (side < 0f) negCount++;
+            }
+            else
+            {
+                Assert.AreEqual(0f, policy.EdgeSides[e]);
+            }
+        }
+
+        Assert.IsTrue(emptyCount > 0);
+        Assert.IsTrue(posCount > 0 && negCount > 0, $"Expected side head to predict both Filled and Excluded candidates (pos={posCount}, neg={negCount}).");
     }
 }
