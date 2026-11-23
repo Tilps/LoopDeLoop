@@ -460,13 +460,24 @@
                 </div>
             }
 
-            @if (Game.ShowHintHeatMap && !Game.IsVisualSolving && !Game.IsSolved && Game.EdgeHeatScores != null)
+            @if ((Game.ShowHintHeatMap && !Game.IsVisualSolving && !Game.IsSolved && Game.EdgeHeatScores != null) || Game.DebugRecordingEnabled)
             {
-                <div class="heatmap-legend" role="status" aria-label="Hint heat map active">
-                    <span class="heatmap-legend-label">🔥 Focus</span>
-                    <span class="heatmap-legend-bar" aria-hidden="true"></span>
-                    <span class="heatmap-legend-scale">Hot</span>
-                    <button class="heatmap-legend-close" @onclick="ToggleHintHeatMapAsync" title="Turn off Heat Map" aria-label="Turn off Heat Map">✕</button>
+                <div class="board-left-hud">
+                    @if (Game.DebugRecordingEnabled)
+                    {
+                        <button class="debug-pill" @onclick="OpenDebugModal" title="Inspect, copy, or paste recorded solve interaction log">
+                            🐞 Debug (@Game.DebugEventCount)
+                        </button>
+                    }
+                    @if (Game.ShowHintHeatMap && !Game.IsVisualSolving && !Game.IsSolved && Game.EdgeHeatScores != null)
+                    {
+                        <div class="heatmap-legend" role="status" aria-label="Hint heat map active">
+                            <span class="heatmap-legend-label">🔥 Focus</span>
+                            <span class="heatmap-legend-bar" aria-hidden="true"></span>
+                            <span class="heatmap-legend-scale">Hot</span>
+                            <button class="heatmap-legend-close" @onclick="ToggleHintHeatMapAsync" title="Turn off Heat Map" aria-label="Turn off Heat Map">✕</button>
+                        </div>
+                    }
                 </div>
             }
 
@@ -519,16 +530,77 @@
 @if (Game.IsSolved && showVictoryModal)
 {
     <div class="modal-backdrop">
-        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="victory-modal-title">
+        <div class="modal-card @(Game.DebugRecordingEnabled ? "victory-modal-debug" : "")" role="dialog" aria-modal="true" aria-labelledby="victory-modal-title">
             <div class="victory-badge" aria-hidden="true">🏆</div>
             <h2 id="victory-modal-title" class="modal-title">Puzzle Solved!</h2>
             <div class="modal-body" style="text-align: center;">
                 <p>Congratulations! You successfully solved the loop in <strong>@GameTimer.FormatElapsed(Game.ElapsedTime)</strong>!</p>
+
+                @if (Game.DebugRecordingEnabled)
+                {
+                    <div class="debug-log-panel">
+                        <div class="debug-log-header">
+                            <span>🐞 Interaction Log (@Game.DebugEventCount events)</span>
+                            <div class="debug-log-btn-row">
+                                <button class="btn btn-secondary btn-compact" @onclick="CopyDebugLogAsync">📋 Copy Log</button>
+                                <button class="btn btn-secondary btn-compact" @onclick="RefreshDebugLogText">↻ Refresh</button>
+                            </div>
+                        </div>
+                        <textarea class="files-textarea debug-log-textarea"
+                                  rows="5"
+                                  @bind="debugLogText"
+                                  aria-label="Debug interaction log JSON"
+                                  placeholder="Recorded interaction JSON (copy here or paste a saved log to load its puzzle)..."></textarea>
+                        <div class="debug-log-footer">
+                            <button class="btn btn-secondary btn-compact" @onclick="LoadPastedDebugLog" disabled="@string.IsNullOrWhiteSpace(debugLogText)">
+                                📥 Load Pasted Log
+                            </button>
+                            @if (!string.IsNullOrEmpty(debugStatusMessage))
+                            {
+                                <span class="debug-log-status @(debugStatusIsError ? "error" : "success")">@debugStatusMessage</span>
+                            }
+                        </div>
+                    </div>
+                }
             </div>
             <div class="modal-actions" style="justify-content: center;">
                 <button class="btn btn-secondary" @onclick="SharePuzzle">🔗 Share Link</button>
                 <button class="btn btn-secondary" @onclick="() => showVictoryModal = false">Review Board</button>
                 <button class="btn btn-success" @onclick="GeneratePuzzle">New Puzzle</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Debug Interaction Log Modal (accessible mid-solve or post-solve when ?debug is active) -->
+@if (Game.DebugRecordingEnabled && showDebugModal)
+{
+    <div class="modal-backdrop" @onclick="() => showDebugModal = false">
+        <div class="modal-card settings-modal-card" role="dialog" aria-modal="true" aria-labelledby="debug-modal-title" @onclick:stopPropagation="true">
+            <h2 id="debug-modal-title" class="modal-title">🐞 Debug Interaction Log</h2>
+            <div class="modal-body settings-modal-body">
+                <p class="settings-hint">
+                    Recording enabled via <code>?debug</code> (@Game.DebugEventCount events, @GameTimer.FormatElapsed(Game.ElapsedTime)). Copy the JSON below or paste a saved log to load its puzzle.
+                </p>
+                <div class="debug-log-btn-row">
+                    <button class="btn btn-primary" @onclick="CopyDebugLogAsync">📋 Copy Log</button>
+                    <button class="btn btn-secondary" @onclick="RefreshDebugLogText">↻ Refresh</button>
+                    <button class="btn btn-secondary" @onclick="LoadPastedDebugLog" disabled="@string.IsNullOrWhiteSpace(debugLogText)">📥 Load Pasted Log</button>
+                </div>
+                <textarea class="files-textarea debug-log-textarea"
+                          rows="9"
+                          @bind="debugLogText"
+                          aria-label="Debug interaction log JSON"
+                          placeholder="Recorded interaction JSON..."></textarea>
+                @if (!string.IsNullOrEmpty(debugStatusMessage))
+                {
+                    <div class="files-feedback @(debugStatusIsError ? "error" : "success")">
+                        @debugStatusMessage
+                    </div>
+                }
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" @onclick="() => showDebugModal = false">Close</button>
             </div>
         </div>
     </div>
@@ -897,6 +969,7 @@
     private bool showResetModal = false;
     private bool showSettingsModal = false;
     private bool showFilesModal = false;
+    private bool showDebugModal = false;
     private bool isDarkMode = false;
     private bool showShareToast = false;
     private string shareToastMessage = "Link copied to clipboard!";
@@ -904,11 +977,14 @@
     private bool isMenuOpen = false;
     private bool hasPwaUpdate = false;
 
-    private bool IsAnyModalOpen => showVictoryModal || showHelpModal || showSolveModal || showResetModal || showSettingsModal || showFilesModal;
+    private bool IsAnyModalOpen => showVictoryModal || showHelpModal || showSolveModal || showResetModal || showSettingsModal || showFilesModal || showDebugModal;
 
     private string importText = string.Empty;
     private string? filesStatusMessage;
     private bool filesStatusIsError = false;
+    private string debugLogText = string.Empty;
+    private string? debugStatusMessage;
+    private bool debugStatusIsError = false;
 
     private double wheelDeltaAccumulator = 0;
     private const double WheelUndoRedoStepThreshold = 100.0;
@@ -1144,6 +1220,10 @@
 
         try
         {
+            string search = await JS.InvokeAsync<string>("loopHelpers.getUrlSearch");
+            if (GameService.IsDebugQueryEnabled(search, hash))
+                Game.SetDebugRecordingEnabled(true);
+
             bool loaded = await TryLoadPuzzleFromHashAsync(hash);
             if (loaded)
             {
@@ -1153,6 +1233,7 @@
                 showFilesModal = false;
                 showSettingsModal = false;
                 showHelpModal = false;
+                showDebugModal = false;
                 isMenuOpen = false;
                 lastSolvedState = Game.IsSolved;
                 ResetZoom();
@@ -1194,7 +1275,7 @@
             Console.WriteLine($"Could not match saved game state: {ex.Message}");
         }
 
-        if (Game.LoadPuzzleText(puzzleText))
+        if (Game.LoadPuzzleText(puzzleText, "hash"))
         {
             selectedType = Game.CurrentType.ToString();
             return true;
@@ -1256,6 +1337,14 @@
             {
                 await SafeInvokeVoidAsync("registerLoopShortcuts", selfRef);
             }
+
+            try
+            {
+                string search = await JS.InvokeAsync<string>("loopHelpers.getUrlSearch");
+                string initialHash = await JS.InvokeAsync<string>("loopHelpers.getUrlHash");
+                Game.SetDebugRecordingEnabled(GameService.IsDebugQueryEnabled(search, initialHash));
+            }
+            catch (JSException) { }
 
             try
             {
@@ -1368,6 +1457,12 @@
             if (!Game.WasAutoSolved)
             {
                 showVictoryModal = true;
+                if (Game.DebugRecordingEnabled)
+                {
+                    debugLogText = Game.ExportDebugLogJson();
+                    debugStatusMessage = null;
+                    debugStatusIsError = false;
+                }
             }
         }
         lastSolvedState = Game.IsSolved;
@@ -1932,6 +2027,68 @@
         await SavePreferencesAsync();
     }
 
+    private void OpenDebugModal()
+    {
+        isMenuOpen = false;
+        debugLogText = Game.ExportDebugLogJson();
+        debugStatusMessage = null;
+        debugStatusIsError = false;
+        showDebugModal = true;
+    }
+
+    private void RefreshDebugLogText()
+    {
+        debugLogText = Game.ExportDebugLogJson();
+        debugStatusMessage = $"Refreshed ({Game.DebugEventCount} events).";
+        debugStatusIsError = false;
+    }
+
+    private async Task CopyDebugLogAsync()
+    {
+        string json = Game.ExportDebugLogJson();
+        if (string.IsNullOrEmpty(json))
+        {
+            debugStatusMessage = "No interaction log recorded yet.";
+            debugStatusIsError = true;
+            return;
+        }
+
+        debugLogText = json;
+        bool ok = false;
+        try
+        {
+            ok = await JS.InvokeAsync<bool>("loopHelpers.copyToClipboard", json);
+        }
+        catch (JSException) { }
+
+        debugStatusMessage = ok
+            ? $"Copied {Game.DebugEventCount} events to clipboard!"
+            : "Clipboard unavailable — copy directly from the box.";
+        debugStatusIsError = !ok;
+    }
+
+    private async Task LoadPastedDebugLog()
+    {
+        if (Game.TryImportDebugLog(debugLogText, out _, out string msg))
+        {
+            selectedType = Game.CurrentType.ToString();
+            showVictoryModal = false;
+            showDebugModal = false;
+            isMenuOpen = false;
+            lastSolvedState = Game.IsSolved;
+            ResetZoom();
+            debugStatusMessage = msg;
+            debugStatusIsError = false;
+            await SafeInvokeVoidAsync("loopHelpers.setUrlHash", "");
+            ShowToast(msg);
+        }
+        else
+        {
+            debugStatusMessage = msg;
+            debugStatusIsError = true;
+        }
+    }
+
     private void OpenFilesModal()
     {
         isMenuOpen = false;
@@ -2171,6 +2328,7 @@
                 showResetModal = false;
                 showSettingsModal = false;
                 showFilesModal = false;
+                showDebugModal = false;
                 isMenuOpen = false;
                 StateHasChanged();
             }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using LoopDeLoop;
 using LoopDeLoop.TrialOrdering;
@@ -57,6 +58,232 @@ namespace LoopDeLoop.Web.Services
 
         private HintHeatMapScorer? heatMapScorer;
         public float[]? EdgeHeatScores { get; private set; }
+
+        public bool DebugRecordingEnabled { get; private set; }
+        private SolveInteractionLog? currentDebugLog;
+        private long lastDebugEventElapsedMs;
+        public int DebugEventCount => currentDebugLog?.Events.Count ?? 0;
+
+        public static bool IsDebugQueryEnabled(string? queryString, string? hashFragment = null)
+        {
+            bool? queryFlag = TryReadDebugFlag(queryString);
+            if (queryFlag.HasValue)
+                return queryFlag.Value;
+
+            if (!string.IsNullOrWhiteSpace(hashFragment))
+            {
+                string trimmed = hashFragment.Trim().TrimStart('#');
+                // Support both #p=...&debug and #p=...?debug (or #debug&p=...)
+                int qIdx = trimmed.IndexOf('?');
+                if (qIdx >= 0)
+                {
+                    bool? afterQ = TryReadDebugFlag(trimmed[(qIdx + 1)..]);
+                    if (afterQ.HasValue)
+                        return afterQ.Value;
+                }
+                bool? hashFlag = TryReadDebugFlag(trimmed);
+                if (hashFlag.HasValue)
+                    return hashFlag.Value;
+            }
+
+            return false;
+        }
+
+        private static bool? TryReadDebugFlag(string? paramString)
+        {
+            if (string.IsNullOrWhiteSpace(paramString))
+                return null;
+
+            string trimmed = paramString.Trim();
+            if (trimmed.StartsWith('?'))
+                trimmed = trimmed[1..];
+            if (string.IsNullOrEmpty(trimmed))
+                return null;
+
+            foreach (string part in trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                int eq = part.IndexOf('=');
+                string key = (eq >= 0 ? part[..eq] : part).Trim();
+                if (!key.Equals("debug", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (eq < 0)
+                    return true;
+
+                string val = part[(eq + 1)..].Trim();
+                if (val.Equals("0", StringComparison.OrdinalIgnoreCase) ||
+                    val.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+                    val.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+                    val.Equals("off", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                return val.Length == 0 ||
+                       val.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+                       val.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+                       val.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+                       val.Equals("on", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return null;
+        }
+
+        public void SetDebugRecordingEnabled(bool enabled)
+        {
+            if (DebugRecordingEnabled == enabled) return;
+            DebugRecordingEnabled = enabled;
+            if (!enabled)
+            {
+                currentDebugLog = null;
+                lastDebugEventElapsedMs = 0;
+            }
+            else if (CurrentMesh != null && currentDebugLog == null)
+            {
+                BeginDebugSession("active");
+            }
+            NotifyVisualChanged();
+        }
+
+        private DebugSettingsSnapshot CaptureDebugSettings() => new()
+        {
+            AutoMoveLevel = AutoMoveLevel,
+            DisallowFalseMove = DisallowFalseMove,
+            ShowCellColors = ShowCellColors,
+            ShowEdgeColors = ShowEdgeColors,
+            ShowHintHeatMap = ShowHintHeatMap,
+            AutoStart = AutoStart
+        };
+
+        private void BeginDebugSession(string source)
+        {
+            if (!DebugRecordingEnabled || CurrentMesh == null)
+            {
+                currentDebugLog = null;
+                lastDebugEventElapsedMs = 0;
+                return;
+            }
+
+            lastDebugEventElapsedMs = 0;
+            currentDebugLog = new SolveInteractionLog
+            {
+                Version = 1,
+                PuzzleCode = GetShareCode(),
+                MeshType = ActiveType.ToString(),
+                Width = ActiveWidth,
+                Height = ActiveHeight,
+                Difficulty = Difficulty,
+                EdgeCount = CurrentMesh.Edges.Count,
+                CellCount = CurrentMesh.Cells.Count,
+                StartedAtUtc = DateTimeOffset.UtcNow,
+                CompletedAtUtc = IsSolved ? DateTimeOffset.UtcNow : null,
+                TotalElapsedMs = Math.Max(0L, (long)Math.Round(ElapsedTime.TotalMilliseconds)),
+                IsSolved = IsSolved,
+                WasAutoSolved = WasAutoSolved,
+                Settings = CaptureDebugSettings()
+            };
+
+            RecordDebugEvent("puzzle_start", detail: source);
+        }
+
+        private void RecordDebugEvent(
+            string kind,
+            int? index = null,
+            int? secondaryIndex = null,
+            string? fromState = null,
+            string? toState = null,
+            bool? isAlternative = null,
+            bool? succeeded = null,
+            string? detail = null)
+        {
+            if (!DebugRecordingEnabled || currentDebugLog == null)
+                return;
+
+            long elapsedMs = Math.Max(0L, (long)Math.Round(ElapsedTime.TotalMilliseconds));
+            long deltaMs = Math.Max(0L, elapsedMs - lastDebugEventElapsedMs);
+            lastDebugEventElapsedMs = elapsedMs;
+
+            currentDebugLog.Events.Add(new SolveInteractionEvent
+            {
+                Seq = currentDebugLog.Events.Count,
+                ElapsedMs = elapsedMs,
+                DeltaMs = deltaMs,
+                Kind = kind,
+                Index = index,
+                SecondaryIndex = secondaryIndex,
+                FromState = fromState,
+                ToState = toState,
+                IsAlternative = isAlternative,
+                Succeeded = succeeded,
+                Detail = detail
+            });
+            currentDebugLog.TotalElapsedMs = elapsedMs;
+        }
+
+        public SolveInteractionLog? ExportDebugLog()
+        {
+            if (!DebugRecordingEnabled || CurrentMesh == null)
+                return null;
+
+            if (currentDebugLog == null)
+                BeginDebugSession("active");
+            if (currentDebugLog == null)
+                return null;
+
+            currentDebugLog.TotalElapsedMs = Math.Max(0L, (long)Math.Round(ElapsedTime.TotalMilliseconds));
+            currentDebugLog.IsSolved = IsSolved;
+            currentDebugLog.WasAutoSolved = WasAutoSolved;
+            currentDebugLog.Settings = CaptureDebugSettings();
+            if (IsSolved && currentDebugLog.CompletedAtUtc == null)
+                currentDebugLog.CompletedAtUtc = DateTimeOffset.UtcNow;
+
+            return currentDebugLog;
+        }
+
+        public string ExportDebugLogJson()
+        {
+            SolveInteractionLog? log = ExportDebugLog();
+            if (log == null)
+                return string.Empty;
+            return JsonSerializer.Serialize(log, LoopJsonContext.Default.SolveInteractionLog);
+        }
+
+        public bool TryImportDebugLog(string rawJson, out SolveInteractionLog? log, out string statusMessage)
+        {
+            log = null;
+            statusMessage = string.Empty;
+            if (string.IsNullOrWhiteSpace(rawJson))
+            {
+                statusMessage = "Paste a debug interaction JSON log first.";
+                return false;
+            }
+
+            try
+            {
+                log = JsonSerializer.Deserialize(rawJson.Trim(), LoopJsonContext.Default.SolveInteractionLog);
+            }
+            catch (JsonException ex)
+            {
+                statusMessage = $"Invalid debug log JSON: {ex.Message}";
+                return false;
+            }
+
+            if (log == null || string.IsNullOrWhiteSpace(log.PuzzleCode))
+            {
+                statusMessage = "Debug log is missing a valid puzzleCode.";
+                return false;
+            }
+
+            if (!LoadPuzzleText(log.PuzzleCode, "debug_import"))
+            {
+                statusMessage = "Could not load puzzle from debug log.";
+                return false;
+            }
+
+            double secs = log.TotalElapsedMs / 1000.0;
+            statusMessage = $"Loaded puzzle from log ({log.Events.Count} events, {secs:0.0}s).";
+            return true;
+        }
 
         // Phase 2 Settings (persisted via UserPreferences, hidden in Settings modal)
         public int AutoMoveLevel
@@ -126,6 +353,7 @@ namespace LoopDeLoop.Web.Services
         public void ToggleHintHeatMap()
         {
             ShowHintHeatMap = !ShowHintHeatMap;
+            RecordDebugEvent("heatmap_toggle", detail: ShowHintHeatMap ? "on" : "off");
             NotifyVisualChanged();
         }
 
@@ -262,6 +490,7 @@ namespace LoopDeLoop.Web.Services
                     IsSolved = false;
                     WasAutoSolved = false;
                     ClearTransientBoardState();
+                    BeginDebugSession("generated");
                     CheckSolution();
                     generatedNewBoard = true;
                 }
@@ -407,10 +636,12 @@ namespace LoopDeLoop.Web.Services
             if (UndoTree.Do(action))
             {
                 InvalidEdgeIndex = null;
+                RecordDebugEvent("edge_group", index: firstEdge, secondaryIndex: edgeIndex, succeeded: true, detail: sameLoop ? "same" : "opposite");
                 NotifyChanged();
                 return true;
             }
 
+            RecordDebugEvent("edge_group", index: firstEdge, secondaryIndex: edgeIndex, succeeded: false, detail: sameLoop ? "same" : "opposite");
             FlashInvalidEdge(edgeIndex);
             return false;
         }
@@ -477,6 +708,7 @@ namespace LoopDeLoop.Web.Services
             IsSolved = false;
             WasAutoSolved = false;
             ClearTransientBoardState();
+            BeginDebugSession($"imported:{detectedFormat}");
 
             CheckSolution();
             NotifyChanged();
@@ -539,11 +771,26 @@ namespace LoopDeLoop.Web.Services
             {
                 InvalidEdgeIndex = null;
                 HintEdgeIndex = null;
+                RecordDebugEvent(
+                    "edge_toggle",
+                    index: edgeIndex,
+                    fromState: current.ToString(),
+                    toState: next.ToString(),
+                    isAlternative: isAlternative,
+                    succeeded: true,
+                    detail: autoMove > 0 ? $"automove:{autoMove}" : null);
                 CheckSolution();
                 NotifyChanged();
             }
             else
             {
+                RecordDebugEvent(
+                    "edge_toggle",
+                    index: edgeIndex,
+                    fromState: current.ToString(),
+                    toState: next.ToString(),
+                    isAlternative: isAlternative,
+                    succeeded: false);
                 if (dismissedVisual) NotifyChanged();
                 if (DisallowFalseMove)
                 {
@@ -565,6 +812,7 @@ namespace LoopDeLoop.Web.Services
                 return;
             }
 
+            var current = CurrentMesh.Edges[edgeIndex].State;
             int autoMove = GetEffectiveAutoMoveDepth(CurrentMesh);
             if (autoMove > 0)
                 ConfigureMeshForInteractiveMove(CurrentMesh);
@@ -574,11 +822,24 @@ namespace LoopDeLoop.Web.Services
             {
                 InvalidEdgeIndex = null;
                 HintEdgeIndex = null;
+                RecordDebugEvent(
+                    "edge_set",
+                    index: edgeIndex,
+                    fromState: current.ToString(),
+                    toState: targetState.ToString(),
+                    succeeded: true,
+                    detail: autoMove > 0 ? $"automove:{autoMove}" : null);
                 CheckSolution();
                 NotifyChanged();
             }
             else
             {
+                RecordDebugEvent(
+                    "edge_set",
+                    index: edgeIndex,
+                    fromState: current.ToString(),
+                    toState: targetState.ToString(),
+                    succeeded: false);
                 if (dismissedVisual) NotifyChanged();
                 if (DisallowFalseMove)
                 {
@@ -593,9 +854,18 @@ namespace LoopDeLoop.Web.Services
                 return;
 
             bool dismissedVisual = DismissVisualSolveInternal();
+            int prevColor = CurrentMesh.Cells[cellIndex].Color;
             var action = new PuzzleCellColorAction(CurrentMesh, cellIndex, isAlternative);
             if (UndoTree.Do(action))
             {
+                int nextColor = CurrentMesh.Cells[cellIndex].Color;
+                RecordDebugEvent(
+                    "cell_color",
+                    index: cellIndex,
+                    fromState: prevColor.ToString(),
+                    toState: nextColor.ToString(),
+                    isAlternative: isAlternative,
+                    succeeded: true);
                 NotifyChanged();
             }
             else if (dismissedVisual)
@@ -611,6 +881,7 @@ namespace LoopDeLoop.Web.Services
             {
                 UndoTree.Undo();
                 WasAutoSolved = false;
+                RecordDebugEvent("undo");
                 CheckSolution();
                 NotifyChanged();
             }
@@ -626,6 +897,7 @@ namespace LoopDeLoop.Web.Services
             if (UndoTree.CanUndo && UndoTree.UndoAndForget())
             {
                 WasAutoSolved = false;
+                RecordDebugEvent("undo_forget");
                 CheckSolution();
                 NotifyChanged();
                 return true;
@@ -641,6 +913,7 @@ namespace LoopDeLoop.Web.Services
             {
                 UndoTree.Redo();
                 WasAutoSolved = UndoTree.CurrentAction is PuzzleBatchSolveAction;
+                RecordDebugEvent("redo");
                 CheckSolution();
                 NotifyChanged();
             }
@@ -664,7 +937,10 @@ namespace LoopDeLoop.Web.Services
             }
             UndoTree.Mark();
             if (notify)
+            {
+                RecordDebugEvent("fix", detail: $"marked:{MarkedEdges.Count}");
                 NotifyChanged();
+            }
         }
 
         public void Unfix()
@@ -672,6 +948,7 @@ namespace LoopDeLoop.Web.Services
             DismissVisualSolveInternal();
             MarkedEdges.Clear();
             UndoTree.ClearMark();
+            RecordDebugEvent("unfix");
             CheckSolution();
             NotifyChanged();
         }
@@ -680,6 +957,7 @@ namespace LoopDeLoop.Web.Services
         {
             DismissVisualSolveInternal();
             UndoTree.RevertToMark();
+            RecordDebugEvent("revert_to_fix");
             CheckSolution();
             NotifyChanged();
         }
@@ -703,6 +981,13 @@ namespace LoopDeLoop.Web.Services
                 UndoTree.SetMarkedDirect(preVictoryUndoMark);
                 preVictoryUndoTree = UndoTree;
                 Fix(notify: false); // Auto-fix solution upon victory
+                if (currentDebugLog != null)
+                {
+                    currentDebugLog.CompletedAtUtc = DateTimeOffset.UtcNow;
+                    currentDebugLog.IsSolved = true;
+                    currentDebugLog.WasAutoSolved = WasAutoSolved;
+                }
+                RecordDebugEvent("puzzle_solved", detail: WasAutoSolved ? "auto" : "manual");
             }
             else if (!currentlySolved && IsSolved)
             {
@@ -866,6 +1151,7 @@ namespace LoopDeLoop.Web.Services
             solvedElapsed = state.IsSolved ? TimeSpan.FromSeconds(clampedElapsed) : null;
             WasAutoSolved = state.IsSolved && state.WasAutoSolved;
             ClearTransientBoardState();
+            BeginDebugSession("restored");
             CheckSolution();
             RefreshHintHeatMap();
             NotifyVisualChanged();
@@ -885,17 +1171,39 @@ namespace LoopDeLoop.Web.Services
             if (string.IsNullOrEmpty(trimmed))
                 return false;
 
-            normalizedHash = trimmed;
-            string code = trimmed;
-            if (code.StartsWith("p=", StringComparison.OrdinalIgnoreCase))
-                code = code[2..];
-            else if (code.StartsWith("puzzle=", StringComparison.OrdinalIgnoreCase))
-                code = code[7..];
-
-            code = code.Trim();
-            if (string.IsNullOrEmpty(code))
+            // Strip any trailing ?query appended after the hash (e.g. #p=sq/3x3/a1b2?debug)
+            int qIdx = trimmed.IndexOf('?');
+            string hashPart = qIdx >= 0 ? trimmed[..qIdx].Trim() : trimmed;
+            if (string.IsNullOrEmpty(hashPart))
                 return false;
 
+            string? code = null;
+            string[] segments = hashPart.Split('&', StringSplitOptions.RemoveEmptyEntries);
+            foreach (string seg in segments)
+            {
+                string s = seg.Trim();
+                if (s.StartsWith("p=", StringComparison.OrdinalIgnoreCase))
+                {
+                    code = s[2..];
+                    break;
+                }
+                if (s.StartsWith("puzzle=", StringComparison.OrdinalIgnoreCase))
+                {
+                    code = s[7..];
+                    break;
+                }
+            }
+
+            // Fallback: bare hash without p=/puzzle= prefix (ignore lone debug flag)
+            if (code == null && segments.Length == 1 && !segments[0].Trim().StartsWith("debug", StringComparison.OrdinalIgnoreCase))
+            {
+                code = segments[0];
+            }
+
+            if (string.IsNullOrWhiteSpace(code))
+                return false;
+
+            code = code.Trim();
             if (code.Contains('%'))
             {
                 try
@@ -908,11 +1216,12 @@ namespace LoopDeLoop.Web.Services
                 }
             }
 
+            normalizedHash = $"p={code}";
             payload = code;
             return true;
         }
 
-        public bool LoadPuzzleText(string puzzleText)
+        public bool LoadPuzzleText(string puzzleText, string source = "loaded")
         {
             if (string.IsNullOrEmpty(puzzleText)) return false;
 
@@ -952,6 +1261,7 @@ namespace LoopDeLoop.Web.Services
             IsSolved = false;
             WasAutoSolved = false;
             ClearTransientBoardState();
+            BeginDebugSession(source);
 
             CheckSolution();
             NotifyChanged();
@@ -1024,6 +1334,7 @@ namespace LoopDeLoop.Web.Services
             IsSolved = false;
             WasAutoSolved = false;
             ClearTransientBoardState();
+            BeginDebugSession("reset");
             CheckSolution();
             NotifyChanged();
         }
@@ -1074,6 +1385,7 @@ namespace LoopDeLoop.Web.Services
         {
             if (DismissVisualSolveInternal())
             {
+                RecordDebugEvent("visual_solve_dismiss");
                 RefreshHintHeatMap();
                 NotifyVisualChanged();
             }
@@ -1159,11 +1471,13 @@ namespace LoopDeLoop.Web.Services
 
                 VisualSolveStepIndex = 0;
                 EdgeHeatScores = null;
+                RecordDebugEvent("visual_solve_start", succeeded: true, detail: $"steps:{visualSolveSteps.Count}");
                 NotifyVisualChanged();
                 return true;
             }
 
             DismissVisualSolveInternal();
+            RecordDebugEvent("visual_solve_start", succeeded: false);
             NotifyVisualChanged();
             return false;
         }
@@ -1224,6 +1538,7 @@ namespace LoopDeLoop.Web.Services
             {
                 WasAutoSolved = true;
                 DismissVisualSolveInternal();
+                RecordDebugEvent("solve", detail: "visual_apply");
                 CheckSolution();
                 NotifyChanged();
                 return true;
@@ -1247,6 +1562,7 @@ namespace LoopDeLoop.Web.Services
                 if (UndoTree.Do(action))
                 {
                     WasAutoSolved = true;
+                    RecordDebugEvent("solve", detail: "auto_solve");
                     CheckSolution();
                     NotifyChanged();
                     return true;
@@ -1282,6 +1598,13 @@ namespace LoopDeLoop.Web.Services
             var (edgeIdx, targetState, message) = ComputeHint();
             HintMessage = message;
             bool boardMutated = false;
+
+            RecordDebugEvent(
+                "hint",
+                index: edgeIdx,
+                toState: edgeIdx.HasValue ? targetState.ToString() : null,
+                succeeded: edgeIdx.HasValue,
+                detail: applyMove ? "apply" : "highlight");
 
             if (edgeIdx.HasValue)
             {

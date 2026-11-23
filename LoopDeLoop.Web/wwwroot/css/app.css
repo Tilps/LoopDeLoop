@@ -1341,11 +1341,20 @@ body, html {
     stroke-linecap: round;
 }
 
-/* Floating Hint Heat Map Legend */
-.heatmap-legend {
+/* Floating Left Board HUD (Heat Map Legend & ?debug pill) */
+.board-left-hud {
     position: absolute;
     bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
     left: calc(1rem + env(safe-area-inset-left, 0px));
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+    z-index: 20;
+    user-select: none;
+}
+
+.heatmap-legend {
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
@@ -1357,8 +1366,92 @@ body, html {
     font-size: 0.78rem;
     font-weight: 600;
     color: var(--text-primary);
-    z-index: 20;
-    user-select: none;
+}
+
+.debug-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.32rem 0.65rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--primary);
+    border-radius: 9999px;
+    box-shadow: var(--shadow-lg);
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--primary);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.debug-pill:hover {
+    background: var(--primary);
+    color: #ffffff;
+}
+
+.victory-modal-debug {
+    max-width: 540px;
+}
+
+.debug-log-panel {
+    margin-top: 0.85rem;
+    padding: 0.65rem 0.75rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.debug-log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.debug-log-btn-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.btn-compact {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+}
+
+.debug-log-textarea {
+    font-size: 0.74rem;
+    line-height: 1.35;
+}
+
+.debug-log-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.debug-log-status {
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.debug-log-status.success {
+    color: var(--success);
+}
+
+.debug-log-status.error {
+    color: var(--danger);
 }
 
 .heatmap-legend-label {
@@ -1465,6 +1558,7 @@ summary:focus-visible {
     .game-header,
     .game-footer,
     .zoom-hud,
+    .board-left-hud,
     .heatmap-legend,
     .heatmap-layer,
     .visual-solver-bar,

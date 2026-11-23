@@ -86,6 +86,7 @@
                 }
             },
             getUrlHash: () => window.location.hash || '',
+            getUrlSearch: () => window.location.search || '',
             setUrlHash: (hash) => {
                 if (history.replaceState) {
                     const base = window.location.pathname + window.location.search;
