@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="TrialOrdering\Weights\v4_all_h16_l2.ldlm" LogicalName="LoopDeLoop.TrialOrdering.Weights.v4_all_h16_l2.ldlm" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="LoopDeLoop" />
     <InternalsVisibleTo Include="LoopDeLoop.Web" />
   </ItemGroup>

@@ -45,6 +45,7 @@ namespace LoopDeLoop
                 // No point doing anything if we're already complete.
                 PerformEndIfPossible(edgeChanges);
                 curDepthPatern.Clear();
+                TrialOrderingPolicy?.OnSolveStart(this);
                 if (solverMethod == SolverMethod.Iterative)
                     return IterativeTrySolve(noRollback);
                 else
@@ -170,6 +171,16 @@ namespace LoopDeLoop
             List<IAction> edgeChanges2 = new List<IAction>();
             while (index < trials.Count && IsPointlessTrial(trials[index]))
                 index++;
+            int swappedIndex = -1;
+            if (index < trials.Count && TrialOrderingPolicy != null)
+            {
+                int chosen = TrialOrderingPolicy.SelectRecursiveTrial(this, trials, index);
+                if (chosen > index && chosen < trials.Count)
+                {
+                    (trials[index], trials[chosen]) = (trials[chosen], trials[index]);
+                    swappedIndex = chosen;
+                }
+            }
             curDepthPatern.Add(index);
             try
             {
@@ -231,6 +242,10 @@ namespace LoopDeLoop
             finally
             {
                 curDepthPatern.RemoveAt(curDepthPatern.Count - 1);
+                if (swappedIndex >= 0)
+                {
+                    (trials[index], trials[swappedIndex]) = (trials[swappedIndex], trials[index]);
+                }
             }
         }
 
@@ -368,6 +383,10 @@ namespace LoopDeLoop
             {
                 GatherAll(trials);
             }
+            if (TrialOrderingPolicy != null && trials.Count > 1)
+            {
+                TrialOrderingPolicy.OrderIterativeTrials(this, trials, 0, iterTopLevel, iterativeRecDepth);
+            }
             List<IAction> edgeChanges1 = new List<IAction>();
             List<IAction> edgeChanges2 = new List<IAction>();
             IAction? lastTrial = null;
@@ -440,6 +459,7 @@ namespace LoopDeLoop
                 {
                     Unperform(edgeChanges2);
                 }
+                int addedActionsThisTrial = 0;
                 if (!success1 && !success2)
                     return false;
                 else if (success1 && success2)
@@ -470,7 +490,8 @@ namespace LoopDeLoop
 
                             if (MeshChangeUpdate != null)
                                 MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true));
-                            if (realChanges.Count != length)
+                            addedActionsThisTrial = realChanges.Count - length;
+                            if (addedActionsThisTrial > 0)
                                 changed = true;
                             // This doesn't appear to make any sense and PerformStart has changed now.
                             /*if (changed && topLevel)
@@ -501,7 +522,8 @@ namespace LoopDeLoop
                             return false;
                         if (MeshChangeUpdate != null)
                             MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true));
-                        if (realChanges.Count != length)
+                        addedActionsThisTrial = realChanges.Count - length;
+                        if (addedActionsThisTrial > 0)
                             changed = true;
                     }
                     finally
@@ -525,13 +547,27 @@ namespace LoopDeLoop
                             return false;
                         if (MeshChangeUpdate != null)
                             MeshChangeUpdate(this, new MeshChangeUpdateEventArgs(this, null, true));
-                        if (realChanges.Count != length)
+                        addedActionsThisTrial = realChanges.Count - length;
+                        if (addedActionsThisTrial > 0)
                             changed = true;
                     }
                     finally
                     {
                         coloringCheats = colorCheatBackup;
                         topLevel = false;
+                    }
+                }
+
+                if (addedActionsThisTrial > 0 && TrialOrderingPolicy != null)
+                {
+                    PostProgressAction postAction = TrialOrderingPolicy.OnTrialProgress(this, trials, i, addedActionsThisTrial, iterTopLevel, iterativeRecDepth);
+                    if (postAction == PostProgressAction.RestartPass && iterTopLevel)
+                    {
+                        return true;
+                    }
+                    else if (postAction == PostProgressAction.ReorderRemaining && i + 1 < trials.Count - 1)
+                    {
+                        TrialOrderingPolicy.OrderIterativeTrials(this, trials, i + 1, iterTopLevel, iterativeRecDepth);
                     }
                 }
             }

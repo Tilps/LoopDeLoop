@@ -134,6 +134,13 @@
                 <button class="btn btn-secondary" @onclick="RequestDoHintAsync" disabled="@(Game.CurrentMesh == null || Game.IsGenerating || Game.IsBusy || Game.IsSolved)" title="Apply next logical deduction (Ctrl+Shift+H)">
                     ⚡ Do Hint
                 </button>
+                <button class="btn @(Game.ShowHintHeatMap ? "btn-heatmap-active" : "btn-secondary")"
+                        @onclick="ToggleHintHeatMapAsync"
+                        disabled="@(Game.CurrentMesh == null || Game.IsGenerating || Game.IsBusy || Game.IsSolved)"
+                        aria-pressed="@Game.ShowHintHeatMap"
+                        title="Highlight the most promising areas to examine next">
+                    🔥 Heat Map
+                </button>
                 <button class="btn btn-danger-outline" @onclick="PromptSolve" disabled="@(Game.CurrentMesh == null || Game.IsGenerating || Game.IsBusy || Game.IsSolved)" title="Give up and reveal solution">
                     🏳️ Solve
                 </button>
@@ -281,6 +288,28 @@
                         }
                     }
                 </g>
+
+                <!-- Layer 2b: Hint Heat Map (warm glow on high-priority empty edges) -->
+                @if (Game.ShowHintHeatMap && !Game.IsVisualSolving && !Game.IsSolved && Game.EdgeHeatScores is { } heatScores && heatScores.Length == mesh.Edges.Count)
+                {
+                    <g class="heatmap-layer" style="pointer-events: none;">
+                        @for (int e = 0; e < mesh.Edges.Count; e++)
+                        {
+                            float heat = heatScores[e];
+                            if (heat >= HeatMapMinThreshold && mesh.Edges[e].State == EdgeState.Empty)
+                            {
+                                int bucket = GetHeatBucket(heat);
+                                <line @key="e"
+                                      x1="@geom.EdgeX1Str[e]" y1="@geom.EdgeY1Str[e]" x2="@geom.EdgeX2Str[e]" y2="@geom.EdgeY2Str[e]"
+                                      stroke="@(isDarkMode ? HeatColorsDark[bucket] : HeatColorsLight[bucket])"
+                                      stroke-width="@HeatStrokeWidths[bucket]"
+                                      stroke-opacity="@(isDarkMode ? HeatOpacitiesDark[bucket] : HeatOpacitiesLight[bucket])"
+                                      class="edge-heatmap"
+                                      style="pointer-events: none;" />
+                            }
+                        }
+                    </g>
+                }
 
                 <!-- Layer 3: Cell Clue Numbers (rendered as pure SVG text, always on top of background lines) -->
                 <g class="cell-clues-layer" style="pointer-events: none;">
@@ -431,6 +460,16 @@
                 </div>
             }
 
+            @if (Game.ShowHintHeatMap && !Game.IsVisualSolving && !Game.IsSolved && Game.EdgeHeatScores != null)
+            {
+                <div class="heatmap-legend" role="status" aria-label="Hint heat map active">
+                    <span class="heatmap-legend-label">🔥 Focus</span>
+                    <span class="heatmap-legend-bar" aria-hidden="true"></span>
+                    <span class="heatmap-legend-scale">Hot</span>
+                    <button class="heatmap-legend-close" @onclick="ToggleHintHeatMapAsync" title="Turn off Heat Map" aria-label="Turn off Heat Map">✕</button>
+                </div>
+            }
+
             <!-- Floating Pan & Zoom Controls -->
             <div class="zoom-hud" role="group" aria-label="Zoom and pan controls">
                 <button class="zoom-btn" @onclick="() => ZoomBy(1.25f)" title="Zoom In (+)" aria-label="Zoom in">+</button>
@@ -523,6 +562,7 @@
                     <li><strong>Revert (Ctrl+R)</strong>: Rollback all moves made after your last checkpoint.</li>
                     <li><strong>Hint (Ctrl+H)</strong>: Highlight the next logically deducible edge on the board without spoiling whether it is a line or cross.</li>
                     <li><strong>Do Hint (Ctrl+Shift+H)</strong>: Automatically apply the next logical deduction with an explanation.</li>
+                    <li><strong>Heat Map</strong>: Overlay a live warm glow showing the most productive regions of the board to examine next, without spoiling the move.</li>
                     <li><strong>Reset Board</strong>: Clear all player moves and restart the timer (in Options menu).</li>
                     <li><strong>Solve</strong>: Surrender and reveal the complete loop solution (in Options menu).</li>
                 </ul>
@@ -618,6 +658,11 @@
                         <input type="checkbox" @bind="Game.ShowCellColors" @bind:after="OnSettingsChangedAsync" />
                         <span>Enable cell shading</span>
                     </label>
+
+                    <label class="settings-check-row">
+                        <input type="checkbox" @bind="Game.ShowHintHeatMap" @bind:after="OnSettingsChangedAsync" />
+                        <span>Show hint heat map (highlight best regions to inspect next)</span>
+                    </label>
                 </div>
 
                 <div class="settings-section">
@@ -699,6 +744,11 @@
                                 <option value="@GeneratorSolverMode.Recursive">Recursive</option>
                             </select>
                         </div>
+
+                        <label class="settings-check-row">
+                            <input type="checkbox" @bind="Game.UseNeuralTrialOrdering" @bind:after="OnSettingsChangedAsync" />
+                            <span>Use neural trial ordering (faster solving &amp; puzzle generation)</span>
+                        </label>
                     </div>
                 </details>
             </div>
@@ -1737,6 +1787,102 @@
         int idx = Math.Abs(colorValue) - 1;
         if (idx < 0) idx = 0;
         return EdgeGroupPalette[idx % EdgeGroupPalette.Length];
+    }
+
+    private const float HeatMapMinThreshold = 0.12f;
+    private const int HeatMapBuckets = 16;
+
+    private static readonly string[] HeatColorsLight = BuildHeatColorTable(darkMode: false);
+    private static readonly string[] HeatColorsDark = BuildHeatColorTable(darkMode: true);
+    private static readonly string[] HeatStrokeWidths = BuildHeatWidthTable();
+    private static readonly string[] HeatOpacitiesLight = BuildHeatOpacityTable(darkMode: false);
+    private static readonly string[] HeatOpacitiesDark = BuildHeatOpacityTable(darkMode: true);
+
+    private static int GetHeatBucket(float heat)
+    {
+        float t = Math.Clamp((heat - HeatMapMinThreshold) / (1.0f - HeatMapMinThreshold), 0f, 1f);
+        int idx = (int)(t * (HeatMapBuckets - 1) + 0.5f);
+        return Math.Clamp(idx, 0, HeatMapBuckets - 1);
+    }
+
+    private static string[] BuildHeatColorTable(bool darkMode)
+    {
+        var table = new string[HeatMapBuckets];
+        for (int i = 0; i < HeatMapBuckets; i++)
+        {
+            float t = (float)i / (HeatMapBuckets - 1);
+            int r, g, b;
+            if (!darkMode)
+            {
+                if (t < 0.5f)
+                {
+                    float u = t * 2f;
+                    r = (int)MathF.Round(250 + (249 - 250) * u);
+                    g = (int)MathF.Round(204 + (115 - 204) * u);
+                    b = (int)MathF.Round(21 + (22 - 21) * u);
+                }
+                else
+                {
+                    float u = (t - 0.5f) * 2f;
+                    r = (int)MathF.Round(249 + (220 - 249) * u);
+                    g = (int)MathF.Round(115 + (38 - 115) * u);
+                    b = (int)MathF.Round(22 + (38 - 22) * u);
+                }
+            }
+            else
+            {
+                if (t < 0.5f)
+                {
+                    float u = t * 2f;
+                    r = (int)MathF.Round(251 + (251 - 251) * u);
+                    g = (int)MathF.Round(191 + (146 - 191) * u);
+                    b = (int)MathF.Round(36 + (60 - 36) * u);
+                }
+                else
+                {
+                    float u = (t - 0.5f) * 2f;
+                    r = (int)MathF.Round(251 + (244 - 251) * u);
+                    g = (int)MathF.Round(146 + (63 - 146) * u);
+                    b = (int)MathF.Round(60 + (94 - 60) * u);
+                }
+            }
+            table[i] = string.Create(CultureInfo.InvariantCulture, $"rgb({r},{g},{b})");
+        }
+        return table;
+    }
+
+    private static string[] BuildHeatWidthTable()
+    {
+        var table = new string[HeatMapBuckets];
+        for (int i = 0; i < HeatMapBuckets; i++)
+        {
+            float t = (float)i / (HeatMapBuckets - 1);
+            float w = 4.5f + t * 5.5f;
+            table[i] = w.ToString("0.0", CultureInfo.InvariantCulture);
+        }
+        return table;
+    }
+
+    private static string[] BuildHeatOpacityTable(bool darkMode)
+    {
+        var table = new string[HeatMapBuckets];
+        float minOp = darkMode ? 0.28f : 0.26f;
+        float span = darkMode ? 0.60f : 0.56f;
+        for (int i = 0; i < HeatMapBuckets; i++)
+        {
+            float t = (float)i / (HeatMapBuckets - 1);
+            float op = minOp + t * span;
+            table[i] = op.ToString("0.00", CultureInfo.InvariantCulture);
+        }
+        return table;
+    }
+
+    private async Task ToggleHintHeatMapAsync()
+    {
+        Game.ToggleHintHeatMap();
+        if (Game.ShowHintHeatMap)
+            isMenuOpen = false;
+        await SavePreferencesAsync();
     }
 
     private void OpenFilesModal()

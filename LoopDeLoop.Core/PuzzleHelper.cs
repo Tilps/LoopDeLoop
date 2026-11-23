@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using LoopDeLoop.TrialOrdering;
 
 namespace LoopDeLoop
 {
@@ -16,6 +17,12 @@ namespace LoopDeLoop
     public static class PuzzleHelper
     {
         public const int MaxGridDimension = 50;
+
+        /// <summary>
+        /// When true, solver and difficulty 0-4 generator meshes attach the embedded pure-C#
+        /// IncidenceGnnPolicy to prioritize high-progress trials first.
+        /// </summary>
+        public static bool UseNeuralTrialOrdering { get; set; } = true;
 
         public static Mesh CreateFullSolverMesh(Mesh source)
         {
@@ -33,6 +40,8 @@ namespace LoopDeLoop
             solver.UseCellPairsTopLevel = true;
             solver.UseCellPairs = false;
             solver.IterativeRecMaxDepth = 1;
+            if (UseNeuralTrialOrdering)
+                solver.TrialOrderingPolicy = IncidenceGnnPolicy.CreateDefault();
             return solver;
         }
 
@@ -127,6 +136,8 @@ namespace LoopDeLoop
             if (difficulty < 5)
             {
                 mesh.IterativeSolverDepth = Math.Max(0, difficulty - 2);
+                if (UseNeuralTrialOrdering && difficulty >= 2)
+                    mesh.TrialOrderingPolicy = IncidenceGnnPolicy.CreateDefault();
             }
             else
             {

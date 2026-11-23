@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using LoopDeLoop;
+using LoopDeLoop.TrialOrdering;
 
 namespace LoopDeLoop.Web.Services
 {
@@ -32,6 +33,30 @@ namespace LoopDeLoop.Web.Services
                 if (!value) PendingGroupEdgeIndex = null;
             }
         } = false;
+
+        public bool ShowHintHeatMap
+        {
+            get => field;
+            set
+            {
+                if (field == value) return;
+                field = value;
+                RefreshHintHeatMap();
+            }
+        } = false;
+
+        public bool UseNeuralTrialOrdering
+        {
+            get => field;
+            set
+            {
+                field = value;
+                PuzzleHelper.UseNeuralTrialOrdering = value;
+            }
+        } = true;
+
+        private HintHeatMapScorer? heatMapScorer;
+        public float[]? EdgeHeatScores { get; private set; }
 
         // Phase 2 Settings (persisted via UserPreferences, hidden in Settings modal)
         public int AutoMoveLevel
@@ -86,8 +111,27 @@ namespace LoopDeLoop.Web.Services
         public bool CanUndo => UndoTree.CanUndo;
         public bool CanRedo => UndoTree.CanRedo;
 
+        public void RefreshHintHeatMap()
+        {
+            if (!ShowHintHeatMap || CurrentMesh == null || IsSolved || IsGenerating || IsVisualSolving)
+            {
+                EdgeHeatScores = null;
+                return;
+            }
+
+            heatMapScorer ??= new HintHeatMapScorer();
+            EdgeHeatScores = heatMapScorer.ComputeEdgeHeat(CurrentMesh);
+        }
+
+        public void ToggleHintHeatMap()
+        {
+            ShowHintHeatMap = !ShowHintHeatMap;
+            NotifyVisualChanged();
+        }
+
         public void NotifyChanged()
         {
+            RefreshHintHeatMap();
             OnStateChanged?.Invoke();
             OnBoardPersistedStateChanged?.Invoke();
         }
@@ -149,6 +193,7 @@ namespace LoopDeLoop.Web.Services
             generationCts?.Cancel();
             IsGenerating = false;
             GenerationStartTime = null;
+            RefreshHintHeatMap();
             NotifyVisualChanged();
         }
 
@@ -167,6 +212,7 @@ namespace LoopDeLoop.Web.Services
 
             DismissVisualSolveInternal();
             IsGenerating = true;
+            EdgeHeatScores = null;
             GenerationStartTime = DateTime.UtcNow;
             PrunedProgress = 0;
             TotalCells = 0;
@@ -235,9 +281,14 @@ namespace LoopDeLoop.Web.Services
                 }
                 myCts.Dispose();
                 if (generatedNewBoard)
+                {
                     NotifyChanged();
+                }
                 else
+                {
+                    RefreshHintHeatMap();
                     NotifyVisualChanged();
+                }
             }
         }
 
@@ -289,6 +340,8 @@ namespace LoopDeLoop.Web.Services
             DisallowFalseMove = DisallowFalseMove,
             ShowCellColors = ShowCellColors,
             ShowEdgeColors = ShowEdgeColors,
+            ShowHintHeatMap = ShowHintHeatMap,
+            UseNeuralTrialOrdering = UseNeuralTrialOrdering,
             AutoMoveLevel = AutoMoveLevel,
             AutoMoveConsiderMultipleLoops = AutoMoveConsiderMultipleLoops,
             AutoMoveUseIC = AutoMoveUseIC,
@@ -305,6 +358,8 @@ namespace LoopDeLoop.Web.Services
             DisallowFalseMove = prefs.DisallowFalseMove;
             ShowCellColors = prefs.ShowCellColors;
             ShowEdgeColors = prefs.ShowEdgeColors;
+            ShowHintHeatMap = prefs.ShowHintHeatMap;
+            UseNeuralTrialOrdering = prefs.UseNeuralTrialOrdering;
             AutoMoveLevel = prefs.AutoMoveLevel;
             AutoMoveConsiderMultipleLoops = prefs.AutoMoveConsiderMultipleLoops;
             AutoMoveUseIC = prefs.AutoMoveUseIC;
@@ -812,6 +867,7 @@ namespace LoopDeLoop.Web.Services
             WasAutoSolved = state.IsSolved && state.WasAutoSolved;
             ClearTransientBoardState();
             CheckSolution();
+            RefreshHintHeatMap();
             NotifyVisualChanged();
             return true;
         }
@@ -977,7 +1033,10 @@ namespace LoopDeLoop.Web.Services
         public void DismissVisualSolve()
         {
             if (DismissVisualSolveInternal())
+            {
+                RefreshHintHeatMap();
                 NotifyVisualChanged();
+            }
         }
 
         public bool StartVisualSolve()
@@ -1059,6 +1118,7 @@ namespace LoopDeLoop.Web.Services
                 }
 
                 VisualSolveStepIndex = 0;
+                EdgeHeatScores = null;
                 NotifyVisualChanged();
                 return true;
             }
@@ -1435,6 +1495,8 @@ namespace LoopDeLoop.Web.Services
         public bool DisallowFalseMove { get; set; } = false;
         public bool ShowCellColors { get; set; } = false;
         public bool ShowEdgeColors { get; set; } = false;
+        public bool ShowHintHeatMap { get; set; } = false;
+        public bool UseNeuralTrialOrdering { get; set; } = true;
         public int AutoMoveLevel { get; set; } = 0;
         public bool AutoMoveConsiderMultipleLoops { get; set; } = true;
         public bool AutoMoveUseIC { get; set; } = false;

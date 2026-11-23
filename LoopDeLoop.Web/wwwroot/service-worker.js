@@ -1,5 +1,5 @@
 // LoopDeLoop Service Worker
-const CACHE_NAME = 'loopdeloop-v11';
+const CACHE_NAME = 'loopdeloop-v12';
 
 // Install event: remain waiting until user accepts update via SKIP_WAITING
 self.addEventListener('install', event => {
