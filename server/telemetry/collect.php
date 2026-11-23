@@ -19,7 +19,7 @@ const SUBMISSIONS_DIR = DATA_ROOT . '/submissions';
 const RATELIMIT_DIR = DATA_ROOT . '/ratelimit';
 const QUOTA_FILE = DATA_ROOT . '/quota.json';
 
-const MAX_BODY_BYTES = 262144;            // 256 KiB per submission
+const MAX_BODY_BYTES = 524288;            // 512 KiB per submission (fits 2,500+ events cleanly)
 const MAX_JSON_DEPTH = 16;                // Prevent deep-nesting attacks
 const MAX_EVENTS = 5000;                  // Max events per solve
 const MAX_NOTE_CHARS = 500;               // Max UTF-8 chars in optional note
@@ -238,7 +238,7 @@ foreach ($rawEvents as $ev) {
         respond(400, ['ok' => false, 'message' => 'Invalid event Kind.']);
     }
     $cleanEv = [
-        'Seq' => boundedInt($ev['Seq'] ?? 0, 0, MAX_EVENTS),
+        'Seq' => boundedInt($ev['Seq'] ?? 0, 0, 10000000),
         'ElapsedMs' => boundedInt($ev['ElapsedMs'] ?? 0, 0, 864000000),
         'DeltaMs' => boundedInt($ev['DeltaMs'] ?? 0, 0, 864000000),
         'Kind' => $kind,
@@ -320,6 +320,8 @@ $record = [
     'TotalElapsedMs' => boundedInt($data['TotalElapsedMs'] ?? 0, 0, 864000000),
     'IsSolved' => (bool)($data['IsSolved'] ?? false),
     'WasAutoSolved' => (bool)($data['WasAutoSolved'] ?? false),
+    'RestartCount' => boundedInt($data['RestartCount'] ?? 0, 0, 100000),
+    'TruncatedEventCount' => boundedInt($data['TruncatedEventCount'] ?? 0, 0, 10000000),
     'DifficultyRating' => $difficultyRating,
     'QualityRating' => $qualityRating,
     'Note' => $note,

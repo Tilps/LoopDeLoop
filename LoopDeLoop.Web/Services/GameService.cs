@@ -62,7 +62,10 @@ namespace LoopDeLoop.Web.Services
         public bool DebugRecordingEnabled { get; private set; }
         private SolveInteractionLog? currentDebugLog;
         private long lastDebugEventElapsedMs;
+        private int nextDebugEventSeq;
+        private DateTimeOffset debugSessionStartUtc;
         public int DebugEventCount => currentDebugLog?.Events.Count ?? 0;
+        public int DebugMaxEvents { get; set; } = SolveInteractionLog.MaxEvents;
         public int DebugSessionId { get; private set; }
         public string DebugInstallationId { get; private set; } = string.Empty;
         public int? DebugDifficultyRating { get; private set; }
@@ -220,11 +223,15 @@ namespace LoopDeLoop.Web.Services
             {
                 currentDebugLog = null;
                 lastDebugEventElapsedMs = 0;
+                nextDebugEventSeq = 0;
                 return;
             }
 
             DebugSessionId++;
-            lastDebugEventElapsedMs = 0;
+            long initialElapsedMs = Math.Max(0L, (long)Math.Round(ElapsedTime.TotalMilliseconds));
+            debugSessionStartUtc = DateTimeOffset.UtcNow.AddMilliseconds(-initialElapsedMs);
+            lastDebugEventElapsedMs = initialElapsedMs;
+            nextDebugEventSeq = 0;
             currentDebugLog = new SolveInteractionLog
             {
                 Version = 1,
@@ -236,15 +243,26 @@ namespace LoopDeLoop.Web.Services
                 Difficulty = Difficulty,
                 EdgeCount = CurrentMesh.Edges.Count,
                 CellCount = CurrentMesh.Cells.Count,
-                StartedAtUtc = DateTimeOffset.UtcNow,
+                StartedAtUtc = debugSessionStartUtc,
                 CompletedAtUtc = IsSolved ? DateTimeOffset.UtcNow : null,
-                TotalElapsedMs = Math.Max(0L, (long)Math.Round(ElapsedTime.TotalMilliseconds)),
+                TotalElapsedMs = initialElapsedMs,
                 IsSolved = IsSolved,
                 WasAutoSolved = WasAutoSolved,
+                RestartCount = 0,
+                TruncatedEventCount = 0,
                 Settings = CaptureDebugSettings()
             };
 
             RecordDebugEvent("puzzle_start", detail: source);
+        }
+
+        private long GetDebugSessionElapsedMs()
+        {
+            if (currentDebugLog == null)
+                return Math.Max(0L, (long)Math.Round(ElapsedTime.TotalMilliseconds));
+            if (IsSolved && currentDebugLog.CompletedAtUtc.HasValue)
+                return Math.Max(lastDebugEventElapsedMs, (long)Math.Round((currentDebugLog.CompletedAtUtc.Value - debugSessionStartUtc).TotalMilliseconds));
+            return Math.Max(lastDebugEventElapsedMs, (long)Math.Round((DateTimeOffset.UtcNow - debugSessionStartUtc).TotalMilliseconds));
         }
 
         private void RecordDebugEvent(
@@ -260,13 +278,32 @@ namespace LoopDeLoop.Web.Services
             if (!DebugRecordingEnabled || currentDebugLog == null)
                 return;
 
-            long elapsedMs = Math.Max(0L, (long)Math.Round(ElapsedTime.TotalMilliseconds));
+            int maxEvents = Math.Max(1, DebugMaxEvents);
+            while (currentDebugLog.Events.Count >= maxEvents)
+            {
+                // Discard the oldest non-restart event from the front; preserve puzzle_restart markers.
+                int removeIdx = -1;
+                for (int i = 0; i < currentDebugLog.Events.Count; i++)
+                {
+                    if (!string.Equals(currentDebugLog.Events[i].Kind, "puzzle_restart", StringComparison.Ordinal))
+                    {
+                        removeIdx = i;
+                        break;
+                    }
+                }
+                if (removeIdx < 0)
+                    removeIdx = 0;
+                currentDebugLog.Events.RemoveAt(removeIdx);
+                currentDebugLog.TruncatedEventCount++;
+            }
+
+            long elapsedMs = Math.Max(lastDebugEventElapsedMs, (long)Math.Round((DateTimeOffset.UtcNow - debugSessionStartUtc).TotalMilliseconds));
             long deltaMs = Math.Max(0L, elapsedMs - lastDebugEventElapsedMs);
             lastDebugEventElapsedMs = elapsedMs;
 
             currentDebugLog.Events.Add(new SolveInteractionEvent
             {
-                Seq = currentDebugLog.Events.Count,
+                Seq = nextDebugEventSeq++,
                 ElapsedMs = elapsedMs,
                 DeltaMs = deltaMs,
                 Kind = kind,
@@ -292,7 +329,7 @@ namespace LoopDeLoop.Web.Services
                 return null;
 
             currentDebugLog.InstallationId = DebugInstallationId;
-            currentDebugLog.TotalElapsedMs = Math.Max(0L, (long)Math.Round(ElapsedTime.TotalMilliseconds));
+            currentDebugLog.TotalElapsedMs = GetDebugSessionElapsedMs();
             currentDebugLog.IsSolved = IsSolved;
             currentDebugLog.WasAutoSolved = WasAutoSolved;
             currentDebugLog.DifficultyRating = DebugDifficultyRating;
@@ -1401,7 +1438,18 @@ namespace LoopDeLoop.Web.Services
             IsSolved = false;
             WasAutoSolved = false;
             ClearTransientBoardState();
-            BeginDebugSession("reset");
+            if (DebugRecordingEnabled && currentDebugLog != null)
+            {
+                currentDebugLog.RestartCount++;
+                currentDebugLog.IsSolved = false;
+                currentDebugLog.WasAutoSolved = false;
+                currentDebugLog.CompletedAtUtc = null;
+                RecordDebugEvent("puzzle_restart", detail: $"restart:{currentDebugLog.RestartCount}");
+            }
+            else
+            {
+                BeginDebugSession("reset");
+            }
             CheckSolution();
             NotifyChanged();
         }

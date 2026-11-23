@@ -7,6 +7,7 @@ namespace LoopDeLoop.Web.Services
     public sealed class SolveInteractionLog
     {
         public const int MaxNoteLength = 500;
+        public const int MaxEvents = 2500;
 
         public int Version { get; set; } = 1;
         public string InstallationId { get; set; } = string.Empty;
@@ -22,6 +23,8 @@ namespace LoopDeLoop.Web.Services
         public long TotalElapsedMs { get; set; }
         public bool IsSolved { get; set; }
         public bool WasAutoSolved { get; set; }
+        public int RestartCount { get; set; }
+        public int TruncatedEventCount { get; set; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? DifficultyRating { get; set; }

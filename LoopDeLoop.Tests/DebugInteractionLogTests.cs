@@ -227,4 +227,79 @@ public sealed class DebugInteractionLogTests
         Assert.AreEqual(201, res.Status);
         Assert.AreEqual("20261124_000000_abcdef123456", res.Id);
     }
+
+    [TestMethod]
+    public void ResetCurrentPuzzle_RecordsRestartInSameSession_WhileChangingPuzzleStartsFresh()
+    {
+        using var game = new GameService();
+        game.SetDebugRecordingEnabled(true);
+        Assert.IsTrue(game.LoadPuzzleText("sq/3x3/a1b2", "hash"));
+        int session1 = game.DebugSessionId;
+
+        game.ToggleEdge(0, isAlternative: false);
+        game.ResetCurrentPuzzle();
+        game.ToggleEdge(1, isAlternative: false);
+        game.ResetCurrentPuzzle();
+        game.ToggleEdge(2, isAlternative: false);
+
+        SolveInteractionLog? log1 = game.ExportDebugLog();
+        Assert.IsNotNull(log1);
+        Assert.AreEqual(session1, game.DebugSessionId);
+        Assert.AreEqual(2, log1.RestartCount);
+        Assert.AreEqual(2, log1.Events.Count(e => e.Kind == "puzzle_restart"));
+        Assert.AreEqual(1, log1.Events.Count(e => e.Kind == "puzzle_start"));
+        Assert.AreEqual(3, log1.Events.Count(e => e.Kind == "edge_toggle"));
+
+        // Verify monotonic Seq & ElapsedMs across restarts
+        for (int i = 1; i < log1.Events.Count; i++)
+        {
+            Assert.IsTrue(log1.Events[i].Seq > log1.Events[i - 1].Seq);
+            Assert.IsTrue(log1.Events[i].ElapsedMs >= log1.Events[i - 1].ElapsedMs);
+        }
+
+        // Changing to a different puzzle is NOT a restart
+        Assert.IsTrue(game.LoadPuzzleText("sq/4x4/3a2b1", "hash"));
+        SolveInteractionLog? log2 = game.ExportDebugLog();
+        Assert.IsNotNull(log2);
+        Assert.AreNotEqual(session1, game.DebugSessionId);
+        Assert.AreEqual(0, log2.RestartCount);
+        Assert.AreEqual(0, log2.Events.Count(e => e.Kind == "puzzle_restart"));
+        Assert.AreEqual(1, log2.Events.Count);
+        Assert.AreEqual("puzzle_start", log2.Events[0].Kind);
+        Assert.AreEqual(0, log2.Events[0].Seq);
+    }
+
+    [TestMethod]
+    public void DebugEventTruncation_DiscardsOldestNonRestartEventsAndPreservesRestarts()
+    {
+        using var game = new GameService { DebugMaxEvents = 6 };
+        game.SetDebugRecordingEnabled(true);
+        Assert.IsTrue(game.LoadPuzzleText("sq/3x3/a1b2", "hash")); // seq 0: puzzle_start
+
+        game.ToggleEdge(0, isAlternative: false); // seq 1
+        game.ToggleEdge(1, isAlternative: false); // seq 2
+        game.ResetCurrentPuzzle();                // seq 3: puzzle_restart #1
+        game.ToggleEdge(2, isAlternative: false); // seq 4
+        game.ToggleEdge(3, isAlternative: false); // seq 5
+        game.ResetCurrentPuzzle();                // seq 6: puzzle_restart #2 (triggers drop of seq 0)
+        game.ToggleEdge(4, isAlternative: false); // seq 7 (drops seq 1)
+        game.ToggleEdge(5, isAlternative: false); // seq 8 (drops seq 2)
+        game.ToggleEdge(6, isAlternative: false); // seq 9 (skips seq 3 restart, drops seq 4!)
+        game.ToggleEdge(7, isAlternative: false); // seq 10 (skips seq 3 restart, drops seq 5!)
+
+        SolveInteractionLog? log = game.ExportDebugLog();
+        Assert.IsNotNull(log);
+        Assert.AreEqual(6, log.Events.Count);
+        Assert.AreEqual(2, log.RestartCount);
+        Assert.AreEqual(5, log.TruncatedEventCount);
+
+        // Both restart markers must survive truncation from the front
+        var restarts = log.Events.Where(e => e.Kind == "puzzle_restart").ToList();
+        Assert.AreEqual(2, restarts.Count);
+        Assert.AreEqual(3, restarts[0].Seq);
+        Assert.AreEqual(6, restarts[1].Seq);
+
+        // Remaining events should be the 2 preserved restarts + the 4 most recent edge toggles (seq 7..10)
+        CollectionAssert.AreEqual(new[] { 3, 6, 7, 8, 9, 10 }, log.Events.Select(e => e.Seq).ToArray());
+    }
 }
